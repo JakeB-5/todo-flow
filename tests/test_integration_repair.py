@@ -22,7 +22,7 @@ class IntegrationRepairTests(unittest.TestCase):
     setUp = test_flow.IntegrationTests.setUp
     tearDown = test_flow.IntegrationTests.tearDown
 
-    def ready(self, conflict=True):
+    def ready(self, conflict=True, add_upstream=True):
         self.s.start("addition")
         self.e = Engine(self.s)
         self.e.run(max_tasks=3)
@@ -35,7 +35,8 @@ class IntegrationRepairTests(unittest.TestCase):
                 "    def test_numeric_only(self):\n"
                 "        with self.assertRaises(TypeError):\n            add('2', '3')\n"
             )
-        (self.repo / "upstream.txt").write_text("Upstream addition outside the write surface\n")
+        if add_upstream:
+            (self.repo / "upstream.txt").write_text("Upstream addition outside the write surface\n")
         command(["git", "add", "."], self.repo)
         command(["git", "commit", "-m", "Advance base"], self.repo)
         command(["git", "push", "origin", "main"], self.repo)
@@ -216,19 +217,39 @@ class IntegrationRepairTests(unittest.TestCase):
         self.assertNotIn("later.txt", Path(resumed["base_diff"]).read_text())
 
     def test_commits_merge_even_when_resolution_keeps_candidate_tree(self):
-        self.ready()
+        self.ready(add_upstream=False)
         task, workspace = self.repair_task()
         record = integration.prepare(self.e, task, workspace)
-        # Choose the exact candidate versions for all changed paths. The staged tree now
-        # matches HEAD, but the merge parent must still be recorded (no squash/no-op commit).
-        command(["git", "restore", "--source=HEAD", "--staged", "--worktree", "."], workspace)
-        self.assertEqual(command(["git", "diff", "--cached", "--name-only"], workspace), "")
-        self.e.apply_changes(task, workspace, [], record)
+        # The resolved tree matches HEAD, but both merge parents must still be recorded.
+        self.e.apply_changes(
+            task,
+            workspace,
+            [{"path": "calc.py", "content": "def add(a, b):\n    return a + b\n"}],
+            record,
+        )
         integration.finish_repair(self.e, task, workspace, record)
         self.assertEqual(
             command(["git", "show", "-s", "--format=%P", "HEAD"], workspace).split(),
             [self.before["head"], self.base],
         )
+
+    def test_repair_preserves_unrelated_staging_before_proposal_or_resumed_worker(self):
+        self.ready()
+        task, workspace = self.repair_task()
+        record = integration.prepare(self.e, task, workspace)
+        notes = workspace / "operator-notes.txt"
+        notes.write_text("Operator note\n")
+        command(["git", "add", "operator-notes.txt"], workspace)
+        index = command(["git", "ls-files", "--stage", "-z"], workspace)
+        with self.assertRaisesRegex(Conflict, "checkout/index changed"):
+            self.e.apply_changes(
+                task, workspace, [{"path": "calc.py", "content": RESOLVED}], record
+            )
+        with self.assertRaisesRegex(Conflict, "checkout/index changed"):
+            integration.prepare(Engine(self.s), task, workspace)
+        self.assertEqual(command(["git", "ls-files", "--stage", "-z"], workspace), index)
+        self.assertEqual(notes.read_text(), "Operator note\n")
+        self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), self.before["head"])
 
     def test_landing_retry_recovers_persisted_repair_intent(self):
         self.ready()

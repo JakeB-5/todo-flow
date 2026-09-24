@@ -5,6 +5,7 @@ import subprocess
 
 from .adapters import command
 from .store import Conflict, encode
+from .checkout import snapshot, require_snapshot
 
 
 def merge_head(workspace):
@@ -75,9 +76,17 @@ def prepare(engine, task, workspace):
             parents != [record["candidate"], record["base"]]
             or merging
             or command(["git", "status", "--porcelain"], workspace)
+            or command(["git", "rev-parse", "HEAD^{tree}"], workspace)
+            != record.get("resolved_tree")
         ):
             raise Conflict("Integration repair checkout changed; inspect before resuming")
         recovered = True
+    if not recovered and record.get("checkout"):
+        require_snapshot(workspace, record["checkout"])
+    if merging and not record.get("checkout"):
+        raise Conflict(
+            "Merge preparation was interrupted before its checkpoint; inspect preserved state"
+        )
     if record["phase"] == "pending":
         if merging or command(["git", "status", "--porcelain"], workspace):
             raise Conflict("Integration repair requires a clean owned checkout; changes preserved")
@@ -113,6 +122,9 @@ def prepare(engine, task, workspace):
         except RuntimeError:
             if not unmerged(workspace) or merge_head(workspace) != record["base"]:
                 raise
+    if not recovered and not record.get("checkout"):
+        record["checkout"] = snapshot(workspace)
+        engine.update(task, landing=encode(record))
     folder = engine.store.path / "attempts" / task["attempt"] / "conflicts"
     folder.mkdir(parents=True, exist_ok=True)
     base_diff = folder / "base.patch"
@@ -145,6 +157,10 @@ def validate_resolution(workspace, changes, record):
         raise Conflict("Integration repair HEAD changed during worker execution")
     if merge_head(workspace) != record["merge_head"]:
         raise Conflict("Integration repair merge changed during worker execution")
+    if record["workspace_head"] == record["candidate"]:
+        require_snapshot(workspace, record["checkout"])
+    elif command(["git", "status", "--porcelain", "--untracked-files=all"], workspace):
+        raise Conflict("Recovered repair checkout changed; preserve it for inspection")
     conflicts = unmerged(workspace)
     proposed = {change["path"]: change["content"] for change in changes}
     if not conflicts.keys() <= proposed.keys():
@@ -155,6 +171,15 @@ def validate_resolution(workspace, changes, record):
             for line in proposed[path].splitlines()
         ):
             raise Conflict("Proposal retains conflict markers: " + path)
+
+
+def record_resolution(engine, task, workspace, record):
+    latest = pending(engine.store.track(task["track"]))
+    if not latest or latest["candidate"] != record["candidate"] or latest["base"] != record["base"]:
+        raise Conflict("Integration repair intent changed")
+    latest["resolved_tree"] = command(["git", "write-tree"], workspace)
+    latest["checkout"] = snapshot(workspace)
+    engine.update(task, landing=encode(latest))
 
 
 def finish_repair(engine, task, workspace, record):

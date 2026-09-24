@@ -12,6 +12,8 @@ from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
 from .maintenance import guarded
 from . import integration as integration_repair
+from .checkout import require_clean
+from .verification import run as run_verification
 
 
 class Engine:
@@ -81,29 +83,30 @@ class Engine:
     def verify(self, task, workspace):
         if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
             raise Conflict("Verification requires a committed, resolved merge")
-        head = command(["git", "rev-parse", "HEAD"], workspace)
+        head = require_clean(workspace)
         tree = command(["git", "rev-parse", "HEAD^{tree}"], workspace)
         key = fingerprint([tree, self.config["verify"]])
         prior = self.store.track(task["track"])["verification"]
         if prior:
             prior = json.loads(prior)
-            if prior["key"] == key and prior["ok"]:
+            if prior["key"] == key and prior["ok"] and prior["head"] == head:
                 return prior
         log = self.store.path / "attempts" / task["attempt"]
         log.mkdir(parents=True, exist_ok=True)
         started = time.time()
         try:
-            output = command(
+            output = run_verification(
                 self.config["verify"],
                 workspace,
                 timeout=self.config.get("verify_timeout", 180),
-                include_stderr=True,
             )
             ok, error = True, None
         except (RuntimeError, subprocess.TimeoutExpired) as e:
             output, ok, error = str(e), False, type(e).__name__
-        if command(["git", "status", "--porcelain"], workspace):
-            ok, error = False, "Verification modified the working tree; preserve and inspect it"
+        try:
+            require_clean(workspace, head)
+        except Conflict as e:
+            ok, error = False, str(e)
         record = {
             "head": head,
             "tree": tree,
@@ -138,6 +141,17 @@ class Engine:
                     break
                 if parent.is_symlink():
                     raise Conflict("Symlink ancestor")
+        pathspecs = [":(literal)" + name for name in paths]
+        if not repair:
+            if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
+                raise Conflict("An unowned merge is in progress; preserve it for inspection")
+            if paths and command(
+                ["git", "status", "--porcelain=v1", "--untracked-files=all", "--", *pathspecs],
+                workspace,
+            ):
+                raise Conflict(
+                    "Proposal overlaps existing changes; preserve them before applying it"
+                )
         # File proposal application and commit run under a checkout flock; each write is fenced.
         with self.store.transaction() as c:
             self.store.assert_claim(c, task)
@@ -146,12 +160,25 @@ class Engine:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(change["content"])
         if paths:
-            command(["git", "add", "--", *paths], workspace)
+            command(["git", "add", "--", *pathspecs], workspace)
         if integration_repair.unmerged(workspace):
             raise Conflict("Cannot commit unresolved merge paths")
-        dirty = command(["git", "diff", "--cached", "--name-only"], workspace)
+        dirty = (
+            command(
+                ["git", "diff", "--cached", "--name-only"] + ([] if repair else ["--", *pathspecs]),
+                workspace,
+            )
+            if (paths or repair)
+            else ""
+        )
         if dirty or (repair and integration_repair.merge_head(workspace)):
-            command(["git", "commit", "-m", "Implement " + task["track"]], workspace)
+            if repair:
+                integration_repair.record_resolution(self, task, workspace, repair)
+            command(
+                ["git", "commit", "-m", "Implement " + task["track"]]
+                + ([] if repair else ["--only", "--", *pathspecs]),
+                workspace,
+            )
         head = command(["git", "rev-parse", "HEAD"], workspace)
         t = self.store.track(task["track"])
         if head != t["head"] and not repair:
@@ -159,6 +186,7 @@ class Engine:
 
     def publish(self, task, workspace, doc):
         t = self.store.track(task["track"])
+        require_clean(workspace, t["head"])
         v = json.loads(t["verification"]) if t["verification"] else {}
         if not v.get("ok") or v.get("head") != t["head"]:
             raise Conflict("Publish requires verification of current head")
@@ -212,8 +240,11 @@ class Engine:
             ],
         }
 
-    def record_review(self, task, result):
+    def record_review(self, task, result, expected_head=None):
         t = self.store.track(task["track"])
+        if expected_head is not None and t["head"] != expected_head:
+            raise Conflict("Review candidate changed during the worker session")
+        require_clean(t["workspace"], expected_head or t["head"])
         doc = json.loads(t["document"])
         required = {x["id"] for x in doc["conditions"]}
         rows = result.get("conditions", [])
@@ -258,6 +289,7 @@ class Engine:
             raise Conflict("Current independent review is missing or not met")
         if not verify.get("ok") or verify.get("head") != t["head"]:
             raise Conflict("Current verification missing")
+        require_clean(t["workspace"], t["head"])
         return t
 
     def land(self, task):
@@ -477,6 +509,8 @@ class Engine:
                     context = self.context(task, workspace)
                     if repair:
                         context["integration_repair"] = repair
+                    if task["kind"] == "review":
+                        require_clean(workspace, context["head"])
                     result = run_worker(
                         self.config,
                         context,
@@ -484,6 +518,8 @@ class Engine:
                         self.store.path,
                         lambda pid: self.store.heartbeat(task, pid),
                     )
+                    if task["kind"] == "review":
+                        require_clean(workspace, context["head"])
                     if repair and not result.get("question"):
                         self.apply_changes(task, workspace, result.get("changes", []), repair)
                         integration_repair.finish_repair(self, task, workspace, repair)
@@ -511,7 +547,7 @@ class Engine:
                         elif result.get("publish"):
                             self.publish(task, workspace, doc)
                     if task["kind"] == "review":
-                        self.record_review(task, result)
+                        self.record_review(task, result, expected_head=context["head"])
                     self.record_watches(task, result.get("watches", []))
                 adopt = result.pop("adopt_completion", False)
                 # Publish task completion and track completion in one transaction. Otherwise
