@@ -11,6 +11,7 @@ from .adapters import GitHub, command, file_lock, permitted
 from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
 from .maintenance import guarded
+from . import integration as integration_repair
 
 
 class Engine:
@@ -78,6 +79,8 @@ class Engine:
         return workspace
 
     def verify(self, task, workspace):
+        if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
+            raise Conflict("Verification requires a committed, resolved merge")
         head = command(["git", "rev-parse", "HEAD"], workspace)
         tree = command(["git", "rev-parse", "HEAD^{tree}"], workspace)
         key = fingerprint([tree, self.config["verify"]])
@@ -117,7 +120,9 @@ class Engine:
             self.store.event(c, "verification.recorded", task["track"], record)
         return record
 
-    def apply_changes(self, task, workspace, changes):
+    def apply_changes(self, task, workspace, changes, repair=None):
+        if repair:
+            integration_repair.validate_resolution(workspace, changes, repair)
         paths = [x["path"] for x in changes]
         if len(set(paths)) != len(paths):
             raise ValueError("Duplicate file paths in result")
@@ -142,12 +147,14 @@ class Engine:
                 target.write_text(change["content"])
         if paths:
             command(["git", "add", "--", *paths], workspace)
-            dirty = command(["git", "diff", "--cached", "--name-only"], workspace)
-            if dirty:
-                command(["git", "commit", "-m", "Implement " + task["track"]], workspace)
+        if integration_repair.unmerged(workspace):
+            raise Conflict("Cannot commit unresolved merge paths")
+        dirty = command(["git", "diff", "--cached", "--name-only"], workspace)
+        if dirty or (repair and integration_repair.merge_head(workspace)):
+            command(["git", "commit", "-m", "Implement " + task["track"]], workspace)
         head = command(["git", "rev-parse", "HEAD"], workspace)
         t = self.store.track(task["track"])
-        if head != t["head"]:
+        if head != t["head"] and not repair:
             self.update(task, head=head, review=None, verification=None, landing=None)
 
     def publish(self, task, workspace, doc):
@@ -239,6 +246,8 @@ class Engine:
 
     def gate(self, task):
         t = self.store.track(task["track"])
+        if integration_repair.pending(t):
+            raise Conflict("Integration repair requires new verification and independent review")
         review = json.loads(t["review"]) if t["review"] else {}
         verify = json.loads(t["verification"]) if t["verification"] else {}
         if (
@@ -255,6 +264,10 @@ class Engine:
         if self.config["endpoint"] != "land" or not self.config["allow_land"]:
             raise Conflict("Landing not authorized in project contract")
         with file_lock(self.store.path / "locks" / "landing.lock", blocking=True):
+            repair = integration_repair.pending(self.store.track(task["track"]))
+            if repair:
+                # A prior attempt may have persisted repair intent before queuing its worker.
+                return integration_repair.followup(repair)
             t = self.gate(task)
             base_ref = "refs/heads/" + self.config["base"]
             command(["git", "fetch", "origin", self.config["base"]], self.root)
@@ -284,31 +297,23 @@ class Engine:
             try:
                 command(["git", "merge", "--no-ff", "--no-edit", t["head"]], integration)
             except RuntimeError as e:
-                return {
-                    "summary": "Integration conflict: " + str(e),
-                    "next": [
-                        {
-                            "kind": "work",
-                            "purpose": "Integration conflicted. Resolve against latest base; "
-                            "the preserved integration checkout is " + str(integration),
-                        }
-                    ],
-                }
+                if not integration_repair.unmerged(integration):
+                    raise  # A failed Git command is not necessarily a merge conflict.
+                return integration_repair.request_repair(
+                    self, task, integration, base, "Integration conflict: " + str(e)
+                )
             verification = self.verify(task, integration)
             # Combined verification belongs to the integration, not the candidate head.
             combined = verification
             self.update(task, verification=t["verification"])
             if not combined["ok"]:
-                return {
-                    "summary": "Combined verification failed: " + combined["output"],
-                    "next": [
-                        {
-                            "kind": "work",
-                            "purpose": "Repair combined verification failure: "
-                            + combined["output"],
-                        }
-                    ],
-                }
+                return integration_repair.request_repair(
+                    self,
+                    task,
+                    integration,
+                    base,
+                    "Combined verification failed: " + combined["output"],
+                )
             merged = command(["git", "rev-parse", "HEAD"], integration)
             intent = {
                 "candidate": t["head"],
@@ -464,14 +469,35 @@ class Engine:
                     if v["ok"]:
                         self.publish(task, workspace, doc)
                 else:
+                    repair = (
+                        integration_repair.prepare(self, task, workspace)
+                        if task["kind"] == "work"
+                        else None
+                    )
+                    context = self.context(task, workspace)
+                    if repair:
+                        context["integration_repair"] = repair
                     result = run_worker(
                         self.config,
-                        self.context(task, workspace),
+                        context,
                         task,
                         self.store.path,
                         lambda pid: self.store.heartbeat(task, pid),
                     )
-                    if result.get("changes"):
+                    if repair and not result.get("question"):
+                        self.apply_changes(task, workspace, result.get("changes", []), repair)
+                        integration_repair.finish_repair(self, task, workspace, repair)
+                        result.update(
+                            verify=True,
+                            publish=True,
+                            next=[
+                                {
+                                    "kind": "review",
+                                    "purpose": "Independently review repaired integration",
+                                }
+                            ],
+                        )
+                    elif result.get("changes"):
                         self.apply_changes(task, workspace, result["changes"])
                     if result.get("verify") or result.get("publish") or result.get("changes"):
                         v = self.verify(task, workspace)

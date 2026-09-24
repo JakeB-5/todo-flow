@@ -121,6 +121,10 @@ Review uses a fresh agent context independent of implementation and examines the
 
 The default endpoint is `review`. An explicitly authorized `land` endpoint requires both `--endpoint land` and `--allow-land` at initialization. The host combines current base and candidate in an isolated checkout, verifies that combined tree, and publishes the exact verified merge. Base advancement triggers another comparison; branch protection is not bypassed.
 
+**Unreleased repair fix on `main`:** an actual merge conflict or failed combined verification records durable repair intent and invalidates the old review/verification. Before the work session, the host fetches and pins the current base, then merges it into the owned candidate checkout. `paths.integration_repair` describes the pinned commits, failure, base-diff path and conflicting paths; each conflict includes readable ancestor/candidate/base versions, and workspace files contain the merge markers. Content remains in files rather than being injected into the prompt. Git failures without unmerged paths are reported as execution errors.
+
+The worker returns resolved UTF-8 file proposals or a concrete question. Dirty checkouts are preserved, missing resolutions and remaining markers block commit, and unsupported binary/deletion resolutions require attention. The host records both merge parents, verifies and publishes the repaired candidate, then requests a fresh independent review before retrying landing. Decision answers and interrupted attempts resume the recorded merge without aborting it; a later base advance is checked again at landing. The published `0.0.2` wheel does not include this repair fix.
+
 Confirmed landing schedules triage. A current cleared receipt is required before issue closure and completion. Original obligations cannot be moved to a follow-up TODO or Watch to make the source track pass. Repairs use a fresh branch, verification and independent review. Separate new TODOs are registered but await human review and selection.
 
 ## Watch and optional Jev

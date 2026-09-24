@@ -387,10 +387,14 @@ class Store:
                 "UPDATE tasks SET status='done' WHERE id=? AND status='waiting'", (d["task"],)
             )
             kind = c.execute("SELECT kind FROM tasks WHERE id=?", (d["task"],)).fetchone()[0]
+            repair = json.loads(t["landing"]) if t["landing"] else {}
+            resume_kind = "triage" if kind == "triage" else "assess"
+            if repair.get("status") == "integration-repair":
+                resume_kind = "work"
             self.enqueue(
                 c,
                 d["track"],
-                "triage" if kind == "triage" else "assess",
+                resume_kind,
                 "Continue using decision answer: " + answer,
                 id_,
             )

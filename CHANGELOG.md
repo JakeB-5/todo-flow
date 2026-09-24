@@ -2,6 +2,13 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## Unreleased
+
+### Fixed
+
+- Connect failed integration to the repair checkout: fetch and pin the current base, merge it into the candidate branch, and provide conflict markers plus readable ancestor/candidate/base files through evidence paths. Resume interrupted repairs without discarding the merge, including after a decision answer or a commit before state persistence.
+- Require renewed verification, publication and independent review of the repaired candidate before landing. Preserve both merge parents even when resolution keeps the candidate tree. Distinguish Git execution errors from actual unresolved conflicts, and repair combined-verification failures on the merged tree.
+
 ## 0.0.2 — 2026-09-24
 
 ### Fixed

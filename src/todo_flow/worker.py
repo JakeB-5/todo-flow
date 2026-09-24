@@ -144,6 +144,14 @@ changes, commits, executes the configured verification command and publishes Git
 Choose only useful next work; do not follow a mandatory sequence. Most small work can be completed in
 one work task. An assess task should delegate concrete implementation to work; assess does not edit.
 A work task can return changes, verify:true, publish:true, next:[{kind:review,purpose:...}].
+When paths.integration_repair is present, read it and its base_diff path before proposing a repair.
+The host has merged
+the pinned latest base into your candidate checkout. Conflict markers are in workspace files;
+the evidence lists each unmerged path and readable ancestor/candidate/base versions (a missing
+version means that side has no file). Preserve the goal and upstream changes. Resolve every
+unmerged path with complete UTF-8 content and no markers, or ask a concrete question when the
+resolution needs unsupported binary/deletion operations or a scope decision. Do not run Git merge
+yourself. The host commits both parents, re-verifies, publishes and requests a fresh independent review.
 Use investigation or focused followup work if uncertain. A question suspends work awaiting an answer.
 Review is a FRESH READ-ONLY session: inspect goal, current files, exact diff and verification evidence;
 return verdict and EACH condition's id/verdict/evidence. Never self-approve or change files in review.
