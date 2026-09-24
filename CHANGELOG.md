@@ -8,6 +8,7 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ### Added
 
+- English and Korean workflow-cycle diagrams covering todo, trackpicks, trackrun, watchlist and follow-up selection.
 - Installed version reporting for both CLI entrypoints, explicit release compatibility contracts and rejection of unknown state/config/worker/skill formats.
 - Guarded uv-tool engine upgrades from a supplied newer wheel, environment/entrypoint backups, rollback, and an independent runner for recovery when an update interrupts the CLI.
 - Per-project skill installation manifests, dry-run updates, user-edit/conflict handling, legacy baseline adoption, retired-resource handling and recoverable rollback.

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="622" viewBox="0 0 1120 622" role="img" aria-labelledby="title desc">
+<title id="title">One backlog. A continuous cycle.</title>
+<desc id="desc">todo → trackpicks → trackrun → watchlist → todo. New follow-up tracks wait for your selection. Replaceable workers resume from files. The dashboard shows who is doing what.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M1 1 L6 4 L1 7" fill="none" stroke="#668879" stroke-width="1.5"/></marker></defs>
+<rect width="1120" height="622" rx="24" fill="#f5f7f3"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Arial, Apple SD Gothic Neo, sans-serif">
+<text x="40" y="45" font-size="13" fill="#39745d" font-weight="700">TODO FLOW / WORKFLOW</text>
+<text x="40" y="88" font-size="32" fill="#1d3429" font-weight="700">One backlog. A continuous cycle.</text>
+<text x="40" y="119" font-size="18" fill="#53605b" font-weight="400">You choose the tracks. Agents carry the work and leave durable evidence.</text>
+<rect x="40" y="160" width="230" height="210" rx="16" fill="#ffffff" stroke="#d6e0d9"/>
+<rect x="58" y="179" width="194" height="25" rx="6" fill="#eaf2ed"/>
+<text x="70" y="197" font-size="12" fill="#39745d" font-weight="700">REGISTER</text>
+<text x="60" y="240" font-size="28" fill="#1d3429" font-weight="700">todo</text>
+<text x="60" y="278" font-size="15" fill="#53605b" font-weight="400">Search existing work</text>
+<text x="60" y="306" font-size="15" fill="#53605b" font-weight="400">Write a reviewable HTML plan</text>
+<text x="60" y="334" font-size="15" fill="#53605b" font-weight="400">Register through the todo skill</text>
+<path d="M272 230 H302" fill="none" stroke="#668879" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="310" y="160" width="230" height="210" rx="16" fill="#ffffff" stroke="#d6e0d9"/>
+<rect x="328" y="179" width="194" height="25" rx="6" fill="#fff0cc"/>
+<text x="340" y="197" font-size="12" fill="#7b5a16" font-weight="700">CHOOSE</text>
+<text x="330" y="240" font-size="28" fill="#1d3429" font-weight="700">trackpicks</text>
+<text x="330" y="278" font-size="15" fill="#53605b" font-weight="400">Check dependencies</text>
+<text x="330" y="306" font-size="15" fill="#53605b" font-weight="400">Get a recommended set</text>
+<text x="330" y="334" font-size="15" fill="#53605b" font-weight="400">You select the track IDs</text>
+<path d="M542 230 H572" fill="none" stroke="#668879" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="580" y="160" width="230" height="210" rx="16" fill="#ffffff" stroke="#d6e0d9"/>
+<rect x="598" y="179" width="194" height="25" rx="6" fill="#eaf2ed"/>
+<text x="610" y="197" font-size="12" fill="#39745d" font-weight="700">EXECUTE</text>
+<text x="600" y="240" font-size="28" fill="#1d3429" font-weight="700">trackrun</text>
+<text x="600" y="278" font-size="15" fill="#53605b" font-weight="400">Work · verify · review</text>
+<text x="600" y="306" font-size="15" fill="#53605b" font-weight="400">Separate worktrees per track</text>
+<text x="600" y="334" font-size="15" fill="#53605b" font-weight="400">Authorized landing → triage</text>
+<path d="M812 230 H842" fill="none" stroke="#668879" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+<rect x="850" y="160" width="230" height="210" rx="16" fill="#ffffff" stroke="#d6e0d9"/>
+<rect x="868" y="179" width="194" height="25" rx="6" fill="#eaf2ed"/>
+<text x="880" y="197" font-size="12" fill="#39745d" font-weight="700">REASSESS</text>
+<text x="870" y="240" font-size="28" fill="#1d3429" font-weight="700">watchlist</text>
+<text x="870" y="278" font-size="15" fill="#53605b" font-weight="400">Recheck observations</text>
+<text x="870" y="306" font-size="15" fill="#53605b" font-weight="400">Retain, resolve or promote</text>
+<text x="870" y="334" font-size="15" fill="#53605b" font-weight="400">Use current evidence</text>
+<path d="M965 370 V414 H155 V375" fill="none" stroke="#668879" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="303" y="394" width="514" height="39" rx="19" fill="#f5f7f3"/>
+<text x="560" y="419" font-size="18" fill="#315f49" font-weight="600" text-anchor="middle">Actionable follow-ups → register or revise a TODO</text>
+<text x="560" y="453" font-size="16" fill="#53605b" font-weight="400" text-anchor="middle">New follow-up tracks wait for your selection.</text>
+<rect x="40" y="482" width="1040" height="108" rx="16" fill="#1d3429"/>
+<circle cx="65" cy="514" r="5" fill="#90d7b0"/>
+<text x="82" y="521" font-size="20" fill="#ffffff" font-weight="600">Shared project files. Visible progress.</text>
+<text x="1060" y="521" font-size="16" fill="#bad1c2" font-weight="400" text-anchor="end">Tracks · claims · evidence · decisions · watches</text>
+<text x="64" y="561" font-size="17" fill="#d6e6dc" font-weight="400">Replaceable workers resume from files. The dashboard shows who is doing what.</text>
+</g></svg>

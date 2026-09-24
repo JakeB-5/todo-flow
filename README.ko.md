@@ -31,6 +31,14 @@
 
 </details>
 
+## 워크플로우 사이클
+
+![todo 등록 → trackpicks 후보 추천과 사용자 선정 → trackrun 실행 → watchlist 조건부 관찰 재평가 → 후속 TODO 등록으로 이어지는 사이클](assets/workflow/cycle-ko.svg)
+
+**`todo` → `trackpicks` → `trackrun` → `watchlist` → `todo`.** 검토 가능한 계획을 등록하고, 할 일을 고르고, 선택한 트랙을 실행한 뒤 후속 관찰을 재평가합니다. 대시보드에서 직접 트랙을 골라도 됩니다. `trackpicks`는 후보를 추천하며 워커를 실행하지 않습니다.
+
+`trackrun`은 기본적으로 리뷰에서 멈춥니다. 랜딩이 허용되면 랜딩과 트리아지까지 진행하며 해당 트랙의 열린 관찰도 재평가합니다. `watchlist`로 명시적인 재평가를 요청할 수 있고, 실행할 후속 요구는 기존 또는 새 TODO로 연결합니다. 새 후속 트랙은 사용자의 선정을 기다립니다. 이 사이클은 공유 상태에 접근하는 진입점이며 모든 트랙에 강제되는 단계 순서는 아닙니다.
+
 ## 작동 화면
 
 ![실제 대시보드의 TODO 선정·실행 현황·문서·완료 검색](assets/demo/dashboard-tour.gif)
