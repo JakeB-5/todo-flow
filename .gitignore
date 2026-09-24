@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+.todo-flow/
+
+.venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+*.egg-info/
+
+# Local design documents, experiments, and screenshots
+/docs/

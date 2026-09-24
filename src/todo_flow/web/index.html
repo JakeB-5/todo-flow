@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TODO Flow</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<a class="skip" href="#content">본문으로</a>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="#todos"><span class="brand-mark" aria-hidden="true">▥</span> TODO / FLOW</a>
+    <div class="project-block"><span class="small-label">WORKSPACE</span><strong id="project">프로젝트 연결 중</strong><span id="projectMeta" class="subtle"></span></div>
+    <nav aria-label="주 메뉴">
+      <a href="#todos" data-nav="todos"><span><i aria-hidden="true">▤</i> TODO</span><b id="navActive">—</b></a>
+      <a href="#activity" data-nav="activity"><span><i aria-hidden="true">◉</i> 실행 현황</span><b id="navRunning">—</b></a>
+      <a href="#watch" data-nav="watch"><span><i aria-hidden="true">◇</i> Watch</span><b id="navWatch">—</b></a>
+    </nav>
+    <nav class="archive-nav" aria-label="보관 기록"><a href="#completed" data-nav="completed"><span><i aria-hidden="true">✓</i> 완료 기록 검색</span></a></nav>
+    <div class="agent-note"><span aria-hidden="true">↗</span><div>트랙 추가·수정은 에이전트에게<small>세션에서 <code>todo</code> 스킬로 요청하세요.</small></div></div>
+  </aside>
+  <main>
+    <header class="topbar"><div><span class="subtle">프로젝트</span><span class="slash">/</span><span id="breadcrumb">TODO</span></div><div class="connection"><span class="status-dot" id="connectionDot"></span><span id="connection">연결 중</span><span class="top-divider"></span><time id="observed"></time><button class="icon-button" id="refresh" aria-label="새로고침" title="새로고침">↻</button></div></header>
+    <div class="content" id="content">
+      <div id="demoNotice" class="notice" hidden>샘플 데이터 · 실제 작업 현황이 아닙니다.</div>
+      <div id="message" class="notice" role="status" hidden></div>
+      <div class="page-heading"><div><div id="eyebrow" class="eyebrow">YOUR NEXT WORK</div><h1 id="title">무엇을 진행할까요?</h1><p id="subtitle" class="subtitle">목표와 현재 상황을 보고, 진행할 트랙을 선택하세요.</p></div><div id="headingAction" class="heading-action"></div></div>
+      <section id="listView" aria-label="트랙 목록">
+        <div class="overview" id="overview"></div>
+        <div class="toolbar"><div class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="트랙 검색" placeholder="트랙 이름, ID, 목표 또는 영역 검색"><kbd>/</kbd></div><select id="filter" aria-label="트랙 상태 필터"><option value="all">전체 상태</option><option value="ready">선택 가능</option><option value="running">활동 있음</option><option value="waiting">결정 대기</option><option value="paused">일시정지</option><option value="cancelled">실행 취소</option></select><select id="sort" aria-label="트랙 정렬"><option value="updated">최근 갱신순</option><option value="oldest">오래된 순</option><option value="title">이름순</option></select></div>
+        <div class="list-caption"><span id="listLabel">활성 트랙</span><span id="resultCount" aria-live="polite"></span></div>
+        <div class="table-shell" id="tableShell" aria-busy="false"><table id="trackTable"><thead id="columns"></thead><tbody id="rows"></tbody></table><div id="empty" class="empty" hidden></div></div>
+        <div id="archiveMore" class="archive-more" hidden><span id="range" class="subtle"></span><button id="moreTracks">이전 기록 더 보기</button></div>
+        <div class="selection" id="selection"><div><strong id="selectionCount">트랙을 선택하세요</strong><span id="selectionHint">선정 후 세션에서 trackrun으로 실행합니다.</span></div><div class="selection-actions"><button class="text-button" id="clearSelection">선택 해제</button><button class="primary" id="start" disabled>trackrun 명령 복사 <span aria-hidden="true">→</span></button></div></div>
+        <div id="decisionHint" class="quiet-notice" hidden></div>
+      </section>
+      <section id="trackView" hidden aria-label="트랙 상세"></section>
+      <section id="activityView" hidden aria-label="실행 현황"><div class="workspace-grid"><div><div class="section-heading"><h2>진행 중인 작업</h2><span class="subtle" id="activityTotal"></span></div><div id="work"></div><details class="panel timeline"><summary>최근 활동 기록</summary><div id="events"></div><button id="moreEvents" class="text-button" hidden>이전 활동 더 보기 ↓</button></details></div><aside class="inspector"><div id="decisions"></div><div id="taskInspector" hidden><div class="panel"><div class="eyebrow">WORK CONTEXT</div><h2>작업의 맥락을 살펴보세요</h2><p class="subtle">왼쪽 작업을 선택하면 담당자, 작업권, 최근 실행과 결과가 표시됩니다.</p></div></div></aside></div></section>
+      <section id="watchView" hidden aria-label="Watch 목록"></section>
+    </div>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body></html>

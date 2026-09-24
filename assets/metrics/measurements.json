@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-09-24",
+  "period": {
+    "start_inclusive": "2026-01-01",
+    "end_exclusive": "2026-09-24",
+    "timezone": "Asia/Seoul"
+  },
+  "scope": {
+    "repository_count": 5,
+    "identity": "omitted",
+    "provenance": "Anonymized historical workflow records; not a benchmark of the current package."
+  },
+  "method": {
+    "basis": "commit-metrics 1.0.0, with an explicit source-only adjustment",
+    "monthly_time_basis": "committer time in Asia/Seoul",
+    "all_refs_commits": "Commits reachable from all snapshot refs, summed per repository; includes merges and may include rebased/unmerged work.",
+    "integration_source": "Non-merge commits reachable from the selected integration branch at the snapshot; commit month is not necessarily landing month. Git rename detection retained.",
+    "completion": "Sum of positive net increases in done status within each ledger-changing commit, not unique delivered features. Unavailable before July.",
+    "merge_proxy": "First-parent merge commits; not independently verified pull request counts.",
+    "source_extensions": [
+      ".ts",
+      ".tsx",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs",
+      ".py",
+      ".java",
+      ".rs",
+      ".c",
+      ".cc",
+      ".cpp",
+      ".h",
+      ".hpp",
+      ".css",
+      ".scss",
+      ".sass",
+      ".sh",
+      ".bash",
+      ".zsh",
+      ".go",
+      ".sql",
+      ".kt",
+      ".kts",
+      ".swift",
+      ".vue",
+      ".svelte",
+      ".graphql",
+      ".proto",
+      ".gradle"
+    ],
+    "excluded_categories": [
+      "dependency lockfiles and build output",
+      "generated and vendored directories",
+      "files outside the selected source extensions",
+      "all source changes on documented import/relocation dates"
+    ],
+    "source_excluded_dates": [
+      {
+        "date": "2026-01-05",
+        "reason": "initial code import"
+      },
+      {
+        "date": "2026-07-02",
+        "reason": "cross-repository relocation"
+      }
+    ],
+    "denominators": "Commits/merges/completion use observed calendar days. Adjusted source rates additionally exclude the two documented dates from their respective months. No active-day selection or forecast.",
+    "disclaimer": "Activity and changed lines do not measure labor hours, quality, or causal productivity gains."
+  },
+  "milestones": [
+    {
+      "month": "2026-07",
+      "label": "Registration and execution tooling first recorded",
+      "meaning": "First tracked artifacts; not proof of the first use date."
+    }
+  ],
+  "monthly": [
+    {
+      "month": "2026-01",
+      "calendar_days_observed": 31,
+      "source_days_observed": 30,
+      "partial_month": false,
+      "all_refs_commits": 289,
+      "integration_nonmerge_commits": 285,
+      "code_touching_commits": 242,
+      "docs_only_commits": 43,
+      "first_parent_merge_commits": 4,
+      "completed_status_increments": null,
+      "raw_code_add": 471565,
+      "raw_code_delete": 54012,
+      "source_add": 318619,
+      "source_delete": 52785,
+      "source_churn": 371404,
+      "source_touching_commits": 176,
+      "source_excluded": {
+        "outside_source_extensions": 12116,
+        "generated_or_vendored": 19160,
+        "import_or_relocation_day": 122897
+      },
+      "rates": {
+        "commits_per_calendar_day": 9.32258064516129,
+        "source_churn_per_observed_day": 12380.133333333333,
+        "merge_commits_per_calendar_day": 0.12903225806451613,
+        "completed_increments_per_calendar_day": null,
+        "source_lines_per_source_commit": 2110.25,
+        "docs_only_commit_share": 0.15087719298245614
+      },
+      "unclassified_fraction": 0.0
+    },
+    {
+      "month": "2026-02",
+      "calendar_days_observed": 28,
+      "source_days_observed": 28,
+      "partial_month": false,
+      "all_refs_commits": 201,
+      "integration_nonmerge_commits": 176,
+      "code_touching_commits": 164,
+      "docs_only_commits": 12,
+      "first_parent_merge_commits": 4,
+      "completed_status_increments": null,
+      "raw_code_add": 105120,
+      "raw_code_delete": 29087,
+      "source_add": 98348,
+      "source_delete": 27912,
+      "source_churn": 126260,
+      "source_touching_commits": 148,
+      "source_excluded": {
+        "outside_source_extensions": 1657,
+        "generated_or_vendored": 6290
+      },
+      "rates": {
+        "commits_per_calendar_day": 7.178571428571429,
+        "source_churn_per_observed_day": 4509.285714285715,
+        "merge_commits_per_calendar_day": 0.14285714285714285,
+        "completed_increments_per_calendar_day": null,
+        "source_lines_per_source_commit": 853.1081081081081,
+        "docs_only_commit_share": 0.06818181818181818
+      },
+      "unclassified_fraction": 0.0
+    },
+    {
+      "month": "2026-03",
+      "calendar_days_observed": 31,
+      "source_days_observed": 31,
+      "partial_month": false,
+      "all_refs_commits": 189,
+      "integration_nonmerge_commits": 180,
+      "code_touching_commits": 139,
+      "docs_only_commits": 41,
+      "first_parent_merge_commits": 3,
+      "completed_status_increments": null,
+      "raw_code_add": 56253,
+      "raw_code_delete": 8235,
+      "source_add": 51926,
+      "source_delete": 7822,
+      "source_churn": 59748,
+      "source_touching_commits": 129,
+      "source_excluded": {
+        "outside_source_extensions": 764,
+        "generated_or_vendored": 3976
+      },
+      "rates": {
+        "commits_per_calendar_day": 6.096774193548387,
+        "source_churn_per_observed_day": 1927.3548387096773,
+        "merge_commits_per_calendar_day": 0.0967741935483871,
+        "completed_increments_per_calendar_day": null,
+        "source_lines_per_source_commit": 463.16279069767444,
+        "docs_only_commit_share": 0.22777777777777777
+      },
+      "unclassified_fraction": 0.0
+    },
+    {
+      "month": "2026-04",
+      "calendar_days_observed": 30,
+      "source_days_observed": 30,
+      "partial_month": false,
+      "all_refs_commits": 143,
+      "integration_nonmerge_commits": 101,
+      "code_touching_commits": 80,
+      "docs_only_commits": 21,
+      "first_parent_merge_commits": 1,
+      "completed_status_increments": null,
+      "raw_code_add": 11940,
+      "raw_code_delete": 1470,
+      "source_add": 10583,
+      "source_delete": 1428,
+      "source_churn": 12011,
+      "source_touching_commits": 75,
+      "source_excluded": {
+        "outside_source_extensions": 886,
+        "generated_or_vendored": 513
+      },
+      "rates": {
+        "commits_per_calendar_day": 4.766666666666667,
+        "source_churn_per_observed_day": 400.3666666666667,
+        "merge_commits_per_calendar_day": 0.03333333333333333,
+        "completed_increments_per_calendar_day": null,
+        "source_lines_per_source_commit": 160.14666666666668,
+        "docs_only_commit_share": 0.2079207920792079
+      },
+      "unclassified_fraction": 0.0
+    },
+    {
+      "month": "2026-05",
+      "calendar_days_observed": 31,
+      "source_days_observed": 31,
+      "partial_month": false,
+      "all_refs_commits": 383,
+      "integration_nonmerge_commits": 363,
+      "code_touching_commits": 320,
+      "docs_only_commits": 43,
+      "first_parent_merge_commits": 9,
+      "completed_status_increments": null,
+      "raw_code_add": 69046,
+      "raw_code_delete": 19844,
+      "source_add": 59927,
+      "source_delete": 18510,
+      "source_churn": 78437,
+      "source_touching_commits": 310,
+      "source_excluded": {
+        "generated_or_vendored": 730,
+        "outside_source_extensions": 9723
+      },
+      "rates": {
+        "commits_per_calendar_day": 12.35483870967742,
+        "source_churn_per_observed_day": 2530.2258064516127,
+        "merge_commits_per_calendar_day": 0.2903225806451613,
+        "completed_increments_per_calendar_day": null,
+        "source_lines_per_source_commit": 253.0225806451613,
+        "docs_only_commit_share": 0.1184573002754821
+      },
+      "unclassified_fraction": 0.0
+    },
+    {
+      "month": "2026-06",
+      "calendar_days_observed": 30,
+      "source_days_observed": 30,
+      "partial_month": false,
+      "all_refs_commits": 682,
+      "integration_nonmerge_commits": 607,
+      "code_touching_commits": 403,
+      "docs_only_commits": 204,
+      "first_parent_merge_commits": 38,
+      "completed_status_increments": null,
+      "raw_code_add": 91438,
+      "raw_code_delete": 17042,
+      "source_add": 76931,
+      "source_delete": 12708,
+      "source_churn": 89639,
+      "source_touching_commits": 381,
+      "source_excluded": {
+        "outside_source_extensions": 12003,
+        "generated_or_vendored": 6838
+      },
+      "rates": {
+        "commits_per_calendar_day": 22.733333333333334,
+        "source_churn_per_observed_day": 2987.9666666666667,
+        "merge_commits_per_calendar_day": 1.2666666666666666,
+        "completed_increments_per_calendar_day": null,
+        "source_lines_per_source_commit": 235.2729658792651,
+        "docs_only_commit_share": 0.33607907742998355
+      },
+      "unclassified_fraction": 0.0
+    },
+    {
+      "month": "2026-07",
+      "calendar_days_observed": 31,
+      "source_days_observed": 30,
+      "partial_month": false,
+      "all_refs_commits": 2526,
+      "integration_nonmerge_commits": 2182,
+      "code_touching_commits": 955,
+      "docs_only_commits": 1227,
+      "first_parent_merge_commits": 309,
+      "completed_status_increments": 236,
+      "raw_code_add": 324390,
+      "raw_code_delete": 201384,
+      "source_add": 148750,
+      "source_delete": 44644,
+      "source_churn": 193394,
+      "source_touching_commits": 692,
+      "source_excluded": {
+        "outside_source_extensions": 15108,
+        "generated_or_vendored": 8415,
+        "import_or_relocation_day": 308857
+      },
+      "rates": {
+        "commits_per_calendar_day": 81.48387096774194,
+        "source_churn_per_observed_day": 6446.466666666666,
+        "merge_commits_per_calendar_day": 9.96774193548387,
+        "completed_increments_per_calendar_day": 7.612903225806452,
+        "source_lines_per_source_commit": 279.47109826589593,
+        "docs_only_commit_share": 0.5623281393217232
+      },
+      "unclassified_fraction": 3.7343914108997546e-05
+    },
+    {
+      "month": "2026-08",
+      "calendar_days_observed": 31,
+      "source_days_observed": 31,
+      "partial_month": false,
+      "all_refs_commits": 8086,
+      "integration_nonmerge_commits": 7111,
+      "code_touching_commits": 1812,
+      "docs_only_commits": 5299,
+      "first_parent_merge_commits": 769,
+      "completed_status_increments": 628,
+      "raw_code_add": 367106,
+      "raw_code_delete": 51584,
+      "source_add": 315397,
+      "source_delete": 45041,
+      "source_churn": 360438,
+      "source_touching_commits": 1504,
+      "source_excluded": {
+        "outside_source_extensions": 52710,
+        "generated_or_vendored": 5542
+      },
+      "rates": {
+        "commits_per_calendar_day": 260.83870967741933,
+        "source_churn_per_observed_day": 11627.032258064517,
+        "merge_commits_per_calendar_day": 24.806451612903224,
+        "completed_increments_per_calendar_day": 20.258064516129032,
+        "source_lines_per_source_commit": 239.6529255319149,
+        "docs_only_commit_share": 0.7451835184924764
+      },
+      "unclassified_fraction": 0.001462374195532118
+    },
+    {
+      "month": "2026-09",
+      "calendar_days_observed": 23,
+      "source_days_observed": 23,
+      "partial_month": true,
+      "all_refs_commits": 7275,
+      "integration_nonmerge_commits": 6299,
+      "code_touching_commits": 1344,
+      "docs_only_commits": 4955,
+      "first_parent_merge_commits": 514,
+      "completed_status_increments": 402,
+      "raw_code_add": 348293,
+      "raw_code_delete": 54311,
+      "source_add": 276157,
+      "source_delete": 34679,
+      "source_churn": 310836,
+      "source_touching_commits": 1108,
+      "source_excluded": {
+        "outside_source_extensions": 48603,
+        "generated_or_vendored": 43165
+      },
+      "rates": {
+        "commits_per_calendar_day": 316.30434782608694,
+        "source_churn_per_observed_day": 13514.608695652174,
+        "merge_commits_per_calendar_day": 22.347826086956523,
+        "completed_increments_per_calendar_day": 17.47826086956522,
+        "source_lines_per_source_commit": 280.5379061371841,
+        "docs_only_commit_share": 0.7866327988569615
+      },
+      "unclassified_fraction": 0.000373500909772644
+    }
+  ]
+}
