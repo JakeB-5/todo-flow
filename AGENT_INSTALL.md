@@ -28,7 +28,7 @@ Check Python 3.11+, uv, Git, and the chosen authenticated Claude/Codex CLI. GitH
 For a fresh release installation, no checkout is required:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.1/todo_flow-0.0.1-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.2/todo_flow-0.0.2-py3-none-any.whl
 export PATH="$(uv tool dir --bin):$PATH"
 todo-flow --version
 trackrun --version
@@ -47,7 +47,7 @@ trackrun --help
 
 Reuse a compatible installation. Diagnose PATH before reinstalling. Before replacing a shared engine, consider other running projects. Use the documented GitHub release wheel; do not assume a same-named package on another index is this project.
 
-Version `0.0.2` on `main` is not yet published. It adds on-demand file reads and terminal-first workers; these are not in the `0.0.1` release wheel. When those capabilities are requested, use the source-development path and state the installed version/source accurately. The new launcher defaults to `auto` (Orca, configured terminal or existing tmux, then headless); do not force headless merely because the worker is automatic. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
+Version `0.0.2` adds on-demand file reads and terminal-first workers. Existing `0.0.1` installations need an engine and project-skill update to use these capabilities; follow [the update guide](UPDATES.md). The new launcher defaults to `auto` (Orca, configured terminal or existing tmux, then headless); do not force headless merely because the worker is automatic. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers).
 
 ## 3. Configure the project
 

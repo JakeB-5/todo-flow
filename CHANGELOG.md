@@ -2,7 +2,7 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
-## 0.0.2 — Unreleased
+## 0.0.2 — 2026-09-24
 
 ### Fixed
 
@@ -11,6 +11,7 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ### Validation
 
+- Upgraded an isolated installation from the published `0.0.1` wheel to `0.0.2`, updated and rolled back project skills, then rolled back the engine. Canonical state and project language bindings remained unchanged.
 - Real Codex workers in 14 Orca terminals completed three parallel tracks through independent reviews, GitHub PR merges, triage and issue closure in a fresh public fixture, without decisions or runtime errors. Follow-up documentation was registered/linked and left unselected. See the [run artifacts](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924).
 
 ### Changed

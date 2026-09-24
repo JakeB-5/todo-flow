@@ -4,7 +4,7 @@
 
 Update the shared engine once, then update the installed skills of each project. Project documents and execution records remain in their existing state directory. Updating does not reinitialize a project or start pending work.
 
-## Available in 0.0.1
+## Update capabilities
 
 | Capability | Behavior |
 |---|---|
@@ -20,7 +20,7 @@ Update the shared engine once, then update the installed skills of each project.
 
 The `0.0.1` release contracts are **state format 1, configuration format 1, worker protocol 1 and skill protocol 1**. Package versions and data formats are independent. Older file-backed projects without the new optional configuration metadata use format/protocol 1. No data migration is necessary for this release. The existing explicit SQL-to-files migration remains a separate command.
 
-Version `0.0.2` (not yet published) initializes **worker protocol 2** and requires engine `0.0.2` for newly initialized project configurations for path-based inputs. State/configuration/skill formats remain 1. The built-in Claude/Codex adapters accept existing project configurations and produce the new path-based input without rewriting state. Custom command adapters must be updated to read `workspace` and `paths`, and explicitly opt into protocol 2 while stopped; protocol-1 custom workers fail before spawning. Older release engines cannot run newly initialized protocol-2 projects. Terminal selection is a separate optional setting (`worker_launcher`, default `auto`); `--launcher` changes only the current driver. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
+Version `0.0.2` initializes **worker protocol 2** for path-based inputs. Newly initialized project configurations require engine `0.0.2` or later. State/configuration/skill formats remain 1. The built-in Claude/Codex adapters accept existing project configurations and produce the new path-based input without rewriting state. Custom command adapters must be updated to read `workspace` and `paths`, and explicitly opt into protocol 2 while stopped; protocol-1 custom workers fail before spawning. Older release engines cannot run newly initialized protocol-2 projects. Terminal selection is a separate optional setting (`worker_launcher`, default `auto`); `--launcher` changes only the current driver. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers).
 
 ## 1. Inspect and stop relevant processes
 
@@ -41,7 +41,7 @@ All cooperating processes must use the same `TODO_FLOW_HOME`. Process locks are 
 
 This path requires an existing **`uv tool install` installation** and `uv` on PATH. Source checkouts, editable environments, ordinary virtualenv installations and uv tool installs with custom extra requirements/options or entrypoints are diagnosed rather than overwritten. Update those environments using their original workflow while idle, then run project compatibility and skill checks.
 
-Obtain a trusted release wheel. The filename below illustrates a future version; `0.0.2` is not published by this guide.
+Download the wheel and `SHA256SUMS` from the [v0.0.2 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.2), verify its checksum, then pass the local wheel path:
 
 ```sh
 todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.2-py3-none-any.whl --dry-run
