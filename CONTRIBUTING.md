@@ -64,6 +64,10 @@ Packaging changes should work without ignored local files. Verify the source dis
 
 GitHub Actions is configured for macOS and Linux with Python 3.11 and 3.13, using uv 0.10.11 and explicitly installed ripgrep. Configuration alone does not establish a successful hosted run; report local and hosted validation separately.
 
+Automatic checks run on pushes to `main` and on pull requests, except when all changed files are root-level Markdown guides, `assets/` presentation files or local `docs/`. Mixed documentation/code changes still run the full matrix. Skill Markdown under `skills/`, runtime/dashboard code, templates, tests, scripts, dependencies and workflow configuration remain covered. Feature-branch pushes are checked through their pull request; tag pushes do not repeat the matrix already run for the release commit.
+
+Use **Actions → Checks → Run workflow** when a full matrix is needed regardless of changed paths, including release preparation after documentation-only changes. A newer run cancels an older run for the same event and branch or pull request. Before making these checks required in branch protection, add an always-reported gate: GitHub's workflow-level path skips leave required checks pending.
+
 ## Demos and external acceptance
 
 [DEMO.md](DEMO.md) documents the local UI fixture and full workflow exercise. The fixture is synthetic and read-only, with 48 active and 2,500 completed tracks. It makes no model calls or remote changes.

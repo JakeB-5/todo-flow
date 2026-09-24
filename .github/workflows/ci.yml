@@ -1,9 +1,22 @@
 name: Checks
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'assets/**'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '*.md'
+      - 'assets/**'
+      - 'docs/**'
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     strategy:

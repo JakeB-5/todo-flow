@@ -4,6 +4,10 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ## Unreleased
 
+### Changed
+
+- Skip the CI matrix for root Markdown guides and presentation assets alone. Check `main` pushes and pull requests, avoid duplicate tag/feature-branch push runs, cancel superseded runs and allow manual full checks.
+
 ## 0.0.1 — 2026-09-24
 
 ### Added
