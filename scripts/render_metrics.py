@@ -33,12 +33,81 @@ def compact(value, _position=None):
 
 def save(fig, name):
     fig.savefig(OUTPUT / (name + ".png"), dpi=150, facecolor=fig.get_facecolor())
+    svg = OUTPUT / (name + ".svg")
     fig.savefig(
-        OUTPUT / (name + ".svg"),
+        svg,
         facecolor=fig.get_facecolor(),
         metadata={"Date": None, "Creator": "TODO Flow aggregate chart renderer"},
     )
+    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
     plt.close(fig)
+
+
+def marketing_hero(rows):
+    fig = plt.figure(figsize=(14, 7), facecolor="#102f25")
+    fig.text(0.065, 0.89, "TODO FLOW", color="#a9dfb1", size=13, weight="bold")
+    fig.text(
+        0.065,
+        0.695,
+        "From TODO\nto delivered.",
+        color="white",
+        size=38,
+        weight="bold",
+        linespacing=1.14,
+    )
+    fig.text(0.065, 0.505, "Pick the work. Let agents carry it forward.", color="#c3d8cc", size=13)
+
+    fig.add_artist(
+        FancyBboxPatch(
+            (0.635, 0.27),
+            0.30,
+            0.54,
+            boxstyle="round,pad=0.015,rounding_size=0.025",
+            transform=fig.transFigure,
+            facecolor="#b9edb8",
+            edgecolor="none",
+        )
+    )
+    first, last = rows[0], rows[-1]
+    ratio = last["rates"]["commits_per_calendar_day"] / first["rates"]["commits_per_calendar_day"]
+    fig.text(0.665, 0.72, "RECORDED DEVELOPMENT ACTIVITY", color=INK, size=9, weight="bold")
+    fig.text(0.652, 0.44, f"{int(ratio)}×", color="#143c29", size=104, weight="bold")
+    fig.text(0.665, 0.365, "DAILY COMMIT ACTIVITY", color=INK, size=12, weight="bold")
+    fig.text(
+        0.665,
+        0.305,
+        f"{first['rates']['commits_per_calendar_day']:.1f} → {last['rates']['commits_per_calendar_day']:.1f} commits / day",
+        color="#355b43",
+        size=13,
+    )
+
+    flow = [
+        ("01", "TODO", "Define the outcome"),
+        ("02", "PICK", "Choose what matters"),
+        ("03", "RUN", "Agents take it forward"),
+    ]
+    for i, (number, title, caption) in enumerate(flow):
+        x = 0.065 + i * 0.185
+        fig.text(x, 0.325, number, color="#79b990", size=10)
+        fig.text(x, 0.265, title, color="white", size=17, weight="bold")
+        fig.text(x, 0.215, caption, color="#b9cec1", size=9)
+
+    fig.text(
+        0.065,
+        0.105,
+        "PARALLEL WORK  ·  DURABLE HANDOFFS  ·  VISIBLE PROGRESS",
+        color="#a9dfb1",
+        size=10,
+        weight="bold",
+    )
+    fig.text(
+        0.065,
+        0.047,
+        "Anonymized predecessor workflow history · Daily commit activity · Jan → Sep 2026 (Sep 1–23).",
+        color="#9eb9a7",
+        size=8.5,
+    )
+    save(fig, "workflow-impact")
 
 
 def style_axis(ax):
@@ -266,11 +335,19 @@ def main():
             == row["raw_code_add"] + row["raw_code_delete"]
         )
     plt.rcParams.update(
-        {"font.family": "DejaVu Sans", "svg.fonttype": "path", "axes.unicode_minus": False}
+        {
+            "font.family": "DejaVu Sans",
+            "svg.fonttype": "path",
+            "svg.hashsalt": "todo-flow-public-metrics",
+            "axes.unicode_minus": False,
+        }
     )
+    marketing_hero(rows)
     overview(rows)
     source_changes(rows)
-    print("Rendered anonymous workflow-growth and source-changes charts (PNG and SVG).")
+    print(
+        "Rendered anonymous workflow-impact, workflow-growth and source-changes images (PNG and SVG)."
+    )
 
 
 if __name__ == "__main__":

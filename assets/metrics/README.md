@@ -70,6 +70,7 @@
 
 ## 이미지와 재생성
 
+- [마케팅 요약 PNG](workflow-impact.png) · [SVG](workflow-impact.svg)
 - [전체 추이 PNG](workflow-growth.png) · [SVG](workflow-growth.svg)
 - [소스 추가·삭제·제외량 PNG](source-changes.png) · [SVG](source-changes.svg)
 - [집계 JSON](measurements.json) · [월별 CSV](monthly.csv)
