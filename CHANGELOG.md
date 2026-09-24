@@ -2,12 +2,17 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
-## Unreleased
+## 0.0.3 — 2026-09-25
 
 ### Fixed
 
 - Connect failed integration to the repair checkout: fetch and pin the current base, merge it into the candidate branch, and provide conflict markers plus readable ancestor/candidate/base files through evidence paths. Resume interrupted repairs without discarding the merge, including after a decision answer or a commit before state persistence.
 - Require renewed verification, publication and independent review of the repaired candidate before landing. Preserve both merge parents even when resolution keeps the candidate tree. Distinguish Git execution errors from actual unresolved conflicts, and repair combined-verification failures on the merged tree.
+
+### Validation
+
+- 111 Python tests passed for the repair implementation, including 10 local Git conflict/recovery regressions. Repair tests use deterministic workers reading real checkout and evidence files; no new live-model acceptance is claimed.
+- Published `0.0.2` to `0.0.3` engine upgrade, skill manifest update/rollback and engine rollback passed in an isolated installation; canonical state and language bindings remained unchanged.
 
 ## 0.0.2 — 2026-09-24
 

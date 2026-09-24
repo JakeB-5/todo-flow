@@ -22,6 +22,8 @@ The `0.0.1` release contracts are **state format 1, configuration format 1, work
 
 Version `0.0.2` initializes **worker protocol 2** for path-based inputs. Newly initialized project configurations require engine `0.0.2` or later. State/configuration/skill formats remain 1. The built-in Claude/Codex adapters accept existing project configurations and produce the new path-based input without rewriting state. Custom command adapters must be updated to read `workspace` and `paths`, and explicitly opt into protocol 2 while stopped; protocol-1 custom workers fail before spawning. Older release engines cannot run newly initialized protocol-2 projects. Terminal selection is a separate optional setting (`worker_launcher`, default `auto`); `--launcher` changes only the current driver. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers).
 
+Version `0.0.3` fixes integration repair handoffs and recovery without changing these formats or protocols. No state migration is required. The repair instructions are bundled with the engine; check each project’s installed skills using the normal update procedure.
+
 ## 1. Inspect and stop relevant processes
 
 ```sh
@@ -41,11 +43,11 @@ All cooperating processes must use the same `TODO_FLOW_HOME`. Process locks are 
 
 This path requires an existing **`uv tool install` installation** and `uv` on PATH. Source checkouts, editable environments, ordinary virtualenv installations and uv tool installs with custom extra requirements/options or entrypoints are diagnosed rather than overwritten. Update those environments using their original workflow while idle, then run project compatibility and skill checks.
 
-Download the wheel and `SHA256SUMS` from the [v0.0.2 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.2), verify its checksum, then pass the local wheel path:
+Download the wheel and `SHA256SUMS` from the [v0.0.3 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.3), verify its checksum, then pass the local wheel path:
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.2-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.2-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.3-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.3-py3-none-any.whl
 ```
 
 The plan shows versions, artifact digest, compatibility contracts and known projects. Execution rechecks those facts under an exclusive runtime lock, snapshots the artifact, backs up the installed environment and two entrypoints, invokes uv, and checks the installed version, entrypoints and bundled skills. An ordinary install/validation failure restores the previous environment. Upgrades do not change project configuration, documents, claims or remote state.
