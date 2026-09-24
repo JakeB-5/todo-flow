@@ -8,7 +8,7 @@ from unittest.mock import patch
 from todo_flow import skill_updates
 from todo_flow.file_store import FileDatabase, atomic, dump
 from todo_flow.maintenance import home, lease, project_lock, runtime_guard
-from todo_flow.release import project_compatibility
+from todo_flow.release import VERSION, project_compatibility, release_number
 from todo_flow.schema import SCHEMA
 from todo_flow.store import Store
 
@@ -38,8 +38,13 @@ class UpdateTests(unittest.TestCase):
         return skill_updates.update(self.target, self.state, "ko", install=True, source=self.source)
 
     def update(self, **kwargs):
+        major, minor, patch = release_number(VERSION)
         return skill_updates.update(
-            self.target, self.state, source=self.source, version="0.0.2", **kwargs
+            self.target,
+            self.state,
+            source=self.source,
+            version=f"{major}.{minor}.{patch + 1}",
+            **kwargs,
         )
 
     def test_update_preserves_context_custom_files_and_unmodified_vendor_local_edits(self):

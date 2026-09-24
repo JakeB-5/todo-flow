@@ -78,7 +78,7 @@ Multiple drivers do not share a global concurrency budget. A dead driver or expi
 
 ## Worker context and terminal launchers (unreleased)
 
-This section describes `main` after `0.0.1`; the published `0.0.1` wheel retains snapshot workers. Workers now start in the assigned implementation/review checkout, or the exact fetched-base checkout for triage. Input contains the task, workspace, head, language, exploration hints, write boundaries and a `paths` map. Goal/conditions, the rich track document, full diff, verification, decisions, prior results and triage evidence are read by path. Project source is not collected into stdin, and there is no aggregate 150 KB source limit. Model context limits still apply to selected reads.
+This section describes `0.0.2` release preparation on `main`; the published `0.0.1` wheel retains snapshot workers. Workers now start in the assigned implementation/review checkout, or the exact fetched-base checkout for triage. Input contains the task, workspace, head, language, exploration hints, write boundaries and a `paths` map. Goal/conditions, the rich track document, full diff, verification, decisions, prior results and triage evidence are read by path. Project source is not collected into stdin, and there is no aggregate 150 KB source limit. Model context limits still apply to selected reads.
 
 Codex uses read-only shell tools (including `rg`); Claude exposes Read, Glob and Grep. `context_patterns` / `--context` are navigation hints, not read-access controls. Run with the access appropriate to your project. Workers return JSON proposals; the engine still applies authorized writes, runs verification, commits and handles remote effects. These are automatic workers with live logs, not interactive agent chats.
 
@@ -147,7 +147,7 @@ todo-flow migrate-files --source OLD_SQL_STATE --target NEW_FILE_STATE
 todo-flow --state STATE hooks
 ```
 
-On development `main`, completion requests automatic cleanup of the track's implementation worktrees (including earlier repair attempts), integration checkouts, triage checkouts and exited worker terminals. The published `0.0.1` release only has explicit cleanup of the current implementation worktree. `init --no-auto-cleanup` disables automatic cleanup for a new project; `trackrun ... --no-auto-cleanup` or `run --no-auto-cleanup` disables it for one driver. Manual cleanup remains available.
+In the unpublished `0.0.2` source, completion requests automatic cleanup of the track's implementation worktrees (including earlier repair attempts), integration checkouts, triage checkouts and exited worker terminals. The published `0.0.1` release only has explicit cleanup of the current implementation worktree. `init --no-auto-cleanup` disables automatic cleanup for a new project; `trackrun ... --no-auto-cleanup` or `run --no-auto-cleanup` disables it for one driver. Manual cleanup remains available.
 
 Cleanup preserves the main checkout, local branches, track documents, revisions, results, verification/review/triage evidence and raw attempt logs. It checks the actual checkout HEAD against the fetched remote base, not just the recorded candidate SHA. Unlanded candidates, unfinished work, dirty/untracked files, unknown ignored files, changed terminal identities and terminals with newer activity are retained with a reason. Ignored Python `__pycache__/*.pyc` files are disposable; other ignored files require inspection. No forced worktree removal or branch deletion is used.
 

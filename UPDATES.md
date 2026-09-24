@@ -20,7 +20,7 @@ Update the shared engine once, then update the installed skills of each project.
 
 The `0.0.1` release contracts are **state format 1, configuration format 1, worker protocol 1 and skill protocol 1**. Package versions and data formats are independent. Older file-backed projects without the new optional configuration metadata use format/protocol 1. No data migration is necessary for this release. The existing explicit SQL-to-files migration remains a separate command.
 
-Unreleased `main` initializes **worker protocol 2** for path-based inputs. State/configuration/skill formats remain 1. The built-in Claude/Codex adapters accept existing project configurations and produce the new path-based input without rewriting state. Custom command adapters must be updated to read `workspace` and `paths`, and explicitly opt into protocol 2 while stopped; protocol-1 custom workers fail before spawning. Older release engines cannot run newly initialized protocol-2 projects. Terminal selection is a separate optional setting (`worker_launcher`, default `auto`); `--launcher` changes only the current driver. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
+Version `0.0.2` (not yet published) initializes **worker protocol 2** and requires engine `0.0.2` for newly initialized project configurations for path-based inputs. State/configuration/skill formats remain 1. The built-in Claude/Codex adapters accept existing project configurations and produce the new path-based input without rewriting state. Custom command adapters must be updated to read `workspace` and `paths`, and explicitly opt into protocol 2 while stopped; protocol-1 custom workers fail before spawning. Older release engines cannot run newly initialized protocol-2 projects. Terminal selection is a separate optional setting (`worker_launcher`, default `auto`); `--launcher` changes only the current driver. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
 
 ## 1. Inspect and stop relevant processes
 
@@ -125,7 +125,7 @@ It checks an active dashboard blocking upgrade, a successful engine update, skil
 
 ## Further preparation for future releases
 
-These are follow-up items, not capabilities already provided by 0.0.1.
+These are follow-up items, not capabilities already provided by the current implementation.
 
 | Priority | Preparation | Reason / completion criterion |
 |---|---|---|

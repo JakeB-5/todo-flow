@@ -43,7 +43,7 @@ def initialize(args):
         "worker_launcher": args.launcher,
         "cleanup_on_complete": not args.no_auto_cleanup,
         "created_by": VERSION,
-        "min_engine_version": "0.0.1",
+        "min_engine_version": "0.0.2",
     }
     store = Store(args.state or repo / "todo")
     store.configure(config)

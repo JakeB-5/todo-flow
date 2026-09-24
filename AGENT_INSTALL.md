@@ -47,7 +47,7 @@ trackrun --help
 
 Reuse a compatible installation. Diagnose PATH before reinstalling. Before replacing a shared engine, consider other running projects. Use the documented GitHub release wheel; do not assume a same-named package on another index is this project.
 
-Unreleased `main` adds on-demand file reads and terminal-first workers; these are not in the `0.0.1` release wheel. When those capabilities are requested, use the source-development path and state the installed version/source accurately. The new launcher defaults to `auto` (Orca, configured terminal or existing tmux, then headless); do not force headless merely because the worker is automatic. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
+Version `0.0.2` on `main` is not yet published. It adds on-demand file reads and terminal-first workers; these are not in the `0.0.1` release wheel. When those capabilities are requested, use the source-development path and state the installed version/source accurately. The new launcher defaults to `auto` (Orca, configured terminal or existing tmux, then headless); do not force headless merely because the worker is automatic. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
 
 ## 3. Configure the project
 
@@ -62,7 +62,7 @@ For a new project, obtain values from the actual project:
 | `--base`, optional `--github` | Actual remote/base and GitHub owner/repository |
 | `--worker` | User's selected or available authenticated Claude/Codex CLI |
 | `--verify` | An existing, working verification command expressed as JSON argv |
-| `--context`, `--write` | Exploration hints on development `main` (snapshot selection in `0.0.1`) and authorized write patterns |
+| `--context`, `--write` | Exploration hints in `0.0.2` (snapshot selection in `0.0.1`) and authorized write patterns |
 | Endpoint | Default `review`; use `--endpoint land --allow-land` when landing is already authorized |
 
 Run the verification command before configuring it. Report pre-existing failures rather than hiding them. Exclude secret files. An initial commit, Git author identity and `origin` are required for execution. Do not bootstrap a missing remote, commit unrelated work or reset history without a request that covers it.
