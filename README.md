@@ -62,8 +62,8 @@ Choose **English (`en`) or Korean (`ko`) during project setup**. This sets the p
 Paste this into your coding-agent session, filling in the project and first task:
 
 ```text
-Install TODO Flow in /absolute/my-project using AGENT_INSTALL.md from this
-checkout. Ask me to choose English or Korean if I have not specified it.
+Install TODO Flow in /absolute/my-project following
+https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md. Ask me to choose English or Korean if I have not specified it.
 My first task is: [the change and expected result].
 Register a reviewable HTML TODO and show me its link. Select and run the
 track that covers this request, then report the actual result and next steps.
@@ -73,13 +73,14 @@ track that covers this request, then report the actual result and next steps.
 
 ### Install manually
 
-Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Start from a local checkout of this repository:
+Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Install the published release:
 
 ```sh
-uv sync --frozen
-uv tool install .
-todo-flow --help
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.1/todo_flow-0.0.1-py3-none-any.whl
+todo-flow --version
 ```
+
+[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.1). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
 
 In the **target project**, use its real verification command, base branch and relevant file patterns. This example assumes an existing Python project with a test suite, an initial Git commit and an `origin` remote:
 
@@ -189,7 +190,7 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 ## Current scope
 
-Development version **0.0.1**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
+Early release **0.0.1**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
 - Built-in workers receive tools-disabled file snapshots and return JSON proposals. Direct worker shell/browser/repository exploration is not implemented.

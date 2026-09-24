@@ -1,8 +1,10 @@
 # Changelog
 
-User-visible behavior, compatibility, important fixes and repository changes. The package is prepared for its first release, `0.0.1`. It has not been published; entries remain under Unreleased until release.
+User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
 ## Unreleased
+
+## 0.0.1 — 2026-09-24
 
 ### Added
 

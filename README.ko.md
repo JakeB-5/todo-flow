@@ -56,7 +56,8 @@
 에이전트에게 다음처럼 요청할 수 있습니다.
 
 ```text
-이 체크아웃의 AGENT_INSTALL.md에 따라 /absolute/my-project에 TODO Flow를
+https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md에 따라
+/absolute/my-project에 TODO Flow를
 설치해줘. 기본 언어는 한국어로 해줘.
 첫 작업은 [원하는 변경과 기대 결과]야. HTML TODO를 등록하고 문서 링크를
 보여줘. 이 요구에 맞는 트랙을 선정해 첫 런까지 진행하고 실제 결과를 알려줘.
@@ -64,12 +65,14 @@
 
 언어를 지정하지 않았다면 설치 에이전트가 선택을 묻습니다. 설치만 요청하면 설치까지만 진행합니다.
 
-직접 설치할 때는 Python 3.11+, uv, Git과 인증된 Claude/Codex CLI가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. TODO Flow 체크아웃에서:
+직접 설치할 때는 Python 3.11+, uv, Git과 인증된 Claude/Codex CLI가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다:
 
 ```sh
-uv sync --frozen
-uv tool install .
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.1/todo_flow-0.0.1-py3-none-any.whl
+todo-flow --version
 ```
+
+[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.1). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
 
 초기 커밋과 `origin`이 있는 대상 프로젝트로 이동합니다. 아래는 Python 프로젝트 예시이므로 검증 명령·기준 브랜치·파일 범위를 실제 프로젝트에 맞게 지정하세요.
 
@@ -148,7 +151,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 ## 현재 범위
 
-개발 버전 **0.0.1**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
+초기 릴리스 **0.0.1**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
 
 - 상태 하나당 저장소 하나. Forgejo·서브모듈·복수 저장소 결합 랜딩 미지원.
 - 기본 워커는 도구 없는 파일 스냅샷을 받아 JSON 변경안을 반환합니다. 직접 셸·브라우저·저장소 탐색 미지원.

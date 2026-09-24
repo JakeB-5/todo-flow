@@ -25,7 +25,16 @@ For Claude sessions, use `.claude/skills`. Variables may not survive separate sh
 
 Check Python 3.11+, uv, Git, and the chosen authenticated Claude/Codex CLI. GitHub integration also needs authenticated `gh` and access to the actual target remote. Do not substitute a model without a reason in the user's request. Keep credentials out of documents, configuration and output.
 
-Install from the TODO Flow checkout when necessary:
+For a fresh release installation, no checkout is required:
+
+```sh
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.1/todo_flow-0.0.1-py3-none-any.whl
+export PATH="$(uv tool dir --bin):$PATH"
+todo-flow --version
+trackrun --version
+```
+
+The official repository is [https://github.com/JakeB-5/todo-flow](https://github.com/JakeB-5/todo-flow); release artifacts and checksums are on [GitHub Releases](https://github.com/JakeB-5/todo-flow/releases). If source development was requested, install from the TODO Flow checkout instead:
 
 ```sh
 cd "$FLOW_SOURCE"
@@ -36,7 +45,7 @@ todo-flow --help
 trackrun --help
 ```
 
-Reuse a compatible installation. Diagnose PATH before reinstalling. Before replacing a shared engine, consider other running projects. There is no published-package or bootstrap-script assumption in this guide.
+Reuse a compatible installation. Diagnose PATH before reinstalling. Before replacing a shared engine, consider other running projects. Use the documented GitHub release wheel; do not assume a same-named package on another index is this project.
 
 ## 3. Configure the project
 
