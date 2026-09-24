@@ -2,6 +2,7 @@
 {
   "id": "replace-with-track-id",
   "title": "Track title",
+  "language": "en",
   "conditions": [
     {
       "id": "condition-1",
@@ -14,10 +15,10 @@
     "text"
   ],
   "priority": "HIGH",
-  "trigger": "착수 별도 지시. 선행 없음.",
+  "trigger": "Start only after explicit selection. No prerequisites.",
   "effort": {
-    "estimate": "범위별 예상",
-    "basis": "추정 근거"
+    "estimate": "Estimate by scope",
+    "basis": "Estimation basis"
   },
   "links": [],
   "derivedFrom": [],
@@ -25,52 +26,52 @@
   "decisionRequests": [
     {
       "id": "decision-if-needed",
-      "question": "실질적인 선택이 필요한 경우에만 작성",
+      "question": "Include only when a meaningful decision is needed",
       "owner": "user",
-      "unlocks": "이 결정이 여는 구체적인 범위",
-      "beforeDecision": "결정 전에 진행할 수 있는 범위"
+      "unlocks": "Specific scope unlocked by this decision",
+      "beforeDecision": "Work that can proceed before the decision"
     }
   ],
   "duplicateCheck": {
     "queries": [
-      "증상",
-      "관련 함수"
+      "symptom",
+      "related function"
     ],
     "candidates": [],
     "decision": "new",
-    "reason": "기존 트랙과 구별되는 요구"
+    "reason": "Requirement distinct from existing tracks"
   },
   "watchRefs": [],
   "history": [
     {
       "date": "YYYY-MM-DD",
       "kind": "created",
-      "note": "조사 근거·중복 판정 요약"
+      "note": "Investigation evidence and overlap decision"
     }
   ],
   "routingAdvice": {
     "tier": "M",
-    "basis": "작업 성격과 범위에 따른 참고 판단. 모델 설정은 프로젝트 실행 계약에서 결정"
+    "basis": "Advisory assessment of work and scope. Model selection belongs to project configuration."
   }
 }
 ---
 
-## 목표
+## Goal
 <!-- todo-flow:goal -->
 Observable result the user wants
 <!-- /todo-flow:goal -->
 
-## 범위
+## Scope
 <!-- todo-flow:scope -->
 Included work and explicit exclusions
 <!-- /todo-flow:scope -->
 
-## 문제와 근거
+## Problem and evidence
 <!-- todo-flow:evidence -->
 Request, observation or source that establishes the problem
 <!-- /todo-flow:evidence -->
 
-## 접근과 결정
+## Approach and decisions
 <!-- todo-flow:design -->
 Optional decisions, hypotheses and rationale; do not copy runtime status here
 <!-- /todo-flow:design -->

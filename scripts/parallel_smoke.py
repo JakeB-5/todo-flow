@@ -19,6 +19,7 @@ def main():
         action="store_true",
         help="Seed explicit residual observations and verify automatic dispositions",
     )
+    p.add_argument("--language", choices=["en", "ko"], default="en")
     args = p.parse_args()
     root = Path(args.root).resolve()
     if root.exists():
@@ -55,6 +56,8 @@ def main():
         cli
         + [
             "init",
+            "--language",
+            args.language,
             "--repo",
             str(repo),
             "--github",

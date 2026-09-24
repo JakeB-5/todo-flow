@@ -2,6 +2,7 @@
 
 import json
 import time
+import hashlib
 
 
 SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
@@ -9,8 +10,8 @@ SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
  json_extract(t.document,'$.goal') AS goal,
  json_extract(t.document,'$.trigger') AS trigger,
  json_extract(t.document,'$.group') AS track_group,
- COALESCE(json_extract(t.document,'$.priority'),'미지정') AS priority,
- COALESCE(json_extract(t.document,'$.area'),'일반') AS area"""
+ COALESCE(json_extract(t.document,'$.priority'),'Unspecified') AS priority,
+ COALESCE(json_extract(t.document,'$.area'),'General') AS area"""
 
 
 def bounds(limit=25, offset=0):
@@ -85,7 +86,11 @@ class Dashboard:
             "revision": revision,
             "observedAt": time.time(),
             "project": {
-                k: config.get(k) for k in ("github", "base", "endpoint", "display_name", "demo")
+                **{
+                    k: config.get(k) for k in ("github", "base", "endpoint", "display_name", "demo")
+                },
+                "language": config.get("language", "en"),
+                "key": hashlib.sha256(str(self.store.path).encode()).hexdigest()[:24],
             },
         }
 

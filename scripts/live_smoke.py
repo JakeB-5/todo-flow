@@ -16,6 +16,7 @@ def main():
     p.add_argument("--create-public", required=True, metavar="OWNER/NEW-REPO")
     p.add_argument("--root", required=True, help="New empty local directory")
     p.add_argument("--model")
+    p.add_argument("--language", choices=["en", "ko"], default="en")
     args = p.parse_args()
     root = Path(args.root).resolve()
     if root.exists():
@@ -49,6 +50,8 @@ def main():
     cli = [sys.executable, "-m", "todo_flow", "--state", str(state)]
     init = cli + [
         "init",
+        "--language",
+        args.language,
         "--repo",
         str(repo),
         "--github",

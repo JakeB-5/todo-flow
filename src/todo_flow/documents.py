@@ -11,7 +11,18 @@ from markdown_it import MarkdownIt
 import json
 import re
 
-SECTIONS = {"goal": "목표", "scope": "범위", "evidence": "문제와 근거", "design": "접근과 결정"}
+SECTIONS = {
+    "goal": "Goal",
+    "scope": "Scope",
+    "evidence": "Problem and evidence",
+    "design": "Approach and decisions",
+}
+KOREAN_SECTIONS = {
+    "goal": "목표",
+    "scope": "범위",
+    "evidence": "문제와 근거",
+    "design": "접근과 결정",
+}
 
 
 def render(doc):
@@ -19,6 +30,8 @@ def render(doc):
     header = json.dumps(metadata, ensure_ascii=False, indent=2)
     parts = ["---\n" + header + "\n---\n"]
     for key, title in SECTIONS.items():
+        if doc.get("language") == "ko":
+            title = KOREAN_SECTIONS[key]
         if key in doc:
             # JSON values other than prose remain supported by legacy documents.
             value = doc[key]
@@ -161,6 +174,12 @@ def assets_for(doc):
 def render_html(doc):
     if mode(doc) == "html":
         return source(doc)
+    language = "ko" if doc.get("language") == "ko" else "en"
+    heading, result_label, method_label = (
+        ("완료 조건", "확인할 결과", "검증 방법")
+        if language == "ko"
+        else ("Acceptance conditions", "Expected result", "Verification method")
+    )
     text = source(doc).split("\n---\n", 1)[1]
     body = MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"]).render(text)
     conditions = "".join(
@@ -170,7 +189,7 @@ def render_html(doc):
     contract = json.dumps(
         {k: v for k, v in doc.items() if k != "presentation"}, ensure_ascii=False, indent=2
     ).replace("<", "\\u003c")
-    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    return f"""<!doctype html><html lang="{language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(doc["title"])}</title><style>
 body{{max-width:1100px;margin:32px auto;padding:0 24px;color:#243a31;background:#f8faf7;font:15px/1.8 system-ui,sans-serif}}h1{{font-size:32px}}h2{{margin-top:32px}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #d9e1da;padding:10px;text-align:left}}img,svg,canvas,video{{max-width:100%}}pre{{overflow:auto;padding:16px;background:#edf2ec}}figure{{margin:24px 0}}figcaption{{color:#627567;font-size:13px}}code{{overflow-wrap:anywhere}}
-</style><script type="application/json" id="todo-flow-track">{contract}</script></head><body><header><small>{html.escape(doc["id"])}</small><h1>{html.escape(doc["title"])}</h1></header>{body}<section><h2>완료 조건</h2><table><thead><tr><th>ID</th><th>확인할 결과</th><th>검증 방법</th></tr></thead><tbody>{conditions}</tbody></table></section></body></html>"""
+</style><script type="application/json" id="todo-flow-track">{contract}</script></head><body><header><small>{html.escape(doc["id"])}</small><h1>{html.escape(doc["title"])}</h1></header>{body}<section><h2>{heading}</h2><table><thead><tr><th>ID</th><th>{result_label}</th><th>{method_label}</th></tr></thead><tbody>{conditions}</tbody></table></section></body></html>"""

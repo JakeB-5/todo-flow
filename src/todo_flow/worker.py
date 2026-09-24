@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from .store import encode
+from .language import output_instruction
 
 SCHEMA = {
     "type": "object",
@@ -241,6 +242,13 @@ def worker_error(folder, returncode):
 
 
 def run_worker(config, context, task, state, heartbeat):
+    language = config.get("language", "en")
+    context = {
+        **context,
+        "language": language,
+        "output_language_instruction": output_instruction(language),
+    }
+    instructions = INSTRUCTIONS + "\n" + output_instruction(language)
     folder = Path(state) / "attempts" / task["attempt"]
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "input.json").write_text(encode(context))
@@ -258,14 +266,14 @@ def run_worker(config, context, task, state, heartbeat):
             "--json-schema",
             encode(SCHEMA),
             "--system-prompt",
-            INSTRUCTIONS,
+            instructions,
         ]
         if adapter.get("model"):
             args += ["--model", adapter["model"]]
     elif adapter["type"] == "codex":
         (folder / "schema.json").write_text(encode(codex_schema()))
         (folder / "input.json").write_text(
-            INSTRUCTIONS
+            instructions
             + "\nReturn optional fields as null when unused. Do not call tools.\nTASK CONTEXT:\n"
             + encode(context)
         )

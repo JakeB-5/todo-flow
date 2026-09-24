@@ -132,10 +132,11 @@ def serve(store, port=8765):
                     self.reply(200, result)
                 except (ValueError, TypeError) as e:
                     self.reply(400, {"error": str(e)})
-            elif path in ("/", "/app.js", "/style.css"):
+            elif path in ("/", "/app.js", "/i18n.js", "/style.css"):
                 file, mime = {
                     "/": ("index.html", "text/html"),
                     "/app.js": ("app.js", "text/javascript"),
+                    "/i18n.js": ("i18n.js", "text/javascript"),
                     "/style.css": ("style.css", "text/css"),
                 }[path]
                 self.reply(200, (assets / file).read_text(), mime)
@@ -154,7 +155,7 @@ def serve(store, port=8765):
                 self.reply(
                     409,
                     {
-                        "error": "규모 검증용 샘플은 읽기 전용입니다. 실제 실행은 세션에서 trackrun으로 요청하세요."
+                        "error": "This sample workspace is read-only. Request real work with trackrun in your agent session."
                     },
                 )
                 return

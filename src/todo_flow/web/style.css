@@ -29,3 +29,9 @@ body[data-view=todos] .subtitle,body[data-view=activity] .subtitle{display:none}
 
 .document-stage{margin-bottom:16px}.document-stage iframe{width:100%;height:calc(100vh - 185px);min-height:560px;border:1px solid var(--line);border-radius:7px;background:white}.document-stage a{font-size:12px}.runtime-details>summary{cursor:pointer;font-size:13px;padding:10px 0;margin-bottom:10px}@media(max-width:700px){.document-stage iframe{min-height:500px;height:75vh}}
 .condition>div:only-child{grid-column:1/-1;min-width:0;overflow-wrap:anywhere}
+
+/* Keep both interface languages usable without widening the dense work list. */
+#language{padding:3px 6px;max-width:100px;font:11px system-ui;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink)}
+nav a>span{min-width:0}.sidebar nav a{gap:4px}.sidebar nav a>span{overflow-wrap:anywhere}
+@media(max-width:700px){.topbar{height:auto;min-height:38px;gap:6px;flex-wrap:wrap}.connection{gap:6px}.connection time{font-size:10px}.archive-nav{max-width:42%}}
+.badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}

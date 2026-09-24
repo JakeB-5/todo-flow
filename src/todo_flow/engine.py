@@ -175,6 +175,7 @@ class Engine:
             "document": doc,
             "head": t["head"],
             "endpoint": self.config["endpoint"],
+            "language": self.config.get("language", "en"),
             "files": files_for_worker(workspace, self.config["context_patterns"]),
             "diff": command(
                 ["git", "diff", "origin/" + self.config["base"] + "...HEAD"], workspace

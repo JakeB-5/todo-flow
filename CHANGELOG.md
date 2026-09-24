@@ -1,41 +1,55 @@
 # Changelog
 
-사용자 동작, 호환성, 주요 오류 수정과 저장소 운영 변경을 기록합니다. 패키지의 현재 개발 버전은 `0.2.0`이며 아래 항목은 아직 별도 릴리스로 확정하지 않은 변경입니다.
+User-visible behavior, compatibility, important fixes and repository changes. The current development package version is `0.2.0`; these changes have not been published as a separate release.
 
 ## Unreleased
 
 ### Added
 
-- `todo-flow` CLI와 선택한 트랙을 요청·실행하는 `trackrun` 진입점.
-- `todo`, `track-picks`, 작업·리뷰·랜딩·트리아지·Watch 스킬과 프로젝트별 설치 명령.
-- HTML·Markdown·JSON 트랙 등록, SVG·이미지·JavaScript 자산과 문서 revision 보존.
-- 검색 가능한 파일 정본과 재생성 가능한 내부 조회 캐시. 기존 SQL 상태의 보존 이전.
-- 별도 워크트리의 복수 트랙 실행, 작업권과 영속 인계, 질문·정지·재개·취소 및 중단 후 복구.
-- Claude/Codex의 독립 워커 실행과 정확한 후보에 대한 별도 리뷰.
-- GitHub 이슈·PR·리뷰, 검증한 통합 커밋 랜딩, 외부 효과 영수증과 중복 방지.
-- 랜딩 후 트리아지: 원래 범위 재작업, 기존/신규 TODO 연결, 조건부 Watch와 근거 있는 종결.
-- 활성 TODO 연속 목록, 별도 완료 검색, 실행 현황·질문·문서·검증 근거 대시보드.
-- 로컬 자동 테스트, 공개 fixture 전체 사이클 실험, 합성 대시보드 데이터 생성 도구.
-- 루트 README, 기여 안내와 변경 기록.
-- 에이전트가 기존 설정 확인·설치·인증 준비·HTML TODO 등록·선정·첫 실행·결과 인계까지 수행할 수 있는 README의 `For agents` 안내.
-- 일평균 커밋 활동 33배를 강조하는 README 요약 이미지와 접을 수 있는 측정 근거.
-- 1~9월 선행 운영 이력의 익명 집계, 일평균 추이와 소스 추가·삭제·제외량 그래프, 공개 집계만 사용하는 이미지 재생성 도구.
+- English-first README with a Korean companion, product demonstration, first-run walkthrough, support matrix and FAQ.
+- Dedicated agent installation, operations and demo guides that work without ignored local design notes.
+- MIT license and package license metadata.
+- Project language choice during initialization and standalone skill installation: English or Korean. Interactive CLI prompts; unattended CLI defaults to English; installation agents ask when no preference is available.
+- English/Korean dashboard messages, accessible labels, localized dates/counts and a project-specific browser display preference.
+- Project language in installed skill context, built-in worker instructions, custom-adapter input and generated follow-up documents.
+- Optional, nonblocking Jev recommendations for todo investigation/overlap screening and watchlist changed-source review.
+- Public-safe HTML track examples and reproducible dashboard captures.
+- CI configuration for local tests, Python lint/format, dashboard localization and package builds on Linux and macOS.
+- `todo-flow` CLI and `trackrun` entrypoint for selected durable work requests.
+- Project-installed todo, track-picks, work, review, landing, triage and Watch skills.
+- HTML/Markdown/JSON registration with preserved SVG, images, JavaScript assets and document revisions.
+- Searchable file authority, rebuildable query cache and migration from legacy SQL state.
+- Parallel tracks in separate worktrees; ownership, durable handoffs, questions, pause/resume/cancel and recovery.
+- Independent Claude/Codex workers and exact-candidate review.
+- GitHub issues, PRs and reviews; verified integration commits, effect receipts and reconciliation.
+- Post-landing triage for original-scope repairs, existing/new TODOs, conditional watches and evidence-based closure.
+- Continuous active TODO lists, separate completed search, activity and evidence views.
+- Local tests, disposable public acceptance scripts and synthetic large-list fixtures.
+- A 33× daily commit activity visual with collapsible measurement notes and anonymous January–September aggregates.
 
 ### Changed
 
-- 트랙·실행 기록은 파일을 정본으로 유지하고 SQLite는 삭제 가능한 조회 캐시로 사용.
-- 트리아지의 후속 TODO 등록과 실행 선정을 분리하고, 최신 트리아지 근거 뒤에 완료·이슈 종료를 채택.
-- `docs/`를 로컬 설계·실험 기록으로 분리해 Git과 배포 패키지에서 제외. 공개 사용·기여 안내는 로컬 문서에 의존하지 않도록 정리.
-- 패키지 메타데이터에 README를 연결하고 소스 배포본에 CHANGELOG와 CONTRIBUTING을 포함.
-- 문서·템플릿·합성 데모에서 원본 사용처의 식별 문구를 제거. 공개 측정 자산은 이름·경로·작성자·커밋 원문 없는 집계만 포함.
+- Public skill instructions and starter templates now use English. New user-facing content follows the selected project language; existing documents are preserved.
+- README prioritizes product outcomes, actual UI, quick start and an agent installation prompt; detailed operation has moved to shared root guides.
+- Tracks and runtime records use files as authority; SQLite is disposable.
+- Follow-up registration remains separate from selection; completion and issue closure require current cleared triage.
+- `docs/` remains local-only and excluded from Git and distributions. Shared usage and contribution guidance does not depend on it.
+- Public documents, examples and metric assets omit identifying source-project metadata.
 
 ### Fixed
 
-- HTML/Markdown 문서의 `revisions/` 내부 파일을 트랙 ID로 오인하던 트리아지 중복 검색 오류. 현재 정본 문서만 후보로 검색.
-- 랜딩 후 재작업에서 이슈를 다시 열고 새 수정 사이클의 완료 뒤 종료하도록 효과 영수증을 구분.
+- Triage duplicate search no longer mistakes historical `revisions/` documents for current track IDs.
+- Post-landing repair reopens the issue and distinguishes closure receipts for the new delivery cycle.
 
-### Validation
+### Validation of language and documentation changes
 
-- 2026-09-24: 런타임 자동 테스트 57개 통과.
-- 실제 터미널에서 에이전트의 HTML TODO 작성·선정·병렬 구현·리뷰·랜딩·트리아지·이슈 종료 확인. 최초 두 트랙의 검색 오류는 수정 후 새 세션에서 복구했고, 수정 후 신규 트랙은 추가 개입 없이 완료.
-- 해당 공개 fixture의 PR 3개 병합·이슈 3개 종료, 최종 원격 main 테스트 13개 통과. 대형 프로젝트·Forgejo·복수 저장소 운영 검증과는 구분.
+- 65 Python tests and six dashboard localization tests passed, including language persistence, project isolation, adapter input, document preservation and focused decision drafts.
+- Both languages checked in the real browser at desktop and narrow widths. Selection, unsent answers, expanded details, archive search and reload preferences were preserved.
+- Interactive terminal language selection, isolated wheel installation, bundled templates/translations and source distribution contents verified.
+- Python lint/format, JavaScript syntax and all nine skill metadata checks passed. Hosted CI is configured but has not been run as part of this change.
+
+### Prior validation
+
+- 2026-09-24: the prior runtime suite passed 57 tests.
+- A real terminal exercise covered agent-authored HTML TODOs, selection, parallel implementation, review, landing, triage and issue closure. Two initial tracks recovered in new sessions after the duplicate-search fix; a fresh track then completed without further intervention.
+- That disposable public fixture had three merged PRs, three closed issues and 13 passing tests on the final remote main. This does not establish large-codebase, Forgejo or multi-repository support.

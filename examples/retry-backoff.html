@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bounded retries for temporary failures</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f5f8f4;color:#223d31;font:15px/1.7 system-ui,sans-serif}main{max-width:980px;margin:auto;padding:40px 28px}small{color:#63776b;letter-spacing:1px;text-transform:uppercase}h1{font-size:clamp(28px,5vw,44px);line-height:1.15;margin:14px 0}h2{font-size:18px}p{max-width:78ch}.notice{border-left:3px solid #cbad62;padding:8px 16px;background:#faf6e9;font-size:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{border:1px solid #d5dfd6;background:white;border-radius:10px;padding:20px;margin:16px 0}svg{width:100%;height:auto}table{width:100%;border-collapse:collapse}th,td{padding:12px;border-bottom:1px solid #dbe5db;text-align:left;vertical-align:top}button{background:#245c42;color:white;border:0;border-radius:5px;padding:10px 16px;font:inherit;cursor:pointer}output{margin-left:12px;font-size:13px}@media(max-width:640px){main{padding:24px 16px}.grid{grid-template-columns:1fr}table{font-size:12px}td,th{padding:6px}}
+</style><script type="application/json" id="todo-flow-track">{
+  "id": "retry-backoff",
+  "title": "Bounded retries for temporary failures",
+  "language": "en",
+  "goal": "Recover from temporary request failures without retrying forever.",
+  "scope": "Retry utility and its unit tests. Permanent failures and UI copy are handled separately.",
+  "evidence": "Repeated transient failures currently require callers to retry manually.",
+  "conditions": [
+    {
+      "id": "retry",
+      "text": "A transient failure succeeds within the configured attempt limit.",
+      "method": "Unit tests for success, exhausted retries and a non-retryable response."
+    }
+  ],
+  "priority": "HIGH",
+  "area": [
+    "Networking"
+  ],
+  "trigger": "Ready for explicit selection after document review.",
+  "design": "Keep retry policy separate from presentation. Verify both paths before integration."
+}</script></head>
+<body><main><div class="notice">PUBLIC EXAMPLE · Illustrative requirement, not an executed result.</div><header><small>TODO / NETWORKING · retry-backoff</small><h1>Bounded retries for temporary failures</h1><p>Recover from temporary request failures without retrying forever.</p></header><div class="grid"><section class="card"><h2>Scope</h2><p>Retry utility and its unit tests. Permanent failures and UI copy are handled separately.</p></section><section class="card"><h2>Problem and evidence</h2><p>Repeated transient failures currently require callers to retry manually.</p></section></div><section class="card"><h2>Make the failure path explicit</h2><svg viewBox="0 0 840 155" role="img" aria-label="Request flows through a bounded retry policy to success or a clear failure message"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#698476"/></marker></defs><g fill="#f2f7f0" stroke="#b8cdbc"><rect x="10" y="48" width="165" height="60" rx="9"/><rect x="238" y="48" width="222" height="60" rx="9"/><rect x="540" y="10" width="280" height="55" rx="9"/><rect x="540" y="95" width="280" height="55" rx="9"/></g><g fill="none" stroke="#698476" stroke-width="2" marker-end="url(#arrow)"><path d="M175 78 H235"/><path d="M460 78 H490 V38 H537"/><path d="M490 78 V122 H537"/></g><g fill="#223d31" font-family="system-ui" font-size="16" text-anchor="middle"><text x="92" y="85">Request</text><text x="349" y="85">Bounded retry policy</text><text x="680" y="44">Success → continue</text><text x="680" y="128">Failure → explain next action</text></g></svg><p>Retries and error presentation can be developed independently. Integration checks confirm that exhausted retries produce the intended user message.</p></section><section class="card"><h2>Acceptance condition</h2><table><thead><tr><th>ID</th><th>Expected result</th><th>How to verify</th></tr></thead><tbody><tr><td>retry</td><td>A transient failure succeeds within the configured attempt limit.</td><td>Unit tests for success, exhausted retries and a non-retryable response.</td></tr></tbody></table></section><section class="card"><h2>Explore the proposed behavior</h2><p>This small interaction illustrates the plan; it is not runtime verification.</p><button id="simulate" type="button">Simulate a temporary failure</button><output id="outcome" aria-live="polite">Ready.</output></section><footer><small>Review this document, then select the track with trackrun.</small></footer></main><script>
+let attempt=0;document.getElementById('simulate').onclick=()=>{attempt=(attempt+1)%4;document.getElementById('outcome').textContent=['Ready.','Attempt 1 failed → retry.','Attempt 2 failed → retry.','Attempt 3 succeeded → return result.'][attempt];};
+</script></body></html>

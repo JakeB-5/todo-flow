@@ -9,7 +9,7 @@
 - `scripts/`: reproducible public GitHub acceptance tests and labeled local dashboard fixtures.
 - `assets/metrics/`: anonymous aggregate measurements, methodology, and generated public charts. Keep raw source histories and identifying metadata outside this repository.
 - `docs/`: local-only design specifications, prototypes, and experiment records; ignored by Git and excluded from distributions. Preserve local files and do not force-add them.
-- `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`: tracked usage, change history, and contributor guidance. Shared instructions must work without `docs/`.
+- `README.md`, `README.ko.md`, `AGENT_INSTALL.md`, `OPERATIONS.md`, `DEMO.md`, `CHANGELOG.md`, `CONTRIBUTING.md`: tracked usage, change history, and contributor guidance. Shared instructions must work without `docs/`.
 
 ## Commands
 
@@ -37,3 +37,13 @@ Test observable behavior and recovery boundaries, not implementation-shaped snap
 External live tests require explicit authorization and use disposable, public-safe fixtures.
 Do not alter private/production repositories to exercise test workflows.
 Use imperative commit subjects and report validation and real limitations accurately.
+
+## Language and public presentation
+
+English is primary for shared docs, templates and skill instructions. Keep the Korean README current.
+Use project `language` for new human-facing worker output and documents, with stable protocol keys.
+Dashboard labels use `tr()` / `data-i18n`; never translate authored content or rewrite records on a UI switch.
+Keep language preferences isolated by project and preserve selection, drafts and navigation on switching.
+Jev is an optional recommendation in todo/watchlist, never an execution or installation prerequisite.
+Public demos must disclose synthetic data. The project is MIT licensed.
+Run `node --test tests/dashboard_i18n.test.cjs` for localization behavior.

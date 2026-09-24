@@ -106,7 +106,7 @@ class HttpTests(unittest.TestCase):
         self.assertIsNone(self.s.claim("worker"))
         self.post("control", {"track": "example", "action": "resume"}, token)
         self.assertIsNotNone(self.s.claim("worker"))
-        for path in ["/", "/app.js", "/style.css"]:
+        for path in ["/", "/app.js", "/i18n.js", "/style.css"]:
             with urllib.request.urlopen(self.url + path) as r:
                 self.assertEqual(r.status, 200)
 

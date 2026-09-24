@@ -1,84 +1,81 @@
-# 워크플로우 변화의 익명 집계
+# Anonymous workflow activity measurements
 
-이 자료는 도입 전 기간을 포함한 선행 워크플로우 운영 이력을 익명으로 집계한 것이다. **현재 TODO Flow 패키지의 벤치마크나, 이 패키지가 과거 산출물을 만들었다는 증거가 아니다.** 운영 방식의 변화와 함께 기록된 처리량이 어떻게 달라졌는지 보여준다.
+These aggregates describe predecessor workflow operations, including an earlier baseline period. They are **not a benchmark of the current TODO Flow package or evidence that this package produced historical changes**. They show how recorded activity changed while the operating tools evolved.
 
-프로젝트명·저장소 주소·로컬 경로·작성자·커밋 ID/메시지·원본 소스는 포함하지 않는다. 원자료는 공개하지 않으므로 외부에서 원본 Git 이력까지 독립 검증할 수 있는 자료는 아니다. 공개된 JSON·CSV와 산식으로 집계 간 정합 및 그래프 재생성은 확인할 수 있다.
+No source-project names, repository addresses, local paths, authors, commit IDs/messages or original source are included. Raw histories are not public, so outside readers cannot independently verify the original Git records. The public JSON, CSV and formulas support aggregate consistency checks and chart reproduction.
 
-## 측정 범위
+## Observation window
 
-- 관측 스냅샷: 2026-09-24, 서로 연결된 5개 저장소의 로컬 참조를 고정했다. 자동 발견 대상과 누락 여부를 확인했으며 누락 저장소는 없었다.
-- 기간: **2026-01-01 00:00 이상, 2026-09-24 00:00 미만**, Asia/Seoul. 1~8월은 해당 월 전체, 9월은 1~23일이다. 진행 중인 24일과 월말 예상치는 포함하지 않는다.
-- 월 단위 범위는 Git 커미터 시각으로 정한다. 추가 소스 집계도 같은 시각 기준으로 맞췄다. 작성 시각과 커미터 시각이 월 경계를 넘는 경우를 확인해 혼용하지 않았다.
-- `commit-metrics` v1.0.0의 DAILY·LANDED·LAYERS·LEDGER 정의와 제외 규칙을 사용했다. 소스 지표에는 아래의 명시적인 추가 필터를 적용했다.
-- 과거 발행 수치를 덮어쓴 자료가 아니라 이 고정 스냅샷의 별도 집계다. 전 참조 커밋 수는 참조 삭제·스쿼시·리베이스에 따라 후일 재측정 값이 달라질 수 있다. 대조 가능한 7월 발행 커밋 합계 2,526건과는 일치했다.
+- Snapshot: September 24, 2026, with local references fixed across five related repositories. Discovery found no missing repositories.
+- Window: **January 1, 2026 00:00 inclusive to September 24, 2026 00:00 exclusive**, Asia/Seoul. January–August are full months; September covers days 1–23. No month-end projection or incomplete September 24 is included.
+- Monthly assignment uses Git committer timestamps consistently for commits and source changes; author timestamps are not mixed into the calculation.
+- Collection follows the DAILY, LANDED, LAYERS and LEDGER definitions of `commit-metrics` v1.0.0, plus the source exclusions below.
+- This is a separate fixed-snapshot aggregation, not an overwrite of previously published figures. Later ref deletion, squash or rebase can change a fresh all-refs count. The comparable July published total of 2,526 commits matched.
 
-## 지표별 의미
+## Metrics
 
-| 지표 | 계산 | 해석 |
+| Metric | Calculation | Interpretation |
 |---|---|---|
-| 전 참조 커밋 | 저장소별 `--all` 커밋 합계. 머지 포함 | 활동 강도. 미통합 변경·리베이스 사본·원장 갱신도 포함하며 노동 생산량으로 환산하지 않음 |
-| 통합 브랜치 논머지 | 관측 시점의 저장소별 통합 브랜치에서 도달 가능한 논머지 커밋 | 해당 월에 작성/갱신된 커밋의 통합 상태. 실제 랜딩한 월과 반드시 같지는 않음 |
-| 소스 변화량 | 위 논머지 커밋의 텍스트 소스 추가 + 삭제 | 코드 순증·최종 코드 크기·고유 변경 줄 수가 아님. 같은 줄의 반복 수정도 셈 |
-| 통합 머지 커밋 | 통합 브랜치의 첫 부모 경로에 있는 머지 커밋 수 | 통합 빈도의 지표. 원격에서 검증한 PR 개수와 같다고 주장하지 않음 |
-| 완료 전환 | 원장 파일을 변경한 각 커밋에서 `done` 상태 줄의 추가−삭제가 양수인 경우만 합산 | 고유 기능 수가 아님. 같은 트랙 재완료가 다시 잡힐 수 있으며, 1~6월의 0을 성과 0으로 해석하지 않고 측정 불가로 둠 |
+| All-ref commits | Sum of repository `--all` commits, including merges | Activity, including unlanded work, rebased copies and ledger updates; not labor output |
+| Integrated non-merge commits | Non-merge commits reachable from each integration branch at the snapshot | Integration status of commits timestamped in that month, not necessarily the month they landed |
+| Source changes | Text source additions + deletions in those non-merge commits | Churn, not net code size or unique changed lines; repeated edits count again |
+| Integration merges | Merge commits on the integration branch's first-parent path | Integration frequency, not a remotely verified PR count |
+| Completion transitions | Sum of positive additions minus deletions of `done` lines in ledger-changing commits | Not unique features; repeated completion can count again. January–June are unavailable, not zero performance |
 
-등록·실행 도구의 첫 기록은 7월에 확인됐다. 그래프의 7월 이후 음영은 그 기록을 뜻하며, 실제 첫 사용일이나 유일한 변화 원인을 확정하지 않는다. 6월은 해당 기록 직전 달이므로 주요 비교 기준으로 사용하되 1월·7월·8월 기준도 함께 공개한다.
+The first recorded registration/execution tooling appears in July. Shading after July marks that record, not a proven first use date or sole cause. June is the preceding month, with January, July and August comparisons also disclosed.
 
-## 소스 변화량 보정
+## Source adjustments
 
-1. 수집기의 기본 제외: 의존성 잠금 파일, `node_modules`, `dist`·`dist-lib`, TypeScript 빌드 정보. 문서 확장자와 문서 디렉터리는 소스 지표에 포함하지 않는다. rename 감지를 유지한 LANDED 정의를 사용한다.
-2. 추가 제외: `vendor`, `build`, `coverage`, `generated`, `__generated__`, `__snapshots__` 디렉터리와 지정 소스 확장자 밖의 파일. JSON 데이터·PDF·이미지·생성 타입·외부 소스 등이 순수 소스 작업처럼 집계되지 않게 한다. 정확한 확장자 목록은 [measurements.json](measurements.json)의 `method.source_extensions`에 있다. 제품 소스와 테스트 소스를 모두 포함한다.
-3. 알려진 대량 초기 입력일 **1월 5일**, 저장소 간 이동일 **7월 2일**의 변경을 소스 지표에서 제외했다. 각각 기본 코드 집계 122,897줄·308,857줄이다. 그날의 정상 작업까지 제외하는 보수적인 처리다. 커밋·머지·완료 전환 원자료는 그대로 유지한다.
-4. 일평균의 분모는 관측한 달력 날짜 수다. 소스 지표만 위 제외일도 뺀다: 1월 30일, 7월 30일, 나머지는 관측일과 동일하다. 활성일만 골라 평균을 높이지 않는다.
-5. 확장자와 경로 기반 필터는 직접 작성 여부를 완벽히 증명하지 않는다. 이 지표를 순수 수작업 줄 수로 표현하지 않는다. 바이너리 변경은 줄 수로 세지 않는다.
+1. Collector exclusions: dependency lockfiles, `node_modules`, `dist`, `dist-lib`, TypeScript build information, documentation extensions and directories. LANDED uses rename detection.
+2. Additional exclusions: `vendor`, `build`, `coverage`, `generated`, `__generated__`, `__snapshots__`, and files outside the source-extension allowlist. Product and test source are included. Exact extensions are in [measurements.json](measurements.json), `method.source_extensions`.
+3. Known bulk initial input on **January 5** and cross-repository movement on **July 2** are excluded from source metrics: 122,897 and 308,857 unadjusted code lines respectively. This conservatively excludes ordinary changes on those days too. Commit, merge and completion aggregates remain unchanged.
+4. Daily averages use observed calendar days, not only active days. Source averages additionally exclude those two dates: 30 days in January, 30 in July, otherwise the observed month length.
+5. Path/extension filters cannot prove manual authorship. Binary changes do not count as text lines.
 
-`raw_code_add + raw_code_delete = source_add + source_delete + source_excluded 합계`가 모든 월에서 일치한다. 수집기의 별도 4층 분류에서 미분류 비중도 모든 월 2% 이하였다. 과거 원장 형식 변경의 영향을 받는 설계/파생 문서 비중은 이번 증가율의 근거로 사용하지 않았다.
+`raw_code_add + raw_code_delete = source_add + source_delete + total source_excluded` holds in every month. Unclassified content in the collector's separate four-layer classification was below 2% each month. Design/derived-document proportions affected by ledger format changes are not used as the growth claim.
 
-## 월별 실측
+## Monthly observations
 
-| 월 | 관측일 / 소스 관측일 | 전 참조 커밋 | 소스 추가 | 소스 삭제 | 보정 소스 변화량 | 통합 머지 커밋 | 완료 전환 |
+| Month | Observed / source days | All-ref commits | Source additions | Source deletions | Adjusted source changes | Integration merges | Completion transitions |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 2026-01 | 31 / 30 | 289 | 318,619 | 52,785 | 371,404 | 4 | 측정 불가 |
-| 2026-02 | 28 / 28 | 201 | 98,348 | 27,912 | 126,260 | 4 | 측정 불가 |
-| 2026-03 | 31 / 31 | 189 | 51,926 | 7,822 | 59,748 | 3 | 측정 불가 |
-| 2026-04 | 30 / 30 | 143 | 10,583 | 1,428 | 12,011 | 1 | 측정 불가 |
-| 2026-05 | 31 / 31 | 383 | 59,927 | 18,510 | 78,437 | 9 | 측정 불가 |
-| 2026-06 | 30 / 30 | 682 | 76,931 | 12,708 | 89,639 | 38 | 측정 불가 |
+| 2026-01 | 31 / 30 | 289 | 318,619 | 52,785 | 371,404 | 4 | Unavailable |
+| 2026-02 | 28 / 28 | 201 | 98,348 | 27,912 | 126,260 | 4 | Unavailable |
+| 2026-03 | 31 / 31 | 189 | 51,926 | 7,822 | 59,748 | 3 | Unavailable |
+| 2026-04 | 30 / 30 | 143 | 10,583 | 1,428 | 12,011 | 1 | Unavailable |
+| 2026-05 | 31 / 31 | 383 | 59,927 | 18,510 | 78,437 | 9 | Unavailable |
+| 2026-06 | 30 / 30 | 682 | 76,931 | 12,708 | 89,639 | 38 | Unavailable |
 | 2026-07 | 31 / 30 | 2,526 | 148,750 | 44,644 | 193,394 | 309 | 236 |
 | 2026-08 | 31 / 31 | 8,086 | 315,397 | 45,041 | 360,438 | 769 | 628 |
-| 2026-09 (1~23일) | 23 / 23 | 7,275 | 276,157 | 34,679 | 310,836 | 514 | 402 |
+| 2026-09 (1–23) | 23 / 23 | 7,275 | 276,157 | 34,679 | 310,836 | 514 | 402 |
 
-숫자는 추정치가 아니다. 다만 서로 다른 월 길이와 9월의 부분 기간 때문에 위 **월 누계의 배수**를 증가율로 사용하지 않는다.
+These are observations, not projections. Monthly totals are not used directly as growth multipliers because month lengths differ and September is partial.
 
-## 일평균 변화
+## Daily-average comparisons
 
-| 일평균 비교 | 전 참조 커밋 | 보정 소스 변화량 | 완료 전환 |
+| Comparison | All-ref commits | Adjusted source changes | Completion transitions |
 |---|---:|---:|---:|
-| 1월 → 9월 | 33.93배 | 1.09배 | 비교 불가 |
-| 6월 → 9월 | 13.91배 | 4.52배 | 비교 불가 |
-| 7월 → 9월 | 3.88배 | 2.10배 | 2.30배 |
-| 8월 → 9월 | 1.21배 | 1.16배 | 0.86배 |
+| January → September | 33.93× | 1.09× | Unavailable |
+| June → September | 13.91× | 4.52× | Unavailable |
+| July → September | 3.88× | 2.10× | 2.30× |
+| August → September | 1.21× | 1.16× | 0.86× |
 
-- 6월→9월: 커밋 22.73→316.30건/일, 보정 소스 2,987.97→13,514.61줄/일. 관측 증가율은 각각 13.91배와 4.52배다.
-- 1월→9월: 커밋은 33.93배지만 소스 변화량은 1.09배다. 초기 개발의 큰 변경량을 감추거나 모든 지표가 같은 배수로 늘었다고 표현하지 않는다.
-- 7월→9월: 완료 전환 7.61→17.48건/일, 2.30배. 1~6월에는 비교 가능한 완료 원장이 없어 이 지표의 증가율을 계산하지 않는다.
-- 8월→9월: 커밋/일은 21.3%, 소스 변화량/일은 16.2% 늘었지만 완료 전환/일은 **13.7% 감소**했다. 통합 머지/일도 감소했다. 모든 처리량이 계속 늘어난 것은 아니다.
-- 9월 통합 논머지 커밋의 78.7%는 코드 경로를 건드리지 않은 문서·원장 전용 커밋이다. 따라서 커밋 수를 코드 생산량의 대리 지표로 쓰지 않는다. 설계·판단 문서도 작업 산출물이지만 생성물과 구분해야 한다.
-- 동일한 보정 소스 집합의 변화량/소스 커밋은 6월 약 235.3줄, 9월 약 280.5줄이다. 전체 커밋을 이 계산의 분모로 섞지 않는다.
+- June → September: 22.73 → 316.30 commits/day and 2,987.97 → 13,514.61 adjusted source lines/day.
+- January → September: commits rose 33.93×, while source changes rose 1.09×. The metrics are not interchangeable.
+- July → September: 7.61 → 17.48 completion transitions/day, 2.30×. No comparable January–June completion ledger was available.
+- August → September: commits/day rose 21.3% and source changes/day rose 16.2%, while completion transitions/day **fell 13.7%**. Integration merges/day also declined.
+- In September, 78.7% of integrated non-merge commits touched documentation/ledger paths only, not code paths. Commit count is therefore not a proxy for code output.
+- Within the same adjusted source set, source changes per source-touching commit were approximately 235.3 lines in June and 280.5 in September. All commits are not the denominator for this calculation.
 
-인원·투입 시간·작업 난이도·모델·제품 단계가 통제된 실험이 아니다. 그래서 “워크플로우 개발이 노동 생산성을 13.91배 높였다”는 결론은 낼 수 없다. 확인할 수 있는 것은 **운영 도구가 발전한 기간에 기록된 활동·소스 변경·완료 전환의 증가와, 지표별 차이**다.
+Staffing, hours, task difficulty, models and product phase were not controlled. These observations do not establish a causal multiplier of labor productivity. The supported claim is growth in recorded activity during the workflow's evolution, with distinct changes in source churn and completion activity.
 
-## 이미지와 재생성
+## Charts and reproduction
 
-- [마케팅 요약 PNG](workflow-impact.png) · [SVG](workflow-impact.svg)
-- [전체 추이 PNG](workflow-growth.png) · [SVG](workflow-growth.svg)
-- [소스 추가·삭제·제외량 PNG](source-changes.png) · [SVG](source-changes.svg)
-- [집계 JSON](measurements.json) · [월별 CSV](monthly.csv)
+[Summary PNG](workflow-impact.png) · [SVG](workflow-impact.svg) · [Growth PNG](workflow-growth.png) · [Source changes PNG](source-changes.png) · [JSON](measurements.json) · [CSV](monthly.csv)
 
-저장소 루트에서 다음 명령으로 공개 집계만 읽어 이미지를 다시 만든다. 원본 저장소·인증·내부 경로에 접근하지 않는다.
+From the repository root:
 
 ```sh
 uv run --no-project --with matplotlib==3.11.2 python scripts/render_metrics.py
 ```
 
-새 측정으로 갱신할 때도 출처 식별정보를 포함하지 않는 집계만 이 폴더에 반영한다. 과거 수치의 정의·관측 시점·제외 규칙이 바뀌면 덮어쓰기 전에 변화 이유를 명시한다.
+The renderer reads only public aggregates, without source-repository access or credentials. Future updates must preserve anonymity and explain changes in definitions, observation windows or exclusions before replacing figures.

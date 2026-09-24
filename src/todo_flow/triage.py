@@ -385,6 +385,7 @@ class Triage:
                         "reason": item["reason"],
                     }
                     doc["documentReview"] = "pending-human-review"
+                    doc.setdefault("language", context.get("language", "en"))
                     existing = c.execute(
                         "SELECT document FROM tracks WHERE id=?", (doc["id"],)
                     ).fetchone()

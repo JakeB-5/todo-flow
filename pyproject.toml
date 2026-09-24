@@ -7,6 +7,8 @@ name = "todo-flow"
 version = "0.2.0"
 description = "Durable TODO work requests, replaceable agents, and observable delivery"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "markdown-it-py==4.0.0",
@@ -32,4 +34,4 @@ select = ["E4", "E7", "E9", "F"]
 "skills" = "todo_flow/skills"
 
 [tool.hatch.build.targets.sdist]
-only-include = ["src/todo_flow", "skills", "templates", "tests", "scripts", "assets/metrics", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "AGENTS.md", "pyproject.toml", "uv.lock"]
+only-include = [".github", "src/todo_flow", "skills", "templates", "tests", "scripts", "assets", "examples", "LICENSE", "AGENT_INSTALL.md", "OPERATIONS.md", "DEMO.md", "README.ko.md", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "AGENTS.md", "pyproject.toml", "uv.lock"]

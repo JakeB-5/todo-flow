@@ -10,46 +10,51 @@ from todo_flow.store import Store, encode
 TITLES = [
     (
         "font-selection",
-        "폰트 선택 동작 개선",
-        "선택한 텍스트에 폰트 변경이 일관되게 적용되도록 합니다.",
-        "작업 화면",
+        "Make font selection predictable",
+        "Apply font changes consistently to the selected text.",
+        "Workspace",
     ),
     (
         "export-guide",
-        "내보내기 오류 안내",
-        "실패 원인과 사용자가 취할 다음 행동을 안내합니다.",
-        "작업 화면",
+        "Explain export failures",
+        "Explain why an export failed and what to do next.",
+        "Workspace",
     ),
     (
         "draft-restore",
-        "임시저장 복원 안정화",
-        "문서를 복원한 뒤 편집 상태와 선택을 유지합니다.",
-        "저장",
+        "Restore drafts reliably",
+        "Preserve editing state and selection after restoring a document.",
+        "Storage",
     ),
-    ("paint-order", "페인트 순서 보존", "내보낸 결과에서도 원래 겹침을 유지합니다.", "렌더링"),
+    (
+        "paint-order",
+        "Preserve paint order",
+        "Keep the original stacking order in exported results.",
+        "Rendering",
+    ),
     (
         "draft-policy",
-        "임시저장 보관 범위 결정",
-        "기기별 보관과 계정 공유의 경계를 정합니다.",
-        "저장",
+        "Choose draft retention scope",
+        "Choose between device-local storage and account sharing.",
+        "Storage",
     ),
     (
         "selection-restore",
-        "선택 상태 복원",
-        "문서를 다시 열었을 때 선택 맥락을 복원합니다.",
-        "작업 화면",
+        "Restore selection context",
+        "Restore selection context when reopening a document.",
+        "Workspace",
     ),
     (
         "canvas-align",
-        "캔버스 정렬 기준 통일",
-        "객체와 아트보드의 정렬 기준을 일치시킵니다.",
-        "캔버스",
+        "Align objects consistently",
+        "Use consistent alignment anchors for objects and artboards.",
+        "Canvas",
     ),
     (
         "asset-search",
-        "에셋 검색 결과 정리",
-        "검색 조건과 선택한 에셋을 명확하게 표시합니다.",
-        "에셋",
+        "Clarify asset search results",
+        "Show active search filters and the selected asset clearly.",
+        "Assets",
     ),
 ]
 
@@ -72,24 +77,34 @@ def seed(store, active=48, completed=2500):
                 "id": id_,
                 "title": title,
                 "goal": goal,
-                "scope": "이 화면은 규모 검증용 예시입니다. 목표와 관련된 변경만 포함합니다.",
-                "evidence": "합성된 UI 테스트 데이터. 실제 프로젝트나 실행을 나타내지 않습니다.",
-                "priority": ["높음", "보통", "높음", "높음", "보통", "보통", "낮음", "보통"][i % 8],
+                "scope": "Synthetic list-scale fixture. Include only changes related to this goal.",
+                "evidence": "Synthetic UI test data. Does not represent a real project or execution.",
+                "priority": ["HIGH", "MEDIUM", "HIGH", "HIGH", "MEDIUM", "MEDIUM", "LOW", "MEDIUM"][
+                    i % 8
+                ],
                 "area": area,
                 "conditions": [
                     {
                         "id": "behavior",
-                        "text": "요구한 동작을 확인할 수 있다.",
-                        "method": "해당 시나리오와 결과 대조",
+                        "text": "The requested behavior is observable.",
+                        "method": "Compare the scenario with the actual result",
                     },
-                    {"id": "regression", "text": "기존 동작을 유지한다.", "method": "회귀 검증"},
+                    {
+                        "id": "regression",
+                        "text": "Existing behavior is preserved.",
+                        "method": "Regression tests",
+                    },
                 ],
             }
             updated = now - (i - active) * 3600 if done else now - i * 60
             review = {
                 "verdict": "met",
                 "conditions": [
-                    {"id": x["id"], "verdict": "met", "evidence": "규모 검증용 예시 판정"}
+                    {
+                        "id": x["id"],
+                        "verdict": "met",
+                        "evidence": "Synthetic assessment for list-scale validation",
+                    }
                     for x in doc["conditions"]
                 ],
             }
@@ -122,9 +137,9 @@ def seed(store, active=48, completed=2500):
                         work,
                         id_,
                         kind,
-                        "완료 조건과 변경을 대조합니다."
+                        "Compare the candidate with acceptance conditions."
                         if kind == "review"
-                        else "복원 동작의 원인과 검증 환경을 확인합니다.",
+                        else "Inspect restoration behavior and the verification environment.",
                         "waiting" if waiting else "running",
                         None if waiting else "worker-demo-" + str(i),
                         None if waiting else now + 3600,
@@ -140,7 +155,7 @@ def seed(store, active=48, completed=2500):
                             "decision-demo-" + str(i),
                             id_,
                             work,
-                            "임시저장을 기기별로 보관할까요, 계정별로 공유할까요? 이 결정이 필요한 작업만 기다립니다.",
+                            "Should drafts be device-local or shared by account? Only work needing this decision waits.",
                             "open",
                             1,
                             None,
@@ -152,7 +167,7 @@ def seed(store, active=48, completed=2500):
                     c,
                     "work.result" if done else "document.registered",
                     id_,
-                    {"summary": "규모 검증용 예시 기록"},
+                    {"summary": "Synthetic activity record"},
                 )
         c.execute(
             "INSERT INTO watches VALUES(?,?,?,?,?,?,?)",
@@ -161,10 +176,10 @@ def seed(store, active=48, completed=2500):
                 TITLES[0][0] + "-0000",
                 encode(
                     {
-                        "observation": "특정 템플릿 객체의 폰트 변경 경로 확인",
-                        "reason": "재현 조건 미확정",
-                        "trigger": "해당 템플릿에서 증상 재현",
-                        "next_action": "원본 선택 맥락을 수집하고 필요한 조사 작업으로 연결",
+                        "observation": "Check the font-change path for a template object",
+                        "reason": "Reproduction conditions are not established",
+                        "trigger": "The symptom is reproduced with this template",
+                        "next_action": "Collect selection context and connect it to a focused investigation",
                     }
                 ),
                 "open",
@@ -178,6 +193,7 @@ def seed(store, active=48, completed=2500):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--state", required=True)
+    p.add_argument("--language", choices=["en", "ko"], default="en")
     args = p.parse_args()
     state = Path(args.state)
     if state.exists():
@@ -188,8 +204,9 @@ def main():
             "github": None,
             "base": "main",
             "endpoint": "review",
-            "display_name": "TODO Flow · 규모 검증",
+            "display_name": "TODO Flow · Demo workspace",
             "demo": True,
+            "language": args.language,
         }
     )
     seed(store)

@@ -5,6 +5,8 @@ description: Independently assess an exact TODO Flow change against condition ID
 
 # track-review
 
+Read installed `project.json` for STATE and primary language, then STATE's `config/1.json`. Use the project language for user-facing reports and new documents unless explicitly overridden; default to English. Preserve protocol keys, identifiers, commands and source quotations.
+
 Use a fresh read-only context, independent of the authoring session. Read the actual files/diff, goal revision and verification evidence. Return summary, verdict (met/unmet/cannot-assess), and exactly one conditions row per condition ID with verdict and evidence. Identify real failures and uncertainties; don't invent test execution.
 
 Request bounded correction work when unmet, land only for an authorized land endpoint, or complete for a review-only endpoint. The runtime publishes your full assessment on the exact PR head as a COMMENT when the GitHub account owns that PR. This is independent agent review, not a GitHub APPROVE from another account.

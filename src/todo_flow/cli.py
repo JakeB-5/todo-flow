@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .adapters import command
 from .engine import Engine
+from .language import select_language
 from .store import Conflict, Store, encode, fingerprint
 
 
@@ -34,6 +35,7 @@ def initialize(args):
         "allow_land": args.allow_land,
         "worker_timeout": args.worker_timeout,
         "verify_timeout": args.verify_timeout,
+        "language": select_language(args.language, interactive=sys.stdin.isatty()),
     }
     store = Store(args.state or repo / "todo")
     store.configure(config)
@@ -60,6 +62,11 @@ def parser():
     i.add_argument("--allow-land", action="store_true")
     i.add_argument("--worker-timeout", type=int, default=600)
     i.add_argument("--verify-timeout", type=int, default=180)
+    i.add_argument(
+        "--language",
+        choices=["en", "ko"],
+        help="Primary language; prompts in a terminal, otherwise defaults to en",
+    )
     r = sub.add_parser("register", help="Agent-only track registration; no dashboard authoring")
     r.add_argument("file")
     r.add_argument("--assets", help="Snapshot this directory as the document assets/ bundle")
@@ -105,6 +112,11 @@ def parser():
     wd.add_argument("--target")
     install = sub.add_parser("install-skills")
     install.add_argument("--target", required=True)
+    install.add_argument(
+        "--language",
+        choices=["en", "ko"],
+        help="Use the project language, or choose one for standalone skills",
+    )
     sub.add_parser("hooks")
     clean = sub.add_parser("cleanup")
     clean.add_argument("track")
@@ -129,6 +141,18 @@ def main(argv=None):
             if not source.exists():
                 source = Path(__file__).resolve().parents[2] / "skills"
             target = Path(args.target).resolve()
+            project = (
+                target.parent.parent if target.parent.name in (".agents", ".claude") else Path.cwd()
+            )
+            state = Path(args.state).resolve() if args.state else (project / "todo").resolve()
+            project_config = state / "config" / "1.json"
+            config = Store(state).config() if project_config.exists() else None
+            if config and args.language and args.language != config.get("language", "en"):
+                raise ValueError("Skill language must match the initialized project language")
+            language = select_language(
+                config.get("language", "en") if config else args.language,
+                interactive=sys.stdin.isatty(),
+            )
             for folder in source.iterdir():
                 if folder.is_dir():
                     dest = target / folder.name
@@ -138,7 +162,10 @@ def main(argv=None):
             for folder in source.iterdir():
                 if folder.is_dir():
                     shutil.copytree(folder, target / folder.name)
-            print(encode({"installed": str(target)}))
+                    (target / folder.name / "project.json").write_text(
+                        encode({"language": language, "state": str(state)}) + "\n"
+                    )
+            print(encode({"installed": str(target), "language": language, "state": str(state)}))
             return
         store = Store(args.state or Path.cwd() / "todo")
         store.config()
@@ -147,6 +174,19 @@ def main(argv=None):
             from .documents import load
 
             document = load(args.file, args.assets)
+            if not document.get("presentation") and "language" not in document:
+                with store.connect() as connection:
+                    existing = connection.execute(
+                        "SELECT document FROM tracks WHERE id=?", (document.get("id"),)
+                    ).fetchone()
+                # Preserve legacy registration identity and the existing document language.
+                language = (
+                    json.loads(existing[0]).get("language")
+                    if existing
+                    else store.config().get("language", "en")
+                )
+                if language:
+                    document["language"] = language
             result = store.register(document, args.expected_revision)
             result["document"] = str(store.path / "tracks" / document["id"] / "track.html")
         elif args.command in ("start", "trackrun"):
