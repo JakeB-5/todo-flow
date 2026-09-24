@@ -21,7 +21,7 @@ class ProjectionTests(unittest.TestCase):
                     "id": f"track-{i:04}",
                     "title": f"작업 {i:04}",
                     "goal": "현재 목표",
-                    "area": "editor",
+                    "area": "workspace",
                     "conditions": [],
                     "evidence": "HEAVY_DOCUMENT_SENTINEL" * 100,
                     "scope": "scope",

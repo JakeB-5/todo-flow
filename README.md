@@ -156,6 +156,19 @@ One installed engine serves multiple projects. Each project has its own configur
 | Language | English / Korean project preference and dashboard UI |
 | Environment | Local macOS validation; Linux checks configured in CI. Windows is not supported by the current POSIX process/locking implementation. |
 
+## Updates
+
+```sh
+todo-flow --version
+todo-flow --state /absolute/project/todo compatibility --target /absolute/project/.agents/skills
+```
+
+For an installed uv tool, `todo-flow upgrade --wheel /absolute/new-release.whl --dry-run` plans an engine update; omit `--dry-run` to apply it while all drivers and dashboards are stopped. The updater checks known project formats, backs up the environment and restores it if installation or validation fails. Supply a trusted newer release wheel; automatic release discovery is not yet provided.
+
+Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for each project and apply without `--dry-run`. Local edits and language/state bindings are preserved; conflicting changes stop before any file is replaced. Engine and skill updates return separate rollback IDs.
+
+[Update, rollback and recovery guide](UPDATES.md) includes interrupted-update recovery, legacy skill adoption, tested boundaries and the future release checklist.
+
 ## FAQ
 
 **Does this replace my coding agent?** It coordinates selected work using your authenticated Claude or Codex CLI. You keep your model and project configuration.
@@ -176,7 +189,7 @@ One installed engine serves multiple projects. Each project has its own configur
 
 ## Current scope
 
-Development version **0.2.0**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
+Development version **0.0.1**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
 - Built-in workers receive tools-disabled file snapshots and return JSON proposals. Direct worker shell/browser/repository exploration is not implemented.
@@ -186,7 +199,7 @@ Development version **0.2.0**. Small-project full cycles, recovery and two–thr
 
 ## Documentation and contributing
 
-[Operations and recovery](OPERATIONS.md) · [Demo and acceptance test](DEMO.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Agent repository rules](AGENTS.md) · [CI configuration](.github/workflows/ci.yml)
+[Updates and rollback](UPDATES.md) · [Operations and recovery](OPERATIONS.md) · [Demo and acceptance test](DEMO.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Agent repository rules](AGENTS.md) · [CI configuration](.github/workflows/ci.yml)
 
 Report bugs or propose improvements through repository Issues; include a minimal public-safe reproduction. Contribution and local validation commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Local design notes in `docs/` are ignored and are not required to use or build the project.
 

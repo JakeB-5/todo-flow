@@ -21,7 +21,7 @@ DOC = {
     "scope": "선택 영역",
     "evidence": "관찰한 현상\n두 번째 줄",
     "conditions": [{"id": "behavior", "text": "폰트가 바뀐다", "method": "재현 테스트"}],
-    "area": ["editor", "font"],
+    "area": ["workspace", "font"],
     "trigger": "선행 없음",
     "links": ["prior-track"],
 }

@@ -75,7 +75,7 @@ todo-flow --state "$FLOW_STATE" install-skills --target "$FLOW_SKILLS"
 todo-flow --state "$FLOW_STATE" serve --port 8765
 ```
 
-The installer preserves existing directories and records language/state in each installed skill's `project.json`. It inherits the initialized project language. Standalone installation supports `--language en|ko`; an explicit value conflicting with an initialized project is rejected. Do not replace an entire skills directory to resolve one conflict.
+The installer preserves existing directories and records language/state in each installed skill's `project.json`. It inherits the initialized project language. Standalone installation supports `--language en|ko`; an explicit value conflicting with an initialized project is rejected. Do not replace an entire skills directory to resolve one conflict. For an existing installation, use `update-skills --target PATH --dry-run`, review conflicts, then apply only within the requested update scope. See [UPDATES.md](UPDATES.md) for manifest adoption and rollback.
 
 Run the dashboard in a persistent terminal/process. If a port is occupied, use a free one without killing an unrelated server. Verify the real URL, project and default language. The display switch is browser-local and project-specific; it does not change worker language or translate historical documents.
 
@@ -112,3 +112,12 @@ Inspect `state.json`, `tasks`, `attempt-records`, `results`, `decisions` and `ef
 For interruptions, inspect evidence and resume against the same state; do not reinitialize. Record genuine user answers with `answer`, then run the driver if needed. Technical errors are not invented user decisions. Preserve failures and distinguish recovery with intervention from a clean run. New follow-up TODOs await selection.
 
 Hand over in the selected language: **installation and state paths, language, dashboard/document links, actual outcome and issue/PR links, remaining decisions and next command**. Identify any terminal/process left running.
+
+
+## Updating an existing installation
+
+Read [UPDATES.md](UPDATES.md). Inspect installed versions and project compatibility first. Preserve the current primary language, state binding, user edits and previous execution authority. Updating alone does not authorize new tracks or landing.
+
+For uv tool installs, use the guarded `upgrade --wheel` path with an explicitly selected trusted release. Let the user/driver finish or pause active work and stop dashboards before replacement. Do not bypass a maintenance conflict with direct package-manager replacement. Keep the printed recovery command and returned backup IDs. Update installed project skills with a dry run first; conflicts require reconciliation, not directory deletion or forced replacement. Validate the new engine, skills and existing documents, then restart only the processes covered by the user's request.
+
+Automatic network version discovery is not currently provided. A source checkout should use its existing update/install workflow while idle, then the same compatibility and skill checks. If the CLI disappears after an interrupted update, use the saved base-Python recovery runner outside the replaced environment.

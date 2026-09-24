@@ -117,6 +117,19 @@ trackrun retry-backoff request-error-message
 - 영어·한국어 프로젝트 설정 및 대시보드 UI.
 - macOS 로컬 검증. Linux CI 검사 구성. 현재 POSIX 프로세스·잠금 구현은 Windows를 지원하지 않습니다.
 
+## 업데이트
+
+```sh
+todo-flow --version
+todo-flow --state /absolute/project/todo compatibility --target /absolute/project/.agents/skills
+```
+
+uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl --dry-run`으로 엔진 업데이트를 확인합니다. 모든 실행기·대시보드를 종료한 뒤 `--dry-run`을 빼고 적용합니다. 알려진 프로젝트의 형식을 검사하고 설치본을 백업하며, 설치·검증 실패 시 이전 엔진을 복구합니다. 신뢰할 수 있는 새 버전 wheel을 직접 지정하는 방식이며 최신 버전 자동 검색은 아직 없습니다.
+
+프로젝트마다 `todo-flow --state STATE update-skills --target PATH --dry-run`으로 스킬 변경을 확인하고 적용합니다. 사용자 수정과 언어·상태 경로를 보존하며, 양쪽에서 바뀐 파일은 덮어쓰기 전에 충돌을 알립니다. 엔진과 스킬은 각각 백업 ID로 롤백할 수 있습니다.
+
+[업데이트·복구 안내와 후속 준비 목록](UPDATES.md)을 참고하세요. 현재 데이터 형식은 유지하며 미래 형식의 자동 마이그레이션은 아직 제공하지 않습니다.
+
 ## 자주 묻는 질문
 
 **에이전트를 대체하나요?** 인증된 Claude/Codex CLI를 이용해 선정한 작업을 진행하는 실행 도구입니다.
@@ -135,7 +148,7 @@ trackrun retry-backoff request-error-message
 
 ## 현재 범위
 
-개발 버전 **0.2.0**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
+개발 버전 **0.0.1**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
 
 - 상태 하나당 저장소 하나. Forgejo·서브모듈·복수 저장소 결합 랜딩 미지원.
 - 기본 워커는 도구 없는 파일 스냅샷을 받아 JSON 변경안을 반환합니다. 직접 셸·브라우저·저장소 탐색 미지원.

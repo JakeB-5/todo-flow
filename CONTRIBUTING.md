@@ -87,4 +87,27 @@ Metric assets contain anonymous aggregates and formulas only. Keep raw Git histo
 
 Use focused imperative commit subjects, such as `Preserve selection when switching dashboard language`. PRs should explain the problem, resulting behavior, validation and remaining limitations. Link related issues and include public-safe screenshots for visible changes. State which checks could not run.
 
-Record behavior, compatibility and important fixes under `Unreleased`. Only assign a release version/date when publishing a release; a development package version is not evidence of a remote release.
+Record behavior, compatibility and important fixes under `Unreleased`. Prepare the package version before release; assign a changelog release date and publish tags only when releasing. A local package version is not evidence of a remote release.
+
+
+## First release preparation
+
+The initial distribution is a Python package containing the `todo-flow` and `trackrun` CLIs, dashboard assets and installable project skills. It does not include a native agent-plugin manifest or marketplace package.
+
+For `0.0.1`, keep `pyproject.toml`, `uv.lock` and both README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
+
+```sh
+uv lock
+uv build --out-dir dist/0.0.1
+```
+
+Verify the wheel installs in a clean environment and includes skill templates, dashboard translations and the MIT license. Confirm the source distribution includes the public guides and excludes local `docs/`. Keep the changelog under `Unreleased` until publication. Tagging, GitHub Releases and package-index uploads are separate release actions.
+
+
+## Update compatibility checks
+
+Maintain `src/todo_flow/release.json` independently from the package version. Bump a state/config/protocol contract only with a documented compatibility or migration path. Never label a format compatible just to make an update pass.
+
+Run `uv run python -m unittest discover -s tests -p test_updates.py -v` for update boundaries. After `uv build --out-dir dist/update-check`, run `uv run python scripts/update_smoke.py --artifacts dist/update-check --root /absolute/new-directory` for isolated real uv tool replacement, rollback and recovery. This needs no model credentials or GitHub mutations. The script derives two later test versions from the current package version (initially `0.0.2` and `0.0.3`). Those wheels are local fixtures and must never be published.
+
+Add tests for changed dependencies, mixed versions and interrupted migrations when those behaviors are introduced. [UPDATES.md](UPDATES.md) separates implemented update support from the remaining release checklist.

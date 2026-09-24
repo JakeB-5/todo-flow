@@ -10,6 +10,7 @@ from pathlib import Path
 from .adapters import GitHub, command, file_lock, files_for_worker, permitted
 from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
+from .maintenance import guarded
 
 
 class Engine:
@@ -176,6 +177,7 @@ class Engine:
             "head": t["head"],
             "endpoint": self.config["endpoint"],
             "language": self.config.get("language", "en"),
+            "worker_protocol": self.config.get("worker_protocol", 1),
             "files": files_for_worker(workspace, self.config["context_patterns"]),
             "diff": command(
                 ["git", "diff", "origin/" + self.config["base"] + "...HEAD"], workspace
@@ -406,6 +408,7 @@ class Engine:
             "adopt_completion": True,
         }
 
+    @guarded
     def execute(self, task):
         stop = threading.Event()
 
@@ -670,6 +673,7 @@ class Engine:
                         "assess:" + key,
                     )
 
+    @guarded
     def run(self, jobs=2, max_tasks=100, daemon=False):
         owner = uid("driver")
         count = 0

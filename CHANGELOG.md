@@ -1,10 +1,16 @@
 # Changelog
 
-User-visible behavior, compatibility, important fixes and repository changes. The current development package version is `0.2.0`; these changes have not been published as a separate release.
+User-visible behavior, compatibility, important fixes and repository changes. The package is prepared for its first release, `0.0.1`. It has not been published; entries remain under Unreleased until release.
 
 ## Unreleased
 
 ### Added
+
+- Installed version reporting for both CLI entrypoints, explicit release compatibility contracts and rejection of unknown state/config/worker/skill formats.
+- Guarded uv-tool engine upgrades from a supplied newer wheel, environment/entrypoint backups, rollback, and an independent runner for recovery when an update interrupts the CLI.
+- Per-project skill installation manifests, dry-run updates, user-edit/conflict handling, legacy baseline adoption, retired-resource handling and recoverable rollback.
+- Cooperative runtime/update locks, known-project compatibility preflight, and blocking for unresolved running work or recorded live workers.
+- Update operations guide, a prioritized future release checklist and isolated real uv-tool update/rollback/failure acceptance tests.
 
 - English-first README with a Korean companion, product demonstration, first-run walkthrough, support matrix and FAQ.
 - Dedicated agent installation, operations and demo guides that work without ignored local design notes.
@@ -29,6 +35,8 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ### Changed
 
+- Prepare package metadata and public version references for the first `0.0.1` release.
+
 - Public skill instructions and starter templates now use English. New user-facing content follows the selected project language; existing documents are preserved.
 - README prioritizes product outcomes, actual UI, quick start and an agent installation prompt; detailed operation has moved to shared root guides.
 - Tracks and runtime records use files as authority; SQLite is disposable.
@@ -40,6 +48,14 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 - Triage duplicate search no longer mistakes historical `revisions/` documents for current track IDs.
 - Post-landing repair reopens the issue and distinguishes closure receipts for the new delivery cycle.
+
+### Validation of update support
+
+- 81 Python tests and six dashboard localization tests passed; the update cases include conflicts, exact rollback, interrupted recovery, retired skills, protected context, unsupported formats and maintenance exclusion.
+- Isolated real uv tool acceptance exercised `0.0.1` to a synthetic `0.0.2`, active-dashboard blocking, skill update/rollback, engine rollback and automatic rollback of a deliberately broken synthetic `0.0.3`.
+- The external recovery runner restored an interrupted installation after its CLI disappeared, without the original update environment variables.
+- Every canonical project state file remained byte-for-byte unchanged, and queued work remained queued. No models or remote effects were used by this update acceptance test.
+- Release build, Python lint/format, JavaScript checks and package contents verified locally. The hosted CI update matrix is configured but has not been run here.
 
 ### Validation of language and documentation changes
 

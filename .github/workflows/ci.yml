@@ -26,4 +26,5 @@ jobs:
       - run: uv run ruff format --check src tests scripts
       - run: node --check src/todo_flow/web/app.js
       - run: node --test tests/dashboard_i18n.test.cjs
-      - run: uv build
+      - run: uv build --out-dir dist/update-check
+      - run: uv run python scripts/update_smoke.py --artifacts dist/update-check --root "$RUNNER_TEMP/todo-flow-update-smoke"

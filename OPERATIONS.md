@@ -112,6 +112,10 @@ An inactive track's signal does not start new code execution. Confirmed defects 
 
 The todo and watchlist skills recommend **Jev as an optional screening aid**: investigation sufficiency and overlap during registration; changed-source relevance and finding prioritization during watch review. Begin with available files and tools. An absent or failed Jev integration does not block the current request. Use a configured integration's documented interface, retain your reasoning, and do not treat scores as proof of resolution. No Jev client, credentials or remote calls are installed by TODO Flow.
 
+## Updates and compatibility
+
+Use [UPDATES.md](UPDATES.md) for guarded engine replacement, manifest-based skill updates, rollback and recovery. The runtime rejects unsupported state/config formats before using them. Package version changes do not automatically rewrite project data. Engine updates require idle cooperative processes across known projects; skill updates only require the relevant project to be idle. Existing requests and documents remain in place.
+
 ## Cleanup, migration and hooks
 
 ```sh

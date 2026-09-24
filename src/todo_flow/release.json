@@ -1,0 +1,7 @@
+{
+  "manifest_version": 1,
+  "state_formats": [1],
+  "config_formats": [1],
+  "worker_protocols": [1],
+  "skill_protocols": [1]
+}

@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 from . import documents
+from .release import VERSION, check_catalog
 
 TABLES = (
     "config",
@@ -71,13 +72,24 @@ class FileDatabase:
             raise ValueError(
                 "Legacy SQLite state: use todo-flow migrate-files --source OLD --target NEW; source is preserved"
             )
+        if self.catalog.exists():
+            check_catalog(json.loads(self.catalog.read_text()))
         self.cache = self.root / ".cache" / "query.sqlite"
         self.cache.parent.mkdir(exist_ok=True)
         with self.lock():
             self.recover()
             if not self.catalog.exists():
                 atomic(
-                    self.catalog, dump({"format": 1, "version": uuid.uuid4().hex, "records": {}})
+                    self.catalog,
+                    dump(
+                        {
+                            "format": 1,
+                            "created_by": VERSION,
+                            "min_engine_version": "0.0.1",
+                            "version": uuid.uuid4().hex,
+                            "records": {},
+                        }
+                    ),
                 )
 
     @contextlib.contextmanager
@@ -100,9 +112,12 @@ class FileDatabase:
         return path
 
     def recover(self):
+        if self.catalog.exists():
+            check_catalog(json.loads(self.catalog.read_text()))
         if not self.pending.exists():
             return
         journal = json.loads(self.pending.read_text())
+        check_catalog(journal["catalog"])
         for relative, text in journal["writes"].items():
             path = self.path(relative)
             if text is None:
@@ -240,6 +255,7 @@ class FileDatabase:
         with self.lock():
             self.recover()
             catalog = json.loads(self.catalog.read_text())
+            check_catalog(catalog)
             c = self.prepare(catalog, self.signature(catalog))
             try:
                 keys = {}

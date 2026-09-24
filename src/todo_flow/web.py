@@ -10,8 +10,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import documents
 from .store import Conflict, encode
 from .projections import Dashboard
+from .maintenance import guarded
 
 
+@guarded
 def serve(store, port=8765):
     token = secrets.token_urlsafe(32)
     dashboard = Dashboard(store)

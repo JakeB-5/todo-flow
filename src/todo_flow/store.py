@@ -49,7 +49,11 @@ class Store:
             row = c.execute("SELECT body FROM config WHERE id=1").fetchone()
         if not row:
             raise ValueError("Project not initialized")
-        return json.loads(row[0])
+        from .release import check_config
+
+        config = json.loads(row[0])
+        check_config(config)
+        return config
 
     def configure(self, value):
         with self.transaction() as c:

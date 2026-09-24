@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "todo-flow"
-version = "0.2.0"
+version = "0.0.1"
 description = "Durable TODO work requests, replaceable agents, and observable delivery"
 readme = "README.md"
 license = "MIT"
@@ -34,4 +34,4 @@ select = ["E4", "E7", "E9", "F"]
 "skills" = "todo_flow/skills"
 
 [tool.hatch.build.targets.sdist]
-only-include = [".github", "src/todo_flow", "skills", "templates", "tests", "scripts", "assets", "examples", "LICENSE", "AGENT_INSTALL.md", "OPERATIONS.md", "DEMO.md", "README.ko.md", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "AGENTS.md", "pyproject.toml", "uv.lock"]
+only-include = [".github", "src/todo_flow", "skills", "templates", "tests", "scripts", "assets", "examples", "LICENSE", "AGENT_INSTALL.md", "OPERATIONS.md", "UPDATES.md", "DEMO.md", "README.ko.md", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "AGENTS.md", "pyproject.toml", "uv.lock"]

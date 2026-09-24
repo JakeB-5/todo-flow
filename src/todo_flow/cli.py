@@ -7,6 +7,8 @@ from pathlib import Path
 from .adapters import command
 from .engine import Engine
 from .language import select_language
+from .release import VERSION, CONTRACTS, project_compatibility
+from .maintenance import runtime_guard
 from .store import Conflict, Store, encode, fingerprint
 
 
@@ -36,6 +38,10 @@ def initialize(args):
         "worker_timeout": args.worker_timeout,
         "verify_timeout": args.verify_timeout,
         "language": select_language(args.language, interactive=sys.stdin.isatty()),
+        "schema_version": 1,
+        "worker_protocol": 1,
+        "created_by": VERSION,
+        "min_engine_version": "0.0.1",
     }
     store = Store(args.state or repo / "todo")
     store.configure(config)
@@ -44,6 +50,7 @@ def initialize(args):
 
 def parser():
     p = argparse.ArgumentParser(prog="todo-flow")
+    p.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     p.add_argument("--state", help="Project state directory (default: todo)")
     sub = p.add_subparsers(dest="command", required=True)
     i = sub.add_parser("init")
@@ -77,6 +84,7 @@ def parser():
     migration.add_argument("--source", required=True)
     migration.add_argument("--target", required=True)
     tr = sub.add_parser("trackrun", help="Request selected tracks and run headless workers")
+    tr.add_argument("--version", action="version", version=f"trackrun {VERSION}")
     tr.add_argument("tracks", nargs="+")
     tr.add_argument("--jobs", type=int, default=2)
     tr.add_argument("--max-tasks", type=int, default=100)
@@ -117,14 +125,32 @@ def parser():
         choices=["en", "ko"],
         help="Use the project language, or choose one for standalone skills",
     )
+    update = sub.add_parser("update-skills", help="Plan/apply a safe project skill update")
+    update.add_argument("--target", required=True)
+    update.add_argument("--dry-run", action="store_true")
+    update.add_argument(
+        "--adopt", action="store_true", help="Adopt legacy skills only when they match this bundle"
+    )
+    restore = update.add_mutually_exclusive_group()
+    restore.add_argument("--rollback", metavar="BACKUP_ID")
+    restore.add_argument("--recover", action="store_true")
+    check = sub.add_parser("compatibility", help="Inspect engine and project format compatibility")
+    check.add_argument("--target", help="Also check this installed skill bundle")
+    upgrade = sub.add_parser(
+        "upgrade", help="Guarded uv tool update from an explicit local release wheel"
+    )
+    choice = upgrade.add_mutually_exclusive_group(required=True)
+    choice.add_argument("--wheel")
+    choice.add_argument("--rollback", metavar="BACKUP_ID")
+    choice.add_argument("--recover", action="store_true")
+    upgrade.add_argument("--dry-run", action="store_true")
     sub.add_parser("hooks")
     clean = sub.add_parser("cleanup")
     clean.add_argument("track")
     return p
 
 
-def main(argv=None):
-    args = parser().parse_args(argv)
+def dispatch(args):
     try:
         if args.command == "migrate-files":
             from .migrate import migrate
@@ -134,38 +160,26 @@ def main(argv=None):
         if args.command == "init":
             initialize(args)
             return
-        if args.command == "install-skills":
-            import shutil
+        if args.command in ("install-skills", "update-skills"):
+            from . import skill_updates
 
-            source = Path(__file__).with_name("skills")
-            if not source.exists():
-                source = Path(__file__).resolve().parents[2] / "skills"
-            target = Path(args.target).resolve()
-            project = (
-                target.parent.parent if target.parent.name in (".agents", ".claude") else Path.cwd()
-            )
-            state = Path(args.state).resolve() if args.state else (project / "todo").resolve()
-            project_config = state / "config" / "1.json"
-            config = Store(state).config() if project_config.exists() else None
-            if config and args.language and args.language != config.get("language", "en"):
-                raise ValueError("Skill language must match the initialized project language")
-            language = select_language(
-                config.get("language", "en") if config else args.language,
-                interactive=sys.stdin.isatty(),
-            )
-            for folder in source.iterdir():
-                if folder.is_dir():
-                    dest = target / folder.name
-                    if dest.exists():
-                        raise Conflict("Skill already exists: " + str(dest))
-            target.mkdir(parents=True, exist_ok=True)
-            for folder in source.iterdir():
-                if folder.is_dir():
-                    shutil.copytree(folder, target / folder.name)
-                    (target / folder.name / "project.json").write_text(
-                        encode({"language": language, "state": str(state)}) + "\n"
+            state, language = skill_context(args)
+            if args.command == "update-skills" and (args.rollback or args.recover):
+                if args.dry_run or args.adopt:
+                    raise ValueError(
+                        "Recovery/rollback cannot be combined with --dry-run or --adopt"
                     )
-            print(encode({"installed": str(target), "language": language, "state": str(state)}))
+                result = skill_updates.restore(args.target, state, args.rollback)
+            else:
+                result = skill_updates.update(
+                    args.target,
+                    state,
+                    language,
+                    install=args.command == "install-skills",
+                    dry_run=getattr(args, "dry_run", False),
+                    adopt=getattr(args, "adopt", False),
+                )
+            print(encode(result))
             return
         store = Store(args.state or Path.cwd() / "todo")
         store.config()
@@ -358,6 +372,90 @@ def main(argv=None):
     except (ValueError, Conflict, RuntimeError, OSError) as e:
         print(encode({"error": str(e)}), file=sys.stderr)
         raise SystemExit(2) from e
+
+
+def skill_context(args):
+    target = Path(args.target).resolve()
+    contexts = [json.loads(p.read_text()) for p in target.glob("*/project.json")]
+    inferred_states = {c["state"] for c in contexts if c.get("state")}
+    if args.state:
+        state = Path(args.state).resolve()
+        if inferred_states and inferred_states != {str(state)}:
+            raise ValueError("Installed skills belong to another state directory")
+    elif len(inferred_states) == 1:
+        state = Path(next(iter(inferred_states))).resolve()
+    elif inferred_states:
+        raise ValueError("Skill directory mixes projects; specify separate installation targets")
+    else:
+        project = (
+            target.parent.parent if target.parent.name in (".agents", ".claude") else Path.cwd()
+        )
+        state = (project / "todo").resolve()
+    config_file = state / "config/1.json"
+    config = Store(state).config() if config_file.exists() else None
+    requested = getattr(args, "language", None)
+    inherited = (
+        config.get("language", "en")
+        if config
+        else contexts[0].get("language", "en")
+        if contexts
+        else None
+    )
+    if requested and inherited and requested != inherited:
+        raise ValueError("Skill language must match the initialized project language")
+    language = select_language(
+        inherited or requested, interactive=args.command == "install-skills" and sys.stdin.isatty()
+    )
+    return state, language
+
+
+def main(argv=None):
+    args = parser().parse_args(argv)
+    try:
+        if args.command == "upgrade":
+            from .engine_updates import launch
+
+            if args.dry_run and not args.wheel:
+                raise ValueError("--dry-run requires --wheel")
+            print(
+                encode(
+                    launch(
+                        args.wheel,
+                        dry_run=args.dry_run,
+                        restore=args.rollback,
+                        recover=args.recover,
+                    )
+                )
+            )
+            return
+        if args.command in ("install-skills", "update-skills"):
+            # The skill operation takes the exclusive project lease after resolving its target.
+            with runtime_guard():
+                dispatch(args)
+            return
+        state = Path(
+            args.state
+            or (Path(args.repo) / "todo" if args.command == "init" else Path.cwd() / "todo")
+        ).resolve()
+        with runtime_guard(state):
+            if args.command == "compatibility":
+                result = {
+                    "engine": VERSION,
+                    "contracts": CONTRACTS,
+                    "project": project_compatibility(state),
+                }
+                if args.target:
+                    from .skill_updates import plan
+
+                    result["skills"] = plan(args.target)[0]
+                print(encode(result))
+                if not result["project"]["compatible"] or result.get("skills", {}).get("conflicts"):
+                    raise SystemExit(2)
+                return
+            dispatch(args)
+    except (ValueError, Conflict, RuntimeError, OSError) as error:
+        print(encode({"error": str(error)}), file=sys.stderr)
+        raise SystemExit(2) from error
 
 
 def trackrun():

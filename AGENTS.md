@@ -9,7 +9,7 @@
 - `scripts/`: reproducible public GitHub acceptance tests and labeled local dashboard fixtures.
 - `assets/metrics/`: anonymous aggregate measurements, methodology, and generated public charts. Keep raw source histories and identifying metadata outside this repository.
 - `docs/`: local-only design specifications, prototypes, and experiment records; ignored by Git and excluded from distributions. Preserve local files and do not force-add them.
-- `README.md`, `README.ko.md`, `AGENT_INSTALL.md`, `OPERATIONS.md`, `DEMO.md`, `CHANGELOG.md`, `CONTRIBUTING.md`: tracked usage, change history, and contributor guidance. Shared instructions must work without `docs/`.
+- `README.md`, `README.ko.md`, `AGENT_INSTALL.md`, `OPERATIONS.md`, `UPDATES.md`, `DEMO.md`, `CHANGELOG.md`, `CONTRIBUTING.md`: tracked usage, change history, and contributor guidance. Shared instructions must work without `docs/`.
 
 ## Commands
 
@@ -47,3 +47,7 @@ Keep language preferences isolated by project and preserve selection, drafts and
 Jev is an optional recommendation in todo/watchlist, never an execution or installation prerequisite.
 Public demos must disclose synthetic data. The project is MIT licensed.
 Run `node --test tests/dashboard_i18n.test.cjs` for localization behavior.
+
+## Update boundaries
+
+Package version and state/config/worker/skill protocol versions are independent. Check compatibility before recovery writes; do not silently downgrade unknown formats. CLI/driver/dashboard lifetimes participate in maintenance locks. Keep engine recovery independent of the environment being replaced. Skill updates compare managed-file baselines, preserve project context and local edits, and reject conflicts before mutation. Preserve durable receipts and test interrupted updates. The isolated update smoke uses synthetic future versions only; never publish its wheels.
