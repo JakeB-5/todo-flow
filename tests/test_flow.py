@@ -256,6 +256,37 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(all(json.loads(p.read_text())["returncode"] == 0 for p in receipts))
         self.assertEqual(len(snapshot["triages"]), 2)
 
+    def test_reconcile_cannot_restart_work_between_task_and_track_completion(self):
+        self.s.start("addition")
+        engine = Engine(self.s)
+        engine.run(max_tasks=5)
+        task = self.s.claim("completion-observer")
+        self.assertEqual(task["kind"], "complete")
+        finish = self.s.finish
+        observers = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+
+            def observe_finish(current, result, connection=None):
+                value = finish(current, result, connection=connection)
+                if current["kind"] == "complete":
+                    observers.append(pool.submit(engine.reconcile))
+                    try:
+                        observers[-1].result(timeout=0.5)
+                    except concurrent.futures.TimeoutError:
+                        pass  # Atomic completion keeps the observer outside the transaction.
+                return value
+
+            with patch.object(self.s, "finish", side_effect=observe_finish):
+                engine.execute(task)
+            for observer in observers:
+                observer.result(timeout=5)
+        snapshot = self.s.snapshot()
+        self.assertEqual(self.s.track("addition")["control"], "finished")
+        self.assertFalse(
+            any(w["status"] in ("queued", "running", "waiting") for w in snapshot["tasks"])
+        )
+        self.assertFalse(any(event["type"] == "attempt.error" for event in snapshot["events"]))
+
     def test_review_keeps_extra_observations_without_losing_required_conditions(self):
         self.s.start("addition")
         initial = self.s.claim("initial")

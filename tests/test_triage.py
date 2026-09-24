@@ -138,6 +138,10 @@ class TriageTests(unittest.TestCase):
             "TypeError", command(["git", "--git-dir", str(self.remote), "show", "main:calc.py"])
         )
         self.assertEqual(len(self.s.snapshot()["triages"]), 2)
+        receipts = [json.loads(row["body"]) for row in self.s.snapshot()["triages"]]
+        self.assertTrue(
+            any(row["candidate"] == latest["head"] and row["cleared"] for row in receipts)
+        )
 
     def test_disposition_batch_is_atomic_and_original_scope_cannot_escape(self):
         task, triage, context = self.landed()

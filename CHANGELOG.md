@@ -4,6 +4,14 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ## Unreleased
 
+### Fixed
+
+- Commit task completion and track completion atomically so reconciliation cannot reopen finished work in between. Preserve the candidate SHA separately from the triage checkout SHA.
+
+### Validation
+
+- Real Codex workers in 14 Orca terminals completed three parallel tracks through independent reviews, GitHub PR merges, triage and issue closure in a fresh public fixture, without decisions or runtime errors. Follow-up documentation was registered/linked and left unselected. See the [run artifacts](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924).
+
 ### Changed
 
 - Unreleased path-based worker protocol 2: run in the assigned checkout with read-only search/read tools; pass document, diff and evidence paths instead of source snapshots. Remove the aggregate 150 KB source cap and diff truncation. Legacy custom adapters must adopt protocol 2 explicitly.

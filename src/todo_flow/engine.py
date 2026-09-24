@@ -486,9 +486,11 @@ class Engine:
                         self.record_review(task, result)
                     self.record_watches(task, result.get("watches", []))
                 adopt = result.pop("adopt_completion", False)
-                self.store.finish(task, result)
-                if adopt:
-                    with self.store.transaction() as c:
+                # Publish task completion and track completion in one transaction. Otherwise
+                # reconciliation can schedule new work in the gap and undo a finished repair.
+                with self.store.transaction() as c:
+                    self.store.finish(task, result, connection=c)
+                    if adopt:
                         latest = self.store.track(task["track"], c)
                         if latest["revision"] != task["input_revision"] or latest[
                             "control"

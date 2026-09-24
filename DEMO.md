@@ -76,13 +76,23 @@ The first two tracks needed recovery after a triage duplicate-search bug was cor
 
 ## Reproduce remote acceptance
 
+The latest development run exercised path-based workers in visible Orca terminals on September 24, 2026:
+
+| Requirement | Issue | Merged change |
+|---|---|---|
+| Compact whitespace | [Issue #1](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/1) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/4) |
+| Preserve first distinct values | [Issue #2](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/2) | [PR #5](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/5) |
+| Divide with an explicit fallback | [Issue #3](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/3) | [PR #6](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/6) |
+
+Three implementation workers overlapped. Fourteen actual Codex workers ran in Orca terminals, including fresh triage when the base advanced. All three selected tracks reached completion; a new usage-documentation TODO and an existing licensing TODO remained unselected. There were no decision waits or runtime errors during this run, and the delivered fixture passed 19 tests. The fixture included a source file larger than 150 KB. These are bounded acceptance tasks, not a large-project benchmark or a live Claude validation.
+
 This command **creates a public repository and real issues, PRs, model calls and merges**. Use your account and a new test directory only when that external experiment is intended:
 
 ```sh
 uv run python scripts/parallel_smoke.py \
-  --worker codex --exercise-triage \
+  --worker codex --launcher orca --register-orca --exercise-triage \
   --create-public YOUR_ACCOUNT/NEW_TEST_REPOSITORY \
   --root /absolute/new-test-directory
 ```
 
-The resulting report records actual tracks, remote artifacts and worker overlap. Preserve initial failure, recovery and fresh-run outcomes separately. See [CONTRIBUTING](CONTRIBUTING.md#demos-and-external-acceptance) for the experiment boundary.
+This variant also registers the disposable fixture in a running local Orca app and requires real terminals. Use `--launcher headless` and omit `--register-orca` for a headless run. The script registers reviewable HTML plans. The resulting report records actual tracks, remote artifacts, worker overlap, terminal receipts and input sizes. Preserve initial failure, recovery and fresh-run outcomes separately. See [CONTRIBUTING](CONTRIBUTING.md#demos-and-external-acceptance) for the experiment boundary.

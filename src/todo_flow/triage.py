@@ -190,7 +190,7 @@ class Triage:
         if task["purpose"].startswith("Search related tracks: "):
             terms = json.loads(task["purpose"].split(": ", 1)[1])
         context = self.engine.context(task, checkout)
-        context["head"] = base
+        context["workspace_head"] = base
         context["diff"] = command(
             ["git", "diff", json.loads(t["landing"])["baseBefore"] + ".." + base], self.engine.root
         )

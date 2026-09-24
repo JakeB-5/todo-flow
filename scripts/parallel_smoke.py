@@ -15,6 +15,14 @@ def main():
     p.add_argument("--root", required=True)
     p.add_argument("--worker", choices=["claude", "codex"], default="claude")
     p.add_argument(
+        "--launcher", choices=["auto", "headless", "orca", "tmux", "terminal"], default="auto"
+    )
+    p.add_argument(
+        "--register-orca",
+        action="store_true",
+        help="Register this disposable fixture in the running Orca app",
+    )
+    p.add_argument(
         "--exercise-triage",
         action="store_true",
         help="Seed explicit residual observations and verify automatic dispositions",
@@ -32,6 +40,9 @@ def main():
     )
     (repo / "test_baseline.py").write_text(
         "import unittest\nclass Baseline(unittest.TestCase):\n    def test_fixture(self):\n        self.assertTrue(True)\n"
+    )
+    (repo / "context_fixture.py").write_text(
+        "# Large unrelated fixture: explore only the files needed for the selected task.\n" * 4000
     )
     run(["git", "init", "-b", "main"], repo)
     run(["git", "add", "."], repo)
@@ -51,6 +62,10 @@ def main():
         ]
     )
     state = root / "state"
+    if args.register_orca:
+        from todo_flow.launchers import orca_command
+
+        print(run([orca_command(), "repo", "add", "--path", str(repo), "--json"]), flush=True)
     cli = [sys.executable, "-m", "todo_flow", "--state", str(state)]
     run(
         cli
@@ -77,6 +92,8 @@ def main():
             "--allow-land",
             "--worker",
             args.worker,
+            "--launcher",
+            args.launcher,
         ]
     )
     specs = [
@@ -126,8 +143,10 @@ def main():
                 for i, text in enumerate(conditions)
             ],
         }
-        docpath = root / (id_ + ".json")
-        docpath.write_text(json.dumps(doc))
+        from todo_flow.documents import render_html
+
+        docpath = root / (id_ + ".html")
+        docpath.write_text(render_html(doc))
         run(cli + ["register", str(docpath)])
     if args.exercise_triage:
         from todo_flow.store import Store, encode
@@ -294,9 +313,33 @@ def main():
         text=True,
     )
     success = success and tests.returncode == 0
+    launches = [
+        json.loads(path.read_text()) for path in sorted((state / "attempts").glob("*/launch.json"))
+    ]
+    terminal_exits = [
+        json.loads(path.read_text())
+        for path in sorted((state / "attempts").glob("*/terminal-process.json"))
+    ]
+    if args.launcher == "orca":
+        success = (
+            success
+            and bool(launches)
+            and all(item["backend"] == "orca" and item["status"] == "accepted" for item in launches)
+            and len(terminal_exits) == len(launches)
+            and all(
+                item["status"] == "exited" and item["returncode"] == 0 for item in terminal_exits
+            )
+        )
     report = {
         "repository": "https://github.com/" + args.create_public,
         "worker": args.worker,
+        "launcher": args.launcher,
+        "terminalLaunches": launches,
+        "terminalExits": terminal_exits,
+        "contextFixtureBytes": (repo / "context_fixture.py").stat().st_size,
+        "largestWorkerInputBytes": max(
+            path.stat().st_size for path in (state / "attempts").glob("*/input.json")
+        ),
         "success": success,
         "tracks": tracks,
         "triages": triages,

@@ -271,6 +271,7 @@ def worker_input(context, folder):
     inline = {
         "task",
         "head",
+        "workspace_head",
         "document_revision",
         "endpoint",
         "language",
