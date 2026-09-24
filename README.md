@@ -200,6 +200,8 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 **Unreleased on `main`:** workers read project files on demand, and `trackrun` prefers visible terminal logs through Orca, a configured terminal launcher or tmux. No available terminal means headless execution; `--launcher headless` explicitly selects it. The published `0.0.1` wheel still uses the earlier snapshot/headless implementation. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
 
+Completed tracks automatically clean disposable checkouts and unchanged worker terminals while retaining documents, logs, results and Git branches. Resources with user changes or unconfirmed ownership are kept with a reason. Use `--no-auto-cleanup` to retain resources for inspection; see [cleanup and retry](OPERATIONS.md#cleanup-migration-and-hooks).
+
 Early release **0.0.1**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.

@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 
 
 def save(path, value):
@@ -89,7 +90,10 @@ def main(spec_path):
                     proc.wait()
             for thread in readers:
                 thread.join()
-            save(receipt, {**state, "status": "exited", "returncode": code})
+            save(
+                receipt,
+                {**state, "status": "exited", "returncode": code, "finished_at": time.time()},
+            )
             print(f"\nTODO Flow worker exited: {code}", flush=True)
         return code
 

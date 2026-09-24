@@ -90,7 +90,7 @@ trackrun TRACK_ID --launcher orca
 todo-flow --state STATE run --launcher headless
 ```
 
-`auto` first uses a running Orca runtime that recognizes the project's repository. It opens a titled terminal under that project and starts the worker in its assigned checkout. Otherwise it uses a configured `terminal_command`, then tmux when invoked inside an existing tmux session, then headless. Explicit `orca`, `tmux` or `terminal` modes fail when unavailable. Remote Orca PTYs require a driver on that host; they are not launched from a local driver. Completed terminal tabs remain available for inspection.
+`auto` first uses a running Orca runtime that recognizes the project's repository. It opens a titled terminal under that project and starts the worker in its assigned checkout. Otherwise it uses a configured `terminal_command`, then tmux when invoked inside an existing tmux session, then headless. Explicit `orca`, `tmux` or `terminal` modes fail when unavailable. Remote Orca PTYs require a driver on that host; they are not launched from a local driver. Exited worker terminals are closed after track completion when their identity and inactivity can still be verified; their logs remain in the attempt directory. Use `--no-auto-cleanup` when completed run resources should remain open for inspection.
 
 For another terminal application, configure `terminal_command` as an argv array for a trusted launcher that returns after opening the terminal. `{command}` is the shell-quoted worker bridge command; `{cwd}` and `{title}` are optional placeholders. The launcher must start that command unchanged and return within ten seconds. Authentication is inherited from the terminal environment; credentials are not copied into launch records. Use headless if the required authentication exists only in the calling shell.
 
@@ -141,11 +141,20 @@ Use [UPDATES.md](UPDATES.md) for guarded engine replacement, manifest-based skil
 ## Cleanup, migration and hooks
 
 ```sh
+todo-flow --state STATE cleanup TRACK_ID --dry-run
 todo-flow --state STATE cleanup TRACK_ID
 todo-flow migrate-files --source OLD_SQL_STATE --target NEW_FILE_STATE
 todo-flow --state STATE hooks
 ```
 
-Cleanup is explicit and preserves branches. It requires a finished execution, a clean worktree and confirmed remote inclusion for a land endpoint; unlanded candidates are preserved. Migration copies the legacy SQL store into new file state; it is not an importer for another tool's ledger.
+On development `main`, completion requests automatic cleanup of the track's implementation worktrees (including earlier repair attempts), integration checkouts, triage checkouts and exited worker terminals. The published `0.0.1` release only has explicit cleanup of the current implementation worktree. `init --no-auto-cleanup` disables automatic cleanup for a new project; `trackrun ... --no-auto-cleanup` or `run --no-auto-cleanup` disables it for one driver. Manual cleanup remains available.
+
+Cleanup preserves the main checkout, local branches, track documents, revisions, results, verification/review/triage evidence and raw attempt logs. It checks the actual checkout HEAD against the fetched remote base, not just the recorded candidate SHA. Unlanded candidates, unfinished work, dirty/untracked files, unknown ignored files, changed terminal identities and terminals with newer activity are retained with a reason. Ignored Python `__pycache__/*.pyc` files are disposable; other ignored files require inspection. No forced worktree removal or branch deletion is used.
+
+Orca terminal closure uses the recorded PTY/incarnation and a fresh inventory. A reused terminal is preserved. tmux windows are closed only when the named single pane has exited; custom terminal launchers without a supported close interface require manual closure. An unresolved terminal also retains its associated checkout.
+
+Cleanup intent and per-resource outcomes live in `cleanup/TRACK/EXECUTION.json` and `cleanup.requested`, `cleanup.complete` or `cleanup.deferred` events. An interruption can be retried with `cleanup TRACK_ID`; a subsequent driver retries pending cleanup requests. A cleanup problem does not reopen delivered work or rerun agents. Historical workspace paths remain in evidence after removal; the retained Git branches/commits preserve the source.
+
+Migration copies the legacy SQL store into new file state; it is not an importer for another tool's ledger.
 
 Internal hooks are durable events, including document registration, execution acceptance, worker claims, work results, verification, effect confirmation, decision answers, controls, claim recovery, watch changes, triage and completion. A filesystem redo journal and durable agenda preserve handoffs. External callback hooks are not currently provided.

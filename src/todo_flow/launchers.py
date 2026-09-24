@@ -85,7 +85,7 @@ def select_launcher(config, workspace):
             raise ValueError("terminal_command must be an argv array containing {command}")
         return {"backend": "terminal", "argv": argv}
     if mode in ("auto", "tmux") and os.environ.get("TMUX") and shutil.which("tmux"):
-        return {"backend": "tmux"}
+        return {"backend": "tmux", "socket": os.environ["TMUX"].rsplit(",", 2)[0]}
     if mode != "auto":
         raise RuntimeError(f"{mode} terminal unavailable; configure a launcher or select headless")
     return {"backend": "headless"}
@@ -178,6 +178,8 @@ def spawn_terminal(launcher, argv, workspace, folder, title):
             if launcher["backend"] == "tmux":
                 args = [
                     "tmux",
+                    "-S",
+                    launcher["socket"],
                     "new-window",
                     "-d",
                     "-P",

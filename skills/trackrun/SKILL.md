@@ -17,6 +17,8 @@ Default launcher `auto` prefers an available Orca project terminal, then a confi
 
 If a separate `todo-flow --state STATE run --daemon` driver already runs, `--request-only` can submit without starting another. Reaching `--max-tasks` preserves pending work; continue with `todo-flow --state STATE run`. A task limit is not a completion verdict.
 
+After completion, the runtime cleans owned, clean and remotely included worktrees plus confirmed exited worker terminals. Documents, branches, results and attempt logs remain. Use `--no-auto-cleanup` only when resources need to remain for inspection. Inspect `cleanup/` and cleanup events for deferred resources; `cleanup TRACK_ID --dry-run` explains the plan, and `cleanup TRACK_ID` retries. Cleanup failure does not mean the delivered track needs to run again. Never force-remove user changes or a reused terminal.
+
 Check `tasks/` and `attempt-records/` for execution, `results/` for outcomes, `decisions/` for questions and `effects/` for external receipts. No SQL query is required. Unknown file state is not success.
 
 Use `todo-flow --state STATE pause|resume|cancel ID` when requested. Record decisions with `answer DECISION_ID --text TEXT` and restart a driver if needed. Preserve requests, handoffs, receipts and failure history; distinguish recovery with intervention from an uninterrupted run.

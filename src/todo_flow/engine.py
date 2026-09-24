@@ -279,7 +279,8 @@ class Engine:
                 }
             # One fresh integration checkout per attempt. Recovery preserves previous checkouts.
             integration = self.store.path / "integrations" / task["attempt"]
-            command(["git", "worktree", "add", "--detach", str(integration), base], self.root)
+            with file_lock(self.store.path / "locks/git-metadata.lock", blocking=True):
+                command(["git", "worktree", "add", "--detach", str(integration), base], self.root)
             try:
                 command(["git", "merge", "--no-ff", "--no-edit", t["head"]], integration)
             except RuntimeError as e:
@@ -415,6 +416,7 @@ class Engine:
     @guarded
     def execute(self, task):
         stop = threading.Event()
+        adopted = False
 
         def pulse():
             while not stop.wait(8):
@@ -521,11 +523,58 @@ class Engine:
                             task["track"],
                             {"endpoint": self.config["endpoint"]},
                         )
+                        self.store.event(
+                            c,
+                            "cleanup.requested",
+                            task["track"],
+                            {
+                                "request": latest["request"],
+                                "head": latest["head"],
+                            },
+                        )
+                        adopted = True
         except Exception as e:
             self.fail(task, e)
         finally:
             stop.set()
             thread.join(timeout=1)
+        if adopted:
+            self.cleanup_finished(task["track"])
+
+    def cleanup_finished(self, track_id=None):
+        if not self.config.get("cleanup_on_complete", True):
+            return
+        from .cleanup import cleanup_track, receipt_path, read_json
+
+        with self.store.connect() as connection:
+            requested = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT DISTINCT track FROM events WHERE type='cleanup.requested'"
+                )
+            }
+            tracks = [
+                dict(row)
+                for row in connection.execute("SELECT * FROM tracks WHERE control='finished'")
+                if row["id"] in requested and (track_id is None or row["id"] == track_id)
+            ]
+        for track in tracks:
+            try:
+                if read_json(receipt_path(self.store, track)).get("status") == "complete":
+                    continue
+                cleanup_track(self.store, track["id"])
+            except Exception as error:
+                # Cleanup is retryable maintenance; it must not turn delivered work into failure.
+                with self.store.transaction() as connection:
+                    self.store.event(
+                        connection,
+                        "cleanup.deferred",
+                        track["id"],
+                        {
+                            "request": track["request"],
+                            "reason": str(error),
+                        },
+                    )
 
     def record_watches(self, task, rows):
         with self.store.transaction() as c:
@@ -681,6 +730,7 @@ class Engine:
 
     @guarded
     def run(self, jobs=2, max_tasks=100, daemon=False):
+        self.cleanup_finished()
         owner = uid("driver")
         count = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:

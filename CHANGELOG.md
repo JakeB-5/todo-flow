@@ -6,6 +6,7 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ### Fixed
 
+- Complete the resource lifecycle after delivery: clean owned implementation/integration/triage worktrees and confirmed idle worker terminals, retain evidence and branches, and journal deferred or interrupted cleanup for retry without reopening the track.
 - Commit task completion and track completion atomically so reconciliation cannot reopen finished work in between. Preserve the candidate SHA separately from the triage checkout SHA.
 
 ### Validation

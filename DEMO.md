@@ -86,6 +86,8 @@ The latest development run exercised path-based workers in visible Orca terminal
 
 Three implementation workers overlapped. Fourteen actual Codex workers ran in Orca terminals, including fresh triage when the base advanced. All three selected tracks reached completion; a new usage-documentation TODO and an existing licensing TODO remained unselected. There were no decision waits or runtime errors during this run, and the delivered fixture passed 19 tests. The fixture included a source file larger than 150 KB. These are bounded acceptance tasks, not a large-project benchmark or a live Claude validation.
 
+The completed run's 11 generated worktrees and 14 worker terminals were then cleaned, preserving 466 existing evidence files and all local branch tips. A separate [cleanup lifecycle task (PR #8)](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/8) subsequently completed with real Codex workers: after landing and triage, its three generated worktrees and four worker terminals were removed automatically, leaving only the main checkout and retained evidence. [Issue #7](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/7) was closed by the workflow.
+
 This command **creates a public repository and real issues, PRs, model calls and merges**. Use your account and a new test directory only when that external experiment is intended:
 
 ```sh

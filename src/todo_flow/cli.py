@@ -41,6 +41,7 @@ def initialize(args):
         "schema_version": 1,
         "worker_protocol": 2,
         "worker_launcher": args.launcher,
+        "cleanup_on_complete": not args.no_auto_cleanup,
         "created_by": VERSION,
         "min_engine_version": "0.0.1",
     }
@@ -64,6 +65,9 @@ def parser():
         "--context", action="append", help="Suggested file patterns for worker exploration"
     )
     i.add_argument("--model", default=None)
+    i.add_argument(
+        "--no-auto-cleanup", action="store_true", help="Keep completed run resources for inspection"
+    )
     launcher_modes = ["auto", "headless", "orca", "tmux", "terminal"]
     i.add_argument(
         "--launcher",
@@ -101,6 +105,11 @@ def parser():
     tr.add_argument("--request-only", action="store_true")
     tr.add_argument("--request-id")
     tr.add_argument(
+        "--no-auto-cleanup",
+        action="store_true",
+        help="Keep completed run resources for this driver",
+    )
+    tr.add_argument(
         "--launcher", choices=launcher_modes, help="Override this driver's worker launcher"
     )
     st = sub.add_parser("start")
@@ -116,6 +125,11 @@ def parser():
     run.add_argument("--jobs", type=int, default=2)
     run.add_argument("--max-tasks", type=int, default=100)
     run.add_argument("--daemon", action="store_true")
+    run.add_argument(
+        "--no-auto-cleanup",
+        action="store_true",
+        help="Keep completed run resources for this driver",
+    )
     run.add_argument(
         "--launcher", choices=launcher_modes, help="Override this driver's worker launcher"
     )
@@ -163,6 +177,9 @@ def parser():
     sub.add_parser("hooks")
     clean = sub.add_parser("cleanup")
     clean.add_argument("track")
+    clean.add_argument(
+        "--dry-run", action="store_true", help="Inspect owned resources without removing them"
+    )
     return p
 
 
@@ -233,6 +250,8 @@ def dispatch(args):
                 engine = Engine(store)
                 if args.launcher:
                     engine.config["worker_launcher"] = args.launcher
+                if args.no_auto_cleanup:
+                    engine.config["cleanup_on_complete"] = False
                 result = {"tasks": engine.run(args.jobs, args.max_tasks)}
         elif args.command in ("pause", "resume", "cancel"):
             result = store.control(args.track, args.command)
@@ -245,6 +264,8 @@ def dispatch(args):
             engine = Engine(store)
             if args.launcher:
                 engine.config["worker_launcher"] = args.launcher
+            if args.no_auto_cleanup:
+                engine.config["cleanup_on_complete"] = False
             result = {"tasks": engine.run(args.jobs, args.max_tasks, args.daemon)}
         elif args.command == "status":
             result = store.snapshot()
@@ -294,6 +315,9 @@ def dispatch(args):
                     "watch.triggered",
                     "watch.disposed",
                     "completion.adopted",
+                    "cleanup.requested",
+                    "cleanup.complete",
+                    "cleanup.deferred",
                     "triage.recorded",
                     "triage.todo-registered",
                     "finding.linked",
@@ -361,35 +385,9 @@ def dispatch(args):
                         "UPDATE watches SET last_signal=? WHERE id=?", (args.version, w["id"])
                     )
         elif args.command == "cleanup":
-            from .adapters import file_lock
+            from .cleanup import cleanup_track
 
-            t = store.track(args.track)
-            if t["control"] != "finished":
-                raise Conflict("Only finished executions may be cleaned up")
-            with file_lock(store.path / "locks" / (args.track + ".lock")):
-                workspace = t["workspace"]
-                if workspace and Path(workspace).exists():
-                    if command(
-                        ["git", "status", "--porcelain", "--untracked-files=all"], workspace
-                    ):
-                        raise Conflict("Uncommitted files remain; cleanup refused")
-                    if store.config()["endpoint"] != "land":
-                        raise Conflict("Unlanded work is preserved")
-                    command(
-                        ["git", "fetch", "origin", store.config()["base"]], store.config()["repo"]
-                    )
-                    command(
-                        [
-                            "git",
-                            "merge-base",
-                            "--is-ancestor",
-                            t["head"],
-                            "origin/" + store.config()["base"],
-                        ],
-                        store.config()["repo"],
-                    )
-                    command(["git", "worktree", "remove", workspace], store.config()["repo"])
-                result = {"cleaned": args.track, "branchPreserved": t["branch"]}
+            result = cleanup_track(store, args.track, dry_run=args.dry_run)
         print(encode(result))
     except (ValueError, Conflict, RuntimeError, OSError) as e:
         print(encode({"error": str(e)}), file=sys.stderr)
