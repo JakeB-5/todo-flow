@@ -24,6 +24,8 @@ Version `0.0.2` initializes **worker protocol 2** for path-based inputs. Newly i
 
 Version `0.0.3` fixes integration repair handoffs and recovery without changing these formats or protocols. No state migration is required. The repair instructions are bundled with the engine; check each project’s installed skills using the normal update procedure.
 
+Version `0.0.4` adds commit, review and verification-process boundary checks without changing formats or protocols. No state migration is required. A previously interrupted merge without the new checkout/index checkpoint is preserved for inspection instead of adopting unknown staged changes. Finish or inspect existing repairs before switching engines; see [execution boundaries](OPERATIONS.md#review-landing-and-completion).
+
 ## 1. Inspect and stop relevant processes
 
 ```sh
@@ -43,11 +45,11 @@ All cooperating processes must use the same `TODO_FLOW_HOME`. Process locks are 
 
 This path requires an existing **`uv tool install` installation** and `uv` on PATH. Source checkouts, editable environments, ordinary virtualenv installations and uv tool installs with custom extra requirements/options or entrypoints are diagnosed rather than overwritten. Update those environments using their original workflow while idle, then run project compatibility and skill checks.
 
-Download the wheel and `SHA256SUMS` from the [v0.0.3 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.3), verify its checksum, then pass the local wheel path:
+Download the wheel and `SHA256SUMS` from the [v0.0.4 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.4), verify its checksum, then pass the local wheel path:
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.3-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.3-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.4-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.4-py3-none-any.whl
 ```
 
 The plan shows versions, artifact digest, compatibility contracts and known projects. Execution rechecks those facts under an exclusive runtime lock, snapshots the artifact, backs up the installed environment and two entrypoints, invokes uv, and checks the installed version, entrypoints and bundled skills. An ordinary install/validation failure restores the previous environment. Upgrades do not change project configuration, documents, claims or remote state.

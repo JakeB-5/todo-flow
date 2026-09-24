@@ -2,6 +2,20 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## 0.0.4 — 2026-09-25
+
+### Fixed
+
+- Commit only proposed paths during ordinary work, preserving unrelated staged/unstaged changes and refusing to overwrite existing edits on proposed paths. Integration repairs validate a durable checkout/index checkpoint and record the adopted merge tree before committing.
+- Check clean checkout and exact HEAD before verification cache reuse, before/after review, and at review recording, publication and landing gates. Verification that changes HEAD cannot be recorded as successful; an identical tree at a new HEAD needs current evidence.
+- Run verification commands in a separate process group. On timeout, terminate and confirm the group, including children surviving their parent or ignoring termination; successful parents cannot leave background writers. Unconfirmed cleanup requires attention instead of scheduling more work.
+
+### Validation
+
+- 123 Python tests passed locally, including 11 execution-boundary tests and 11 integration-repair tests. The boundaries were reproduced against `0.0.3` using local Git repositories and real subprocesses without model calls or remote publication.
+
+- Published `0.0.3` to `0.0.4` engine upgrade, skill manifest update/rollback and engine rollback passed in an isolated installation; canonical state, pending work and language bindings remained unchanged.
+
 ## 0.0.3 — 2026-09-25
 
 ### Fixed

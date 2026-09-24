@@ -9,7 +9,7 @@ try:
     VERSION = version("todo-flow")
 except PackageNotFoundError:
     # Copied recovery runners execute with the base interpreter.
-    VERSION = "0.0.3"
+    VERSION = "0.0.4"
 CONTRACTS = json.loads(Path(__file__).with_name("release.json").read_text())
 
 

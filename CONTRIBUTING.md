@@ -98,11 +98,11 @@ Record behavior, compatibility and important fixes under `Unreleased`. Prepare t
 
 The initial distribution is a Python package containing the `todo-flow` and `trackrun` CLIs, dashboard assets and installable project skills. It does not include a native agent-plugin manifest or marketplace package.
 
-For `0.0.3`, keep `pyproject.toml`, `uv.lock` and both README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
+For `0.0.4`, keep `pyproject.toml`, `uv.lock` and both README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
 
 ```sh
 uv lock
-uv build --out-dir dist/0.0.3
+uv build --out-dir dist/0.0.4
 ```
 
 Verify the wheel installs in a clean environment and includes skill templates, dashboard translations and the MIT license. Confirm the source distribution includes the public guides and excludes local `docs/`. Keep the changelog under `Unreleased` until publication. Tagging, GitHub Releases and package-index uploads are separate release actions.

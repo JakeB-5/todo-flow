@@ -117,6 +117,12 @@ Diagnose tool failures from attempt records rather than replacing them with inve
 
 ## Review, landing and completion
 
+**Execution boundaries in `0.0.4`:** ordinary proposal commits include only proposed paths. Unrelated staged and unstaged files remain untouched; existing edits on a proposed path stop application. Remaining checkout changes block verification and review rather than being silently adopted. Merge repairs have a recorded checkout/index checkpoint; edits after preparation, or a resumed merge without a checkpoint, require inspection. Recovery accepts a committed repair only when its parents and recorded tree match.
+
+Verification checks checkout cleanliness before using a cache and checks both HEAD and cleanliness after the command. Review checks the expected HEAD and clean checkout before and after the worker reads it, and rechecks before recording a verdict. Publication and landing also reject a dirty or mismatched candidate. Preserve manual recovery edits and resolve the decision before resuming; do not reset or automatically stage them.
+
+Verification commands run in their own process group. Timeout cleanup signals the entire group, escalates to a kill, reaps the direct process and confirms no live group members remain before returning a failed verification. Children left by a successful parent are also stopped and cause failure. If termination cannot be confirmed, execution stops for attention.
+
 Review uses a fresh agent context independent of implementation and examines the exact candidate and verification. When the same GitHub account owns the PR, the assessment is a COMMENT review, not another person's APPROVE.
 
 The default endpoint is `review`. An explicitly authorized `land` endpoint requires both `--endpoint land` and `--allow-land` at initialization. The host combines current base and candidate in an isolated checkout, verifies that combined tree, and publishes the exact verified merge. Base advancement triggers another comparison; branch protection is not bypassed.
