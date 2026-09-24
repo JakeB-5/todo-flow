@@ -48,6 +48,8 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ### Fixed
 
+- Install ripgrep explicitly in CI instead of relying on runner images; use current action releases and a validated uv version.
+
 - Triage duplicate search no longer mistakes historical `revisions/` documents for current track IDs.
 - Post-landing repair reopens the issue and distinguishes closure receipts for the new delivery cycle.
 

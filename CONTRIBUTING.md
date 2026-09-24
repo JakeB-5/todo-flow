@@ -4,7 +4,7 @@ Keep the runtime, skills, templates and public documentation consistent. See [RE
 
 ## Development setup
 
-Python 3.11+, uv and Git are required. Node.js runs dashboard syntax and localization checks. Local automated tests use temporary Git repositories and do not require model or GitHub credentials.
+Python 3.11+, uv, Git and ripgrep (`rg`) are required. Node.js runs dashboard syntax and localization checks. Local automated tests use temporary Git repositories and do not require model or GitHub credentials.
 
 ```sh
 uv sync --frozen
@@ -62,7 +62,7 @@ Test observable behavior and relevant recovery boundaries. Do not add tests that
 
 Packaging changes should work without ignored local files. Verify the source distribution includes shared guides, license and examples, and that wheels contain the dashboard, translations, skills and template assets. Installed skills must work outside this source checkout.
 
-GitHub Actions is configured for macOS and Linux with Python 3.11 and 3.13. Configuration alone does not establish a successful hosted run; report local and hosted validation separately.
+GitHub Actions is configured for macOS and Linux with Python 3.11 and 3.13, using uv 0.10.11 and explicitly installed ripgrep. Configuration alone does not establish a successful hosted run; report local and hosted validation separately.
 
 ## Demos and external acceptance
 
