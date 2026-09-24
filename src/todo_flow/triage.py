@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 
-from .adapters import command, file_lock, files_for_worker
+from .adapters import command, file_lock
 from .store import Conflict, encode, fingerprint
 from .worker import run_worker
 
@@ -190,10 +190,10 @@ class Triage:
         if task["purpose"].startswith("Search related tracks: "):
             terms = json.loads(task["purpose"].split(": ", 1)[1])
         context = self.engine.context(task, checkout)
-        context["files"] = files_for_worker(checkout, self.engine.config["context_patterns"])
+        context["head"] = base
         context["diff"] = command(
             ["git", "diff", json.loads(t["landing"])["baseBefore"] + ".." + base], self.engine.root
-        )[-100000:]
+        )
         context["triage_context"] = {
             "base": base,
             "input_key": key,

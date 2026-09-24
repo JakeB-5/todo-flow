@@ -76,6 +76,28 @@ todo-flow --state STATE run --daemon
 
 Multiple drivers do not share a global concurrency budget. A dead driver or expired claim is not completion. Review owners, leases, attempts and results before inferring current activity.
 
+## Worker context and terminal launchers (unreleased)
+
+This section describes `main` after `0.0.1`; the published `0.0.1` wheel retains snapshot workers. Workers now start in the assigned implementation/review checkout, or the exact fetched-base checkout for triage. Input contains the task, workspace, head, language, exploration hints, write boundaries and a `paths` map. Goal/conditions, the rich track document, full diff, verification, decisions, prior results and triage evidence are read by path. Project source is not collected into stdin, and there is no aggregate 150 KB source limit. Model context limits still apply to selected reads.
+
+Codex uses read-only shell tools (including `rg`); Claude exposes Read, Glob and Grep. `context_patterns` / `--context` are navigation hints, not read-access controls. Run with the access appropriate to your project. Workers return JSON proposals; the engine still applies authorized writes, runs verification, commits and handles remote effects. These are automatic workers with live logs, not interactive agent chats.
+
+`init --launcher auto` is the default, including existing configurations without `worker_launcher`. Each driver can override it without changing project configuration:
+
+```sh
+trackrun TRACK_ID --launcher auto
+trackrun TRACK_ID --launcher orca
+todo-flow --state STATE run --launcher headless
+```
+
+`auto` first uses a running Orca runtime that recognizes the project's repository. It opens a titled terminal under that project and starts the worker in its assigned checkout. Otherwise it uses a configured `terminal_command`, then tmux when invoked inside an existing tmux session, then headless. Explicit `orca`, `tmux` or `terminal` modes fail when unavailable. Remote Orca PTYs require a driver on that host; they are not launched from a local driver. Completed terminal tabs remain available for inspection.
+
+For another terminal application, configure `terminal_command` as an argv array for a trusted launcher that returns after opening the terminal. `{command}` is the shell-quoted worker bridge command; `{cwd}` and `{title}` are optional placeholders. The launcher must start that command unchanged and return within ten seconds. Authentication is inherited from the terminal environment; credentials are not copied into launch records. Use headless if the required authentication exists only in the calling shell.
+
+Each attempt preserves `launch.json` (backend and Orca terminal handle or launcher receipt), `terminal-process.json` (actual worker PID and exit code), `input.json`, `output.json` and `stderr.log`. Opening a terminal does not prove that a worker started or completed. Completion requires a recorded exit and a valid result. An ambiguous create/start failure does not launch a second headless worker; the attempt records cancellation for delayed starts. Timeout stops the worker process group. Inspect the attempt before retrying.
+
+The path-based input is worker protocol **2**; result proposals retain their existing schema. Existing built-in Claude/Codex configurations are adapted without editing project state. Legacy custom command adapters must read `workspace` and `paths`, then explicitly set `worker_protocol: 2` while the project is stopped. They fail before spawning until migrated, rather than silently receiving a different contract.
+
 ## Questions, interruption and recovery
 
 ```sh

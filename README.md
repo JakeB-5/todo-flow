@@ -59,7 +59,7 @@ The tour shows a dense, continuous TODO list, selection for `trackrun`, current 
 | Know who is doing what | A compact dashboard shows current work, owners, waits and evidence. Completed work has its own archive. |
 | Deliver with evidence | Exact-candidate verification, independent agent review, authorized landing and post-landing triage. |
 
-Useful for a backlog of small independent changes, work that spans sessions, and reviewing several candidate changes before integration. The current worker receives bounded file snapshots; see [current scope](#current-scope) before applying it to a large codebase.
+Useful for a backlog of independent changes, work that spans sessions, and reviewing several candidate changes before integration. On the development branch, workers receive workspace and evidence paths, then search and read relevant files themselves. See [current scope](#current-scope) for release availability and remaining boundaries.
 
 ## Quick start
 
@@ -198,11 +198,13 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 ## Current scope
 
+**Unreleased on `main`:** workers read project files on demand, and `trackrun` prefers visible terminal logs through Orca, a configured terminal launcher or tmux. No available terminal means headless execution; `--launcher headless` explicitly selects it. The published `0.0.1` wheel still uses the earlier snapshot/headless implementation. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
+
 Early release **0.0.1**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
-- Built-in workers receive tools-disabled file snapshots and return JSON proposals. Direct worker shell/browser/repository exploration is not implemented.
-- Text input is bounded to 150,000 bytes. File deletion and binary edits are not supported.
+- Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.
+- Source contents and full evidence are not injected into the prompt; there is no aggregate 150,000-byte source limit on `main`. Provider context limits still apply to what a worker chooses to read. File deletion and binary edits are not supported.
 - Default worker timeout: 600 seconds. Default driver task-assignment limit: 100; remaining requests survive for the next run.
 - No shared slot budget across drivers, separate heavy-verification queue or validated distributed-filesystem operation.
 

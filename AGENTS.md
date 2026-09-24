@@ -24,6 +24,7 @@ Use descriptive Python identifiers and Ruff formatting. Core runtime uses the st
 Track authoring belongs to the todo skill/CLI; selection is dashboard/track-picks; execution is trackrun IDs.
 Do not add dashboard authoring or execution requests. Track documents are human review artifacts: preserve HTML, SVG, images, JS simulations and revisioned assets; Markdown must render to HTML. Files are authoritative; SQLite is a rebuildable query cache.
 A model proposes work; only the fenced host writes files and external effects.
+Pass workspace and evidence paths to workers; do not inject repository file bodies into their prompts. Keep built-in exploration read-only. Prefer available visible terminals, preserve actual PID/exit evidence, and never duplicate an uncertain launch through a fallback.
 Do not weaken exact-head evidence, independent review, durable handoff, or ownership checks.
 Confirmed landing must be triaged before completion; original obligations cannot escape to follow-up TODOs or Watch.
 Dispositions, registration and follow-ups commit atomically. New tracks await user selection.

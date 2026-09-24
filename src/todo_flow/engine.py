@@ -7,7 +7,7 @@ import threading
 import time
 from pathlib import Path
 
-from .adapters import GitHub, command, file_lock, files_for_worker, permitted
+from .adapters import GitHub, command, file_lock, permitted
 from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
 from .maintenance import guarded
@@ -167,21 +167,25 @@ class Engine:
         t = self.store.track(task["track"])
         snap = self.store.snapshot()
         doc = json.loads(t["document"])
-        if "presentation" in doc:
-            doc["presentation"]["assets"] = [
-                a["path"] for a in doc["presentation"].get("assets", [])
-            ]
+        revision = self.store.path / "tracks" / t["id"] / "revisions" / f"{t['revision']:06}"
+        track_document = (
+            revision / "track.html" if "presentation" in doc else revision.with_suffix(".md")
+        )
+        doc.pop("presentation", None)
         return {
             "task": {k: task[k] for k in ("id", "kind", "purpose", "attempt")},
             "document": doc,
             "head": t["head"],
+            "document_revision": t["revision"],
             "endpoint": self.config["endpoint"],
             "language": self.config.get("language", "en"),
-            "worker_protocol": self.config.get("worker_protocol", 1),
-            "files": files_for_worker(workspace, self.config["context_patterns"]),
+            "worker_protocol": 2,
+            "workspace": str(Path(workspace).resolve()),
+            "track_document": str(track_document),
+            "context_patterns": self.config["context_patterns"],
             "diff": command(
                 ["git", "diff", "origin/" + self.config["base"] + "...HEAD"], workspace
-            )[-100000:],
+            ),
             "writable_patterns": self.config["writable_patterns"],
             "verification": json.loads(t["verification"]) if t["verification"] else None,
             "review": json.loads(t["review"]) if t["review"] else None,

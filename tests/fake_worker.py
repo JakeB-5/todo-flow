@@ -2,8 +2,17 @@
 
 import json
 import sys
+from pathlib import Path
 
 ctx = json.load(sys.stdin)
+assert ctx["worker_protocol"] == 2
+assert Path.cwd().resolve() == Path(ctx["workspace"])
+assert "files" not in ctx
+ctx["document"] = json.loads(Path(ctx["paths"]["document"]).read_text())
+if "triage_context" in ctx["paths"]:
+    ctx["triage_context"] = json.loads(Path(ctx["paths"]["triage_context"]).read_text())
+# Exercise real reads in the assigned implementation/review/triage checkout.
+assert "def add" in Path("calc.py").read_text()
 kind = ctx["task"]["kind"]
 if kind == "assess":
     result = {

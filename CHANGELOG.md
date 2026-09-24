@@ -6,6 +6,8 @@ User-visible behavior, compatibility, important fixes and repository changes. Th
 
 ### Changed
 
+- Unreleased path-based worker protocol 2: run in the assigned checkout with read-only search/read tools; pass document, diff and evidence paths instead of source snapshots. Remove the aggregate 150 KB source cap and diff truncation. Legacy custom adapters must adopt protocol 2 explicitly.
+- Prefer visible Orca terminals, configured terminal launchers or an existing tmux session; use headless when unavailable or explicitly selected. Preserve streamed logs, terminal handles, worker PIDs and completion receipts, and stop uncertain launches without spawning duplicates.
 - Skip the CI matrix for root Markdown guides and presentation assets alone. Check `main` pushes and pull requests, avoid duplicate tag/feature-branch push runs, cancel superseded runs and allow manual full checks.
 
 ## 0.0.1 — 2026-09-24

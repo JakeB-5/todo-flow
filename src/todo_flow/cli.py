@@ -39,7 +39,8 @@ def initialize(args):
         "verify_timeout": args.verify_timeout,
         "language": select_language(args.language, interactive=sys.stdin.isatty()),
         "schema_version": 1,
-        "worker_protocol": 1,
+        "worker_protocol": 2,
+        "worker_launcher": args.launcher,
         "created_by": VERSION,
         "min_engine_version": "0.0.1",
     }
@@ -59,8 +60,17 @@ def parser():
     i.add_argument("--base", default="main")
     i.add_argument("--verify", required=True, help="JSON command argv, never a shell string")
     i.add_argument("--write", action="append")
-    i.add_argument("--context", action="append")
+    i.add_argument(
+        "--context", action="append", help="Suggested file patterns for worker exploration"
+    )
     i.add_argument("--model", default=None)
+    launcher_modes = ["auto", "headless", "orca", "tmux", "terminal"]
+    i.add_argument(
+        "--launcher",
+        choices=launcher_modes,
+        default="auto",
+        help="Prefer visible workers when available (default: auto)",
+    )
     i.add_argument("--worker", choices=["claude", "codex"], default="claude")
     i.add_argument(
         "--worker-command", help="Trusted adapter argv JSON; stdin context, stdout result JSON"
@@ -83,13 +93,16 @@ def parser():
     )
     migration.add_argument("--source", required=True)
     migration.add_argument("--target", required=True)
-    tr = sub.add_parser("trackrun", help="Request selected tracks and run headless workers")
+    tr = sub.add_parser("trackrun", help="Request selected tracks and run replaceable workers")
     tr.add_argument("--version", action="version", version=f"trackrun {VERSION}")
     tr.add_argument("tracks", nargs="+")
     tr.add_argument("--jobs", type=int, default=2)
     tr.add_argument("--max-tasks", type=int, default=100)
     tr.add_argument("--request-only", action="store_true")
     tr.add_argument("--request-id")
+    tr.add_argument(
+        "--launcher", choices=launcher_modes, help="Override this driver's worker launcher"
+    )
     st = sub.add_parser("start")
     st.add_argument("tracks", nargs="+")
     st.add_argument("--request-id")
@@ -103,6 +116,9 @@ def parser():
     run.add_argument("--jobs", type=int, default=2)
     run.add_argument("--max-tasks", type=int, default=100)
     run.add_argument("--daemon", action="store_true")
+    run.add_argument(
+        "--launcher", choices=launcher_modes, help="Override this driver's worker launcher"
+    )
     sub.add_parser("status")
     sub.add_parser("picks")
     sub.add_parser("doctor")
@@ -214,7 +230,10 @@ def dispatch(args):
                     result[track] = {"error": str(e)}
             if args.command == "trackrun" and not args.request_only:
                 print(encode({"requests": result}), flush=True)
-                result = {"tasks": Engine(store).run(args.jobs, args.max_tasks)}
+                engine = Engine(store)
+                if args.launcher:
+                    engine.config["worker_launcher"] = args.launcher
+                result = {"tasks": engine.run(args.jobs, args.max_tasks)}
         elif args.command in ("pause", "resume", "cancel"):
             result = store.control(args.track, args.command)
         elif args.command == "answer":
@@ -223,7 +242,10 @@ def dispatch(args):
         elif args.command == "run":
             if args.jobs < 1 or args.max_tasks < 1:
                 raise ValueError("jobs and max-tasks must be positive")
-            result = {"tasks": Engine(store).run(args.jobs, args.max_tasks, args.daemon)}
+            engine = Engine(store)
+            if args.launcher:
+                engine.config["worker_launcher"] = args.launcher
+            result = {"tasks": engine.run(args.jobs, args.max_tasks, args.daemon)}
         elif args.command == "status":
             result = store.snapshot()
         elif args.command == "picks":

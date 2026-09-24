@@ -122,6 +122,8 @@ class IntegrationTests(unittest.TestCase):
                 },
                 "writable_patterns": ["*.py"],
                 "context_patterns": ["*.py"],
+                "worker_protocol": 2,
+                "worker_launcher": "headless",
                 "endpoint": "land",
                 "allow_land": True,
             }
@@ -130,6 +132,23 @@ class IntegrationTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_context_points_to_large_checkout_without_loading_source(self):
+        source = "# SOURCE_CONTENT_SENTINEL\n" * 10000
+        (self.repo / "large.py").write_text(source)
+        command(["git", "add", "large.py"], self.repo)
+        command(["git", "commit", "-m", "Add large source fixture"], self.repo)
+        command(["git", "push", "origin", "main"], self.repo)
+        self.s.start("addition")
+        task = self.s.claim("reader")
+        engine = Engine(self.s)
+        workspace = engine.ensure_workspace(task)
+        context = engine.context(task, workspace)
+        self.assertNotIn("files", context)
+        self.assertNotIn("SOURCE_CONTENT_SENTINEL", encode(context))
+        self.assertEqual(Path(context["workspace"]) / "large.py", workspace / "large.py")
+        self.assertEqual((workspace / "large.py").read_text(), source)
+        self.assertTrue(Path(context["track_document"]).is_file())
 
     def test_real_git_lifecycle_and_idempotent_restart(self):
         self.s.start("addition")
@@ -210,6 +229,32 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(len({t["workspace"] for t in snap["tracks"]}), 2)
         for t in snap["tracks"]:
             self.assertIn("Ran 1 test", json.loads(t["verification"])["output"])
+
+    def test_terminal_driver_completes_parallel_tracks_through_triage(self):
+        launcher = self.root / "terminal.py"
+        launcher.write_text(
+            "import subprocess,shlex,sys\n"
+            "subprocess.Popen(shlex.split(sys.argv[1]),stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL,start_new_session=True)\n"
+        )
+        self.s.register({**DOC, "id": "second"})
+        for track in ("addition", "second"):
+            self.s.start(track)
+        engine = Engine(self.s)
+        engine.config.update(
+            worker_launcher="terminal",
+            terminal_command=[sys.executable, str(launcher), "{command}"],
+        )
+        engine.run(jobs=2, max_tasks=20)
+        snapshot = self.s.snapshot()
+        self.assertTrue(
+            all(t["status"] == "done" for t in snapshot["tracks"]), encode(snapshot["decisions"])
+        )
+        self.assertEqual(len({t["workspace"] for t in snapshot["tracks"]}), 2)
+        receipts = list((self.s.path / "attempts").glob("*/terminal-process.json"))
+        self.assertGreaterEqual(len(receipts), 6)
+        self.assertTrue(all(json.loads(p.read_text())["returncode"] == 0 for p in receipts))
+        self.assertEqual(len(snapshot["triages"]), 2)
 
     def test_review_keeps_extra_observations_without_losing_required_conditions(self):
         self.s.start("addition")

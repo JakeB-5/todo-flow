@@ -1,6 +1,6 @@
 ---
 name: trackrun
-description: Execute explicitly selected TODO track IDs with headless workers, durable filesystem handoffs and separate worktrees. Use for trackrun id1 id2 requests after dashboard or track-picks selection.
+description: Execute explicitly selected TODO track IDs with replaceable workers, durable filesystem handoffs and separate worktrees. Prefer visible terminals when available. Use for trackrun id1 id2 requests after dashboard or track-picks selection.
 ---
 
 # trackrun — run selected tracks
@@ -11,7 +11,9 @@ Read installed `project.json` for STATE and primary language, then STATE's `conf
 
 Read selected tracks' documents and `state.json`, and the project configuration. Respect the user's selected scope, configured verification and previously granted landing authority. Do not ask for the same authorization again. Recommendations alone do not authorize execution.
 
-The command persists requests, starts a driver and processes currently runnable work. Each assessment, implementation, review and triage uses a fresh headless worker; outcomes and follow-up intent live in files. It exits when no work can currently run, including decision waits. The default concurrency is two; `--jobs N` is optional. There is no resident supervisor agent.
+The command persists requests, starts a driver and processes currently runnable work. Each assessment, implementation, review and triage uses a fresh worker with a workspace and evidence paths; the worker searches and reads what it needs. Outcomes and follow-up intent live in files. It exits when no work can currently run, including decision waits. The default concurrency is two; `--jobs N` is optional. There is no resident supervisor agent.
+
+Default launcher `auto` prefers an available Orca project terminal, then a configured terminal command or an existing tmux session, and falls back to headless when none is available. Terminals show automatic worker progress; they are not interactive agent chats. Use `--launcher headless` only when requested or appropriate for the environment; `--launcher orca` requires Orca. Inspect `attempts/ATTEMPT/launch.json` for the actual backend and terminal handle. An accepted terminal launch is not proof of worker execution or completion; terminal workers record their PID and exit in `terminal-process.json`. An uncertain launch must not be retried as a second headless worker.
 
 If a separate `todo-flow --state STATE run --daemon` driver already runs, `--request-only` can submit without starting another. Reaching `--max-tasks` preserves pending work; continue with `todo-flow --state STATE run`. A task limit is not a completion verdict.
 

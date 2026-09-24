@@ -142,10 +142,12 @@ class LanguageTests(unittest.TestCase):
             'Path("received.json").write_text(json.dumps(json.load(sys.stdin)))\n'
             'print(json.dumps({"summary":"Checked"}))\n'
         )
-        original = {"goal": "Keep this text unchanged"}
+        original = {"goal": "Keep this text unchanged", "workspace": str(self.root)}
         run_worker(
             {
                 "language": "ko",
+                "worker_protocol": 2,
+                "worker_launcher": "headless",
                 "worker": {"type": "command", "argv": [sys.executable, str(script)]},
             },
             original,
@@ -153,7 +155,9 @@ class LanguageTests(unittest.TestCase):
             self.root,
             lambda _: None,
         )
-        received = json.loads((self.root / "attempts" / "locale" / "received.json").read_text())
+        received = json.loads((self.root / "received.json").read_text())
         self.assertEqual(received["language"], "ko")
         self.assertIn("한국어", received["output_language_instruction"])
-        self.assertEqual(original, {"goal": "Keep this text unchanged"})
+        self.assertEqual(
+            original, {"goal": "Keep this text unchanged", "workspace": str(self.root)}
+        )

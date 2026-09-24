@@ -18,7 +18,9 @@ Update the shared engine once, then update the installed skills of each project.
 | Interrupted update | Durable pending markers block normal use of an incomplete engine update. A recovery runner remains outside the replaced environment. Skill updates have their own recovery marker. |
 | Forward compatibility | Unknown state/config formats and worker/skill protocols are rejected. A future-format pending state journal is never applied by an older reader. |
 
-The current contracts are **state format 1, configuration format 1, worker protocol 1 and skill protocol 1**. Package versions and data formats are independent. Older file-backed projects without the new optional configuration metadata use format/protocol 1. No data migration is necessary for this release. The existing explicit SQL-to-files migration remains a separate command.
+The `0.0.1` release contracts are **state format 1, configuration format 1, worker protocol 1 and skill protocol 1**. Package versions and data formats are independent. Older file-backed projects without the new optional configuration metadata use format/protocol 1. No data migration is necessary for this release. The existing explicit SQL-to-files migration remains a separate command.
+
+Unreleased `main` initializes **worker protocol 2** for path-based inputs. State/configuration/skill formats remain 1. The built-in Claude/Codex adapters accept existing project configurations and produce the new path-based input without rewriting state. Custom command adapters must be updated to read `workspace` and `paths`, and explicitly opt into protocol 2 while stopped; protocol-1 custom workers fail before spawning. Older release engines cannot run newly initialized protocol-2 projects. Terminal selection is a separate optional setting (`worker_launcher`, default `auto`); `--launcher` changes only the current driver. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers-unreleased).
 
 ## 1. Inspect and stop relevant processes
 

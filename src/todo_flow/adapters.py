@@ -215,26 +215,3 @@ def permitted(path, patterns):
     if p.is_absolute() or ".." in p.parts or not p.parts or any(x.startswith(".") for x in p.parts):
         return False
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
-
-
-def files_for_worker(checkout, patterns, limit=150_000):
-    root = Path(checkout)
-    files = {}
-    size = 0
-    for name in command(["git", "ls-files"], cwd=root).splitlines():
-        if not permitted(name, patterns):
-            continue
-        p = root / name
-        if p.is_symlink() or not p.is_file():
-            continue
-        data = p.read_bytes()
-        size += len(data)
-        if size > limit:
-            raise ValueError(
-                "Worker context limit exceeded; narrow context_patterns in project config"
-            )
-        try:
-            files[name] = data.decode("utf-8")
-        except UnicodeDecodeError:
-            continue
-    return files
