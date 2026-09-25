@@ -10,6 +10,12 @@ Turn selected TODOs into parallel work, independent reviews and verified deliver
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![Status: development](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
+## TODO Flow in 32 seconds
+
+https://github.com/user-attachments/assets/6c62d429-2fbc-40b5-a31e-b530e5d1ada3
+
+*Animated workflow overview: track selection, parallel agents, session handoffs, verification, review and landing.*
+
 ## Development activity, up to 33×.
 
 ![From TODO to delivered. 33× daily commit activity.](assets/metrics/workflow-impact.png)
