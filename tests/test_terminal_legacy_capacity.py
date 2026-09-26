@@ -178,12 +178,17 @@ class TerminalLegacyCapacityTests(unittest.TestCase):
         self.assertEqual(self.slots().counts(snapshot)["active"], 2)
 
     def test_unconfirmed_modern_lease_is_charged_once(self):
-        launcher = {"backend": "orca", "cli": "synthetic", "worktree": "id:test"}
+        launcher = {
+            "backend": "orca",
+            "cli": "synthetic",
+            "worktree": "id:test",
+            "repo": str(self.root),
+        }
         with patch(
             "todo_flow.launchers.orca_result",
             side_effect=subprocess.TimeoutExpired("synthetic", 10),
         ) as create:
-            for name in ("first", "second"):
+            for number, name in enumerate(("first", "second"), start=1):
                 with self.assertRaises(subprocess.TimeoutExpired):
                     spawn_terminal(
                         launcher,
@@ -193,6 +198,12 @@ class TerminalLegacyCapacityTests(unittest.TestCase):
                         "synthetic",
                         launch_identity=self.identity(name),
                     )
+                launch = json.loads((self.folder(name) / "launch.json").read_text())
+                self.assertEqual(launch["status"], "unconfirmed")
+                self.assertEqual(launch["terminal_slot"]["state"], "reserved")
+                snapshot = self.slots().snapshot()
+                self.assertEqual(len(snapshot["slots"]), number)
+                self.assertEqual(self.slots().counts(snapshot)["reserved"], number)
             self.assertEqual(create.call_count, 2)
         with patch("todo_flow.launchers.subprocess.run") as create:
             with self.assertRaises(TerminalCapacityError):
