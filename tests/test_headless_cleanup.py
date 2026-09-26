@@ -106,7 +106,9 @@ class HeadlessCleanupTests(unittest.TestCase):
                                         raise KeyboardInterrupt
 
                                 try:
-                                    with patch("todo_flow.worker.subprocess.Popen", capture):
+                                    with patch(
+                                        "todo_flow.supervised_process.subprocess.Popen", capture
+                                    ):
                                         if outcome == "success":
                                             result = self.run_fixture(root, parent, heartbeat)
                                             self.assertEqual(result["summary"], "fixture")
@@ -140,48 +142,36 @@ class HeadlessCleanupTests(unittest.TestCase):
             self.dispose(control)
 
     def test_unconfirmed_cleanup_does_not_return_a_successful_proposal(self):
+        from todo_flow.supervised_process import SupervisedProcess
+
+        stop = SupervisedProcess.stop
+
+        def fail_after_cleanup(process, *args, **kwargs):
+            stop(process, *args, **kwargs)
+            raise verification.VerificationCleanupError("inspection unavailable")
+
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            with patch(
-                "todo_flow.verification.group_running",
-                side_effect=verification.VerificationCleanupError("inspection unavailable"),
-            ):
+            with patch.object(SupervisedProcess, "stop", fail_after_cleanup):
                 with self.assertRaisesRegex(
                     verification.VerificationCleanupError, "inspection unavailable"
                 ):
                     self.run_fixture(
-                        root,
-                        "import json; print(json.dumps({'summary':'must not return'}))",
-                        lambda _: None,
+                        Path(tmp), 'print(\'{"summary":"must not return"}\')', lambda _: None
                     )
 
-    def test_signal_denial_is_not_reported_as_an_ordinary_timeout(self):
+    def test_cleanup_failure_is_not_reported_as_an_ordinary_timeout(self):
+        from todo_flow.supervised_process import SupervisedProcess
+
+        stop = SupervisedProcess.stop
+
+        def fail_after_cleanup(process, *args, **kwargs):
+            stop(process, *args, **kwargs)
+            raise verification.VerificationCleanupError("signal denied") from PermissionError()
+
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            processes = []
-            original_popen = subprocess.Popen
-
-            def capture(*args, **kwargs):
-                proc = original_popen(*args, **kwargs)
-                if kwargs.get("start_new_session"):
-                    processes.append(proc)
-                return proc
-
-            try:
-                with (
-                    patch("todo_flow.worker.subprocess.Popen", capture),
-                    patch("todo_flow.verification.os.killpg", side_effect=PermissionError),
-                ):
-                    with self.assertRaises(verification.VerificationCleanupError) as raised:
-                        self.run_fixture(
-                            root,
-                            "import time; time.sleep(60)",
-                            lambda _: None,
-                            timeout=0,
-                        )
-                    self.assertIsInstance(raised.exception.__cause__, PermissionError)
-                self.assertEqual(len(processes), 1)
-                self.assertIsNone(processes[0].poll())
-            finally:
-                for proc in processes:
-                    self.dispose(proc)
+            with patch.object(SupervisedProcess, "stop", fail_after_cleanup):
+                with self.assertRaises(verification.VerificationCleanupError) as raised:
+                    self.run_fixture(
+                        Path(tmp), "import time; time.sleep(60)", lambda _: None, timeout=0
+                    )
+                self.assertIsInstance(raised.exception.__cause__, PermissionError)

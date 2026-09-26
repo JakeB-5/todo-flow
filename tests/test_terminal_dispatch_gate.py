@@ -81,7 +81,7 @@ class TerminalDispatchGateTests(unittest.TestCase):
         self.assertFalse(self.marker.exists())
         receipt = json.loads((self.folder / "terminal-process.json").read_text())
         self.assertIn("cancelled, consumed, or superseded", receipt["error"])
-        self.assertEqual(receipt["status"], "cleanup_failed")
+        self.assertEqual(receipt["status"], "exited")
         gate = LaunchGate(**self.identity)
         gate.barrier.require_clear()
         self.assertEqual(gate._event()["evidence"]["outcome"], "not-spawned")

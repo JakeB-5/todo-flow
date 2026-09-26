@@ -3,14 +3,14 @@
 import json
 import copy
 import os
-import subprocess
 import time
 from pathlib import Path
 
 from .store import encode
+from .process_inventory import launch_identity
+from .supervised_process import SupervisedProcess
 from .language import output_instruction
 from .launchers import TerminalProcess, select_launcher, spawn_terminal
-from .verification import stop_group
 
 SCHEMA = {
     "type": "object",
@@ -408,18 +408,26 @@ def run_worker(config, context, task, state, heartbeat):
     ):
         if launcher["backend"] == "headless":
             (folder / "launch.json").write_text(encode({"backend": "headless"}))
-            proc = subprocess.Popen(
+            proc = SupervisedProcess(
                 args,
+                identity=launch_identity(state, task),
                 stdin=inp,
                 stdout=out,
                 stderr=err,
                 cwd=context["workspace"],
                 env=env,
-                start_new_session=True,
+                timeout=max(1, config.get("worker_timeout", 600) + 5),
             )
         else:
             title = f"TODO {task.get('track', 'worker')} · {task['kind']} · {task['attempt'][-8:]}"
-            proc = spawn_terminal(launcher, args, context["workspace"], folder, title)
+            proc = spawn_terminal(
+                launcher,
+                args,
+                context["workspace"],
+                folder,
+                title,
+                launch_identity=launch_identity(state, task),
+            )
         try:
             while proc.poll() is None:
                 heartbeat(proc.pid)
@@ -433,9 +441,7 @@ def run_worker(config, context, task, state, heartbeat):
                 if proc.returncode is None:
                     proc.stop()
             else:
-                # A reaped parent can leave descendants writing to attempt files.
-                # Confirm group termination before returning or decoding a proposal.
-                stop_group(proc, collect_output=False)
+                proc.stop()
     if adapter["type"] == "codex":
         result = json.loads((folder / "final.json").read_text())
         return validate({k: v for k, v in result.items() if v is not None}, task["kind"])

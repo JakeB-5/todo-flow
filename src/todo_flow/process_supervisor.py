@@ -134,7 +134,11 @@ def supervise(argv, *, identity, lease_fd, cwd, timeout):
                     outcome = "driver-disconnected"
                     break
                 if owner.leader_exited():
-                    outcome = "leader-exited"
+                    outcome = (
+                        "leader-exited-with-descendants"
+                        if owner._snapshot()[1]
+                        else "leader-exited"
+                    )
                     break
                 if time.monotonic() >= deadline:
                     outcome = "timeout"
@@ -142,7 +146,7 @@ def supervise(argv, *, identity, lease_fd, cwd, timeout):
         finally:
             if owner is not None:
                 code = _finish(gate, owner, outcome)
-        if outcome == "leader-exited":
+        if outcome.startswith("leader-exited"):
             return code if code >= 0 else 128 - code
         return 124 if outcome == "timeout" else 125
     finally:

@@ -1,6 +1,7 @@
 """Run verification in its own process group and confirm group cleanup."""
 
 import os
+from pathlib import Path
 import signal
 import subprocess
 import tempfile
@@ -131,95 +132,55 @@ def stop_group(proc, *, collect_output=True):
 
 
 def run_supervised(argv, workspace, timeout, identity):
-    # Imported lazily because terminal_worker also imports this file directly.
-    from .owned_process_group import OwnedProcessGroup
-    from .process_launch import LaunchGate
+    from .supervised_process import SupervisedProcess
 
-    gate = LaunchGate.prepare(**identity, backend="verification")
-    proc = None
-    # Files cannot hold a reader waiting for EOF after the leader exits. Keep
-    # both open through cleanup, including failed durable acknowledgement.
-    with tempfile.TemporaryFile(mode="w+t") as stdout, tempfile.TemporaryFile(mode="w+t") as stderr:
+    # Persist output beside the execution evidence. No inherited output pipe can
+    # prevent cleanup or outlive the driver as an unbounded reader.
+    folder = Path(identity["directory"]) / "process-output" / identity["execution"]
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / "stdout.log").open("w+") as stdout, (folder / "stderr.log").open("w+") as stderr:
+        proc = SupervisedProcess(
+            argv,
+            identity=identity,
+            cwd=workspace,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
+            timeout=timeout,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
         try:
-            with gate.launching():
-                proc = OwnedProcessGroup(
-                    argv,
-                    cwd=workspace,
-                    stdin=subprocess.DEVNULL,
-                    stdout=stdout,
-                    stderr=stderr,
-                    text=True,
-                    env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-                )
-            deadline = time.monotonic() + timeout
-            while not proc.leader_exited():
-                if time.monotonic() >= deadline:
-                    raise subprocess.TimeoutExpired(argv, timeout)
-                time.sleep(0.02)
+            code = proc.wait(timeout + 15)
         finally:
-            if proc is not None:
-                try:
-                    gate._advance(
-                        gate._event(),
-                        "cleaning",
-                        "Verification supervisor is attempting physical cleanup",
-                        {"pid": proc.pid},
-                    )
-                finally:
-                    # Never reap before group cleanup or bypass the live handle
-                    # when a journal write fails.
-                    try:
-                        code = proc.stop()
-                    finally:
-                        event = gate._event()
-                        if event["state"] in ("intent", "running", "cleaning"):
-                            gate._advance(
-                                event,
-                                "unknown",
-                                "Verification cleanup lacks durable group ownership proof",
-                                {"pid": proc.pid, "permit": str(gate.path)},
-                            )
+            proc.stop()
+        stdout.seek(0)
+        stderr.seek(0)
+        out, err = stdout.read(), stderr.read()
+        event = proc.gate._event()
+        if event["evidence"].get("completion") == "timeout":
+            raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err)
+        if event["evidence"].get("completion") == "leader-exited-with-descendants":
+            raise RuntimeError("Verification left background processes; the group was terminated")
         if code:
-            stdout.seek(0)
-            stderr.seek(0)
-            raise RuntimeError(
-                f"{argv[0]} failed ({code}): {stderr.read()[-3000:]} {stdout.read()[-1000:]}"
-            )
-    # Live-driver ownership is not a durable driver-death recovery contract.
-    raise VerificationCleanupError(
-        f"Verification group ownership remains unconfirmed; reconcile {gate.barrier.path}"
-    )
+            raise RuntimeError(f"{argv[0]} failed ({code}): {err[-3000:]} {out[-1000:]}")
+        return (out + err).strip()
 
 
 def run(argv, workspace, timeout, *, launch_identity=None):
     if launch_identity is not None:
         return run_supervised(argv, workspace, timeout, launch_identity)
-    proc = subprocess.Popen(
-        argv,
-        cwd=workspace,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except BaseException:
-        stop_group(proc)
-        raise
-    try:
-        check_leader(proc)
-        remaining = group_running(proc.pid)
-    except VerificationCleanupError:
-        stop_group(proc)
-        raise
-    if remaining:
-        stop_group(proc)
-        raise RuntimeError("Verification left background processes; the group was terminated")
-    if proc.returncode:
-        raise RuntimeError(
-            f"{argv[0]} failed ({proc.returncode}): {stderr[-3000:]} {stdout[-1000:]}"
-        )
-    return (stdout + stderr).strip()
+    # Standalone callers receive the same ownership contract. Preserve evidence
+    # on failure; only a successfully confirmed run removes its temporary state.
+    import shutil
+    import uuid
+
+    folder = tempfile.mkdtemp(prefix="todo-verification-")
+    identity = {
+        "directory": folder,
+        "track": "verification",
+        "attempt": "standalone",
+        "execution": uuid.uuid4().hex,
+    }
+    result = run_supervised(argv, workspace, timeout, identity)
+    shutil.rmtree(folder)
+    return result

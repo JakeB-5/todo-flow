@@ -1,5 +1,6 @@
 """Durable agenda runner. Agents choose work; the host enforces only effect boundaries."""
 
+from contextlib import contextmanager
 import concurrent.futures
 import json
 import subprocess
@@ -16,6 +17,7 @@ from .checkout import require_clean
 from .claim_recovery import recover_expired_claim
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
+from .process_inventory import ProcessInventory, launch_identity
 
 
 class Engine:
@@ -134,6 +136,7 @@ class Engine:
                 self.config["verify"],
                 workspace,
                 timeout=self.config.get("verify_timeout", 180),
+                launch_identity=launch_identity(self.store.path, task),
             )
             ok, error = True, None
         except (RuntimeError, subprocess.TimeoutExpired) as e:
@@ -488,6 +491,16 @@ class Engine:
             "adopt_completion": True,
         }
 
+    @contextmanager
+    def process_attempt(self, task):
+        with file_lock(self.store.path / "locks" / (task["track"] + ".lock")):
+            with self.store.transaction() as connection:
+                self.store.assert_claim(connection, task)
+            with ProcessInventory(
+                self.store.path, task["track"], task["attempt"], task["id"], task["generation"]
+            ).lifecycle():
+                yield
+
     @guarded
     def execute(self, task):
         stop = threading.Event()
@@ -503,7 +516,7 @@ class Engine:
         thread = threading.Thread(target=pulse, daemon=True)
         thread.start()
         try:
-            with file_lock(self.store.path / "locks" / (task["track"] + ".lock")):
+            with self.process_attempt(task):
                 self.process_barrier(task["track"]).require_clear()
                 workspace = self.ensure_workspace(task)
                 t = self.store.track(task["track"])

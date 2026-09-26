@@ -124,7 +124,7 @@ class TerminalLaunchGateTests(unittest.TestCase):
             self.assertEqual(gate.barrier.history()[-1]["evidence"]["outcome"], "not-spawned")
             gate.barrier.require_clear()
             receipt = json.loads((folder / "terminal-process.json").read_text())
-            self.assertNotEqual(receipt["status"], "exited")
+            self.assertEqual(receipt["status"], "exited")
 
     def exercise_live_group(self, failed_state):
         self.s.start("addition")
@@ -174,7 +174,10 @@ class TerminalLaunchGateTests(unittest.TestCase):
                     )
                     bridge.kill()
                 _, stderr = bridge.communicate(timeout=20)
-                self.assertNotEqual(bridge.returncode, 0, stderr)
+                if failed_state == "none":
+                    self.assertEqual(bridge.returncode, 0, stderr)
+                else:
+                    self.assertNotEqual(bridge.returncode, 0, stderr)
                 self.assertTrue((folder / "ready").exists(), stderr)
                 pgid = int((folder / "fixture-pgid").read_text())
                 if failed_state == "kill":
@@ -182,13 +185,20 @@ class TerminalLaunchGateTests(unittest.TestCase):
                     self.assertEqual(gate.barrier.history()[-1]["state"], "running")
                 else:
                     self.assertFalse(verification.group_running(pgid), stderr)
-                    self.assertEqual(gate.barrier.history()[-1]["state"], "unknown")
+                    self.assertEqual(
+                        gate.barrier.history()[-1]["state"],
+                        "running" if failed_state == "cleaning" else "confirmed",
+                    )
                     before = (folder / "writes").read_bytes()
                     time.sleep(0.1)
                     self.assertEqual(before, (folder / "writes").read_bytes())
                     receipt = json.loads((folder / "terminal-process.json").read_text())
-                    self.assertEqual(receipt["status"], "cleanup_failed")
-                    self.assertNotIn("cleanup_confirmed", receipt)
+                    if failed_state == "cleaning":
+                        self.assertEqual(receipt["status"], "cleanup_failed")
+                        self.assertNotIn("cleanup_confirmed", receipt)
+                    else:
+                        self.assertEqual(receipt["status"], "exited")
+                        self.assertTrue(receipt["cleanup_confirmed"])
                 self.assert_recovery_blocked(task)
                 with self.assertRaises(ProcessBarrierError):
                     gate.cancel_pending()
@@ -216,5 +226,5 @@ class TerminalLaunchGateTests(unittest.TestCase):
     def test_bridge_death_with_live_descendant_blocks_new_engine(self):
         self.exercise_live_group("kill")
 
-    def test_cleanup_without_ownership_proof_never_confirms_exit(self):
+    def test_live_owner_confirms_exit_after_descendants_stop(self):
         self.exercise_live_group("none")

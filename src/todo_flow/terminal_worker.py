@@ -6,12 +6,14 @@ import json
 import os
 from pathlib import Path
 import signal
+import select
 import subprocess
 import sys
 import threading
 import time
 
 if __package__:
+    from .process_supervisor import _finish
     from .owned_process_group import OwnedProcessGroup
     from .process_launch import LaunchGate
     from .verification import VerificationCleanupError
@@ -20,6 +22,7 @@ else:
     # process_launch has package-relative imports. Make the adjacent package
     # available even when this file is executed from an unrelated workspace.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from todo_flow.process_supervisor import _finish
     from todo_flow.owned_process_group import OwnedProcessGroup
     from todo_flow.process_launch import LaunchGate
     from todo_flow.verification import VerificationCleanupError
@@ -53,6 +56,11 @@ def main(spec_path):
         state = {"runner_pid": os.getpid(), "status": "starting"}
         save(receipt, state)
         proc = None
+        lease = (
+            os.open(spec["lease_path"], os.O_RDONLY | os.O_NONBLOCK)
+            if spec.get("lease_path")
+            else None
+        )
         readers = []
         reader_errors = []
 
@@ -82,6 +90,9 @@ def main(spec_path):
             env = dict(os.environ)
             env.pop("CLAUDECODE", None)
             print(f"TODO Flow worker: {spec['title']}\nWorkspace: {spec['cwd']}", flush=True)
+            if lease is not None and select.select([lease], [], [], 0)[0]:
+                gate.cancel_pending()
+                raise KeyboardInterrupt
             with (
                 (folder / "input.json").open("rb") as inp,
                 gate.launching() if gate is not None else nullcontext(),
@@ -101,7 +112,9 @@ def main(spec_path):
                 thread.start()
                 readers.append(thread)
             while True:
-                if cancelled.exists():
+                if cancelled.exists() or (
+                    lease is not None and select.select([lease], [], [], 0)[0]
+                ):
                     raise KeyboardInterrupt
                 if proc.leader_exited():
                     leader_completed = True
@@ -128,7 +141,13 @@ def main(spec_path):
                     if proc is not None:
                         # Parent exit says nothing about inherited pipes or descendants.
                         # Readers own the pipes, so communicate must not consume them.
-                        child_code = proc.stop()
+                        child_code = (
+                            _finish(
+                                gate, proc, "leader-exited" if leader_completed else "cancelled"
+                            )
+                            if gate is not None
+                            else proc.stop()
+                        )
                         if leader_completed:
                             code = child_code
                             state["worker_returncode"] = code
@@ -141,22 +160,11 @@ def main(spec_path):
                         raise VerificationCleanupError(
                             "Cannot preserve terminal output: " + "; ".join(reader_errors)
                         )
-                    if gate is not None:
-                        # The live pin protects physical cleanup, but driver-death
-                        # recovery still lacks a surviving supervisor and durable
-                        # ownership proof. Keep the recovery barrier closed.
-                        event = gate._event()
-                        if proc is not None and event["state"] in ("intent", "running", "cleaning"):
-                            gate._advance(
-                                event,
-                                "unknown",
-                                "Physical cleanup returned without durable ownership proof",
-                                {"pid": proc.pid, "permit": str(gate.path)},
-                            )
-                        raise VerificationCleanupError(
-                            "Terminal group ownership remains unconfirmed; "
-                            f"reconcile {gate.barrier.path}"
-                        )
+                    if gate is not None and proc is None:
+                        gate.cancel_pending()
+                    if lease is not None:
+                        os.close(lease)
+                        lease = None
                 except BaseException as error:
                     save(
                         receipt,

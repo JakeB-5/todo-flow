@@ -11,6 +11,8 @@ import hashlib
 import json
 
 from .process_barrier import ProcessBarrier, ProcessBarrierError
+from .process_inventory import ProcessInventory
+from .process_launch import LaunchGate
 
 
 def require_recovery_clear(directory, track, attempt, *, task, generation):
@@ -30,6 +32,27 @@ def require_recovery_clear(directory, track, attempt, *, task, generation):
     ):
         raise ProcessBarrierError("Recovery requires the exact expired claim identity")
     barrier = ProcessBarrier(directory, track)
+    inventory = ProcessInventory(directory, track, attempt, task, generation)
+    if inventory.path.exists():
+        # The caller holds the track lock and fences this expired generation.
+        # Seal before inspecting gates, preventing any further registration.
+        value = inventory.seal()
+        history = barrier.history()
+        for execution, prepared in value["executions"].items():
+            gate = LaunchGate(directory, track, attempt, execution)
+            events = [row for row in history if row["execution"] == execution]
+            if not events and not prepared:
+                # Registration was durable before prepare, which itself must
+                # become durable before dispatch. No delivery was authorized.
+                continue
+            event = gate._event()
+            if event["state"] != "confirmed":
+                gate.cancel_pending()  # Only succeeds for an unconsumed permit.
+        recorded = {row["execution"] for row in history if row["attempt"] == attempt}
+        if not recorded.issubset(value["executions"]):
+            raise ProcessBarrierError("Attempt contains an uninventoried execution")
+        barrier.require_clear()
+        return
     barrier.require_clear()
     history = barrier.history()
     recorded = sorted({event["execution"] for event in history if event["attempt"] == attempt})

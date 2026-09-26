@@ -11,6 +11,7 @@ import sys
 import time
 
 from .process_launch import LaunchGate
+from .process_inventory import note_prepared
 from .verification import VerificationCleanupError
 
 
@@ -99,6 +100,19 @@ class TerminalProcess:
         self.folder = folder
         self.started = time.monotonic()
         self.returncode = None
+        self.lease_fd = None
+
+    def close_lease(self):
+        if self.lease_fd is not None:
+            os.close(self.lease_fd)
+            self.lease_fd = None
+
+    def __del__(self):
+        if getattr(self, "lease_fd", None) is not None:
+            try:
+                self.close_lease()
+            except OSError:
+                pass
 
     def receipt(self):
         try:
@@ -127,6 +141,15 @@ class TerminalProcess:
                     "Terminal exit receipt does not confirm group cleanup; "
                     f"inspect {self.folder / 'terminal-process.json'} before retrying"
                 )
+            spec = self.folder / "terminal-spec.json"
+            identity = (
+                json.loads(spec.read_text()).get("launch_identity") if spec.exists() else None
+            )
+            if identity is not None and LaunchGate(**identity)._event()["state"] != "confirmed":
+                raise VerificationCleanupError(
+                    "Terminal receipt lacks matching launch confirmation"
+                )
+            self.close_lease()
             self.returncode = receipt["returncode"]
             return self.returncode
         if not receipt and time.monotonic() - self.started > 30:
@@ -144,6 +167,7 @@ class TerminalProcess:
         return self.returncode
 
     def stop(self, timeout=15):
+        self.close_lease()
         # Only the bridge owns a current Popen object. A persisted PID is not
         # authority to signal a process, even when that PID currently exists.
         (self.folder / "terminal-cancelled").touch()
@@ -192,13 +216,23 @@ def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=
         # execution ID. Persist intent before exposing the bridge command.
         identity = {**launch_identity, "directory": str(launch_identity["directory"])}
         LaunchGate.prepare(**identity, backend=launcher["backend"])
+        note_prepared(identity)
         spec["launch_identity"] = identity
+    process = TerminalProcess(folder)
+    if launch_identity is not None:
+        lease = folder / "terminal-driver.lease"
+        os.mkfifo(lease, 0o600)
+        reader = os.open(lease, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            process.lease_fd = os.open(lease, os.O_WRONLY | os.O_NONBLOCK)
+        finally:
+            os.close(reader)
+        spec["lease_path"] = str(lease)
     (folder / "terminal-spec.json").write_text(json.dumps(spec))
     bridge = str(Path(__file__).with_name("terminal_worker.py"))
     command = shlex.join([sys.executable, bridge, str(folder / "terminal-spec.json")])
     record = {**launcher, "status": "launching", "title": title}
     (folder / "launch.json").write_text(json.dumps(record))
-    process = TerminalProcess(folder)
     try:
         if launcher["backend"] == "orca":
             result = orca_result(
