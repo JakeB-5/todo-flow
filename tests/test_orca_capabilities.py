@@ -101,9 +101,7 @@ class OrcaCapabilityTests(unittest.TestCase):
             (subprocess.TimeoutExpired("orca", 10), "discovery_failed"),
         ):
             with self.subTest(error=type(error).__name__):
-                with patch(
-                    "todo_flow.orca_capabilities.subprocess.run", side_effect=error
-                ) as run:
+                with patch("todo_flow.orca_capabilities.subprocess.run", side_effect=error) as run:
                     report = probe_native_contract("selected-orca", "/workspace")
                 run.assert_called_once()
                 self.assertEqual(report["status"], status)
