@@ -112,15 +112,16 @@ class TerminalCleanupTests(unittest.TestCase):
                                     "import subprocess,sys,time\n"
                                     "from pathlib import Path\n"
                                     f"subprocess.Popen([sys.executable,'-c',{child!r}]{redirect})\n"
-                                    "while not Path('ready').exists(): time.sleep(.01)\n"
-                                    + ending
+                                    "while not Path('ready').exists(): time.sleep(.01)\n" + ending
                                 )
                                 bridge = self.start(folder, parent)
                                 try:
                                     if outcome == "interrupt":
                                         self.wait_until(
-                                            lambda: (folder / "ready").exists()
-                                            and self.receipt(folder).get("status") == "running"
+                                            lambda: (
+                                                (folder / "ready").exists()
+                                                and self.receipt(folder).get("status") == "running"
+                                            )
                                         )
                                         bridge.send_signal(signal.SIGTERM)
                                     expected = {"success": 0, "error": 7, "interrupt": 130}
