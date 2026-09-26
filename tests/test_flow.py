@@ -150,6 +150,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertNotIn("files", context)
         self.assertNotIn("SOURCE_CONTENT_SENTINEL", encode(context))
         self.assertEqual(Path(context["workspace"]) / "large.py", workspace / "large.py")
+        self.assertEqual((workspace / "large.py").read_text(), source)
         self.assertTrue(Path(context["track_document"]).is_file())
 
     def test_real_git_lifecycle_and_idempotent_restart(self):
