@@ -45,7 +45,9 @@ class VerificationIdentityTests(unittest.TestCase):
         self.assertNotIn(secret, json.dumps(first))
         self.assertFalse(identity.matches(first, self.capture({"VERIFY_TOKEN": "changed"})))
         self.assertFalse(identity.matches(self.capture(), self.capture({"VERIFY_TOKEN": ""})))
-        self.assertTrue(identity.matches(first, self.capture({"VERIFY_TOKEN": secret, "OTHER": "x"})))
+        self.assertTrue(
+            identity.matches(first, self.capture({"VERIFY_TOKEN": secret, "OTHER": "x"}))
+        )
 
     def test_actual_environment_override_is_used(self):
         self.config["verify_identity"]["environment"] = ["GIT_TERMINAL_PROMPT"]

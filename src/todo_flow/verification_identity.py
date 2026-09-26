@@ -52,7 +52,9 @@ def validate(config):
         if not isinstance(values, list) or any(
             not isinstance(value, str) or not value or "\0" in value for value in values
         ):
-            raise VerificationIdentityError(f"verify_identity.{field} must contain nonempty strings")
+            raise VerificationIdentityError(
+                f"verify_identity.{field} must contain nonempty strings"
+            )
         if len(set(values)) != len(values):
             raise VerificationIdentityError(f"Duplicate verify_identity.{field} entries")
         result[field] = sorted(values)
@@ -126,8 +128,10 @@ def capture(config, workspace, environ=None):
     """
     declaration = validate(config)
     argv = config.get("verify")
-    if not isinstance(argv, list) or not argv or any(
-        not isinstance(arg, str) or "\0" in arg for arg in argv
+    if (
+        not isinstance(argv, list)
+        or not argv
+        or any(not isinstance(arg, str) or "\0" in arg for arg in argv)
     ):
         raise VerificationIdentityError("Verification command must be a nonempty argv array")
     if not argv[0]:
