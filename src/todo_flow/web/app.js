@@ -6,7 +6,7 @@ let labels, roles, eventLabels;
 function refreshLabels() {
 labels = {idle:tr("Not started"),active:tr("Requested"),paused:tr("Paused"),'pause-requested':tr("Pause requested"),cancelled:tr("Cancelled"),finished:tr("Request finished"),done:tr("Done"),queued:tr("Queued"),running:tr("Working"),waiting:tr("Awaiting decision"),met:tr("Met"),unmet:tr("Unmet"),'cannot-assess':tr("Cannot assess"),open:tr("Open"),resolved:tr("Resolved"),dismissed:tr("Dismissed"),promoted:tr("Promoted to TODO")};
 roles = {assess:tr("Assessment"),work:tr("Implementation / investigation"),verify:tr("Verification"),review:tr("Independent review"),land:tr("Landing"),triage:tr("Post-landing triage"),complete:tr("Completion check"),watch:tr("Watch review")};
-eventLabels = {'triage.recorded':tr("Post-landing triage recorded"),'triage.todo-registered':tr("Follow-up TODO registered"),'finding.linked':tr("Finding linked"),'delivery.repair-required':tr("Post-landing repair required"),'worker.claimed':tr("Worker claimed a task"),'work.requested':tr("Follow-up work requested"),'work.joined':tr("Joined existing work"),'work.result':tr("Work result recorded"),'effect.confirmed':tr("External effect confirmed"),'completion.adopted':tr("Completion confirmed"),'execution.accepted':tr("Execution request accepted"),'decision.answered':tr("Decision recorded"),'attempt.error':tr("Task needs attention"),'verification.recorded':tr("Verification recorded"),'claim.recovered':tr("Work recovered"),'document.registered':tr("Track document registered")};
+eventLabels = {'triage.recorded':tr("Post-landing triage recorded"),'triage.todo-registered':tr("Follow-up TODO registered"),'finding.linked':tr("Finding linked"),'delivery.repair-required':tr("Repair work requested"),'worker.claimed':tr("Worker claimed a task"),'work.requested':tr("Follow-up work requested"),'work.joined':tr("Joined existing work"),'work.result':tr("Work result recorded"),'effect.confirmed':tr("External effect confirmed"),'completion.adopted':tr("Completion confirmed"),'execution.accepted':tr("Execution request accepted"),'decision.answered':tr("Decision recorded"),'attempt.error':tr("Task needs attention"),'verification.recorded':tr("Verification recorded"),'claim.recovered':tr("Work recovered"),'document.registered':tr("Track document registered")};
 }
 let overview = null, listing = null, currentDetail = null, currentTask = null;
 let controller = null, generation = 0, searchTimer = null, eventCursor = null, events = [];
@@ -167,6 +167,14 @@ function renderActivity(data) {
   $('work').innerHTML=data.items.map(w=>`<div class="work-row"><a class="work-track" href="#track/${encodeURIComponent(w.track)}">${esc(w.title)}</a><button class="work-card ${currentTask===w.id?'active':''}" data-task="${esc(w.id)}"><span class="work-meta">${badge(w.status==='running'&&w.lease<Date.now()/1000?'unknown':w.status,w.status==='running'&&w.lease<Date.now()/1000?tr("Check worker status"):undefined)}<span class="subtle">${esc(roles[w.kind]||w.kind)}</span></span><strong>${esc(w.purpose)}</strong><small>${w.owner?tr("Worker ")+esc(w.owner.slice(-8)):tr("No worker assigned")} · ${date(w.updated)}</small></button></div>`).join('')||`<p class="subtle">${tr("No active work right now.")}</p>`;
   $('activityView').classList.toggle('has-context',!!currentTask||!!overview.counts.decisions);
 }
+function launchPanel(launch) {
+  const evidence=launch?.evidence||'missing';
+  const summary=evidence==='available'?launch?.summaries?.[language]:null;
+  const state=evidence==='available'?tr("Recorded"):evidence==='unreadable'?tr("Unreadable launch evidence"):tr("No launch evidence");
+  const rows=[[tr("Evidence status"),state]];
+  if(summary)rows.push([tr("Requested launcher"),summary.requested],[tr("Selected backend"),summary.backend],[tr("Selection reason"),summary.reason],[tr("Launch status"),summary.status]);
+  return `<section class="evidence-block"><h3>${esc(tr("Execution evidence"))}</h3><dl>${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></section>`;
+}
 async function inspectTask(id) {
   currentTask=id;
   $('taskInspector').hidden=false;
@@ -175,8 +183,8 @@ async function inspectTask(id) {
   try {
     const d=await api('tasks/'+encodeURIComponent(id));if(currentTask!==id)return;
     const w=d.task;
-    $('taskInspector').innerHTML=`<div class="panel"><div class="eyebrow">${tr("Selected work")}</div><h2>${esc(roles[w.kind]||w.kind)}</h2><p class="prose">${esc(w.purpose)}</p><dl>${[[tr("Owner"),w.owner||tr("Unassigned")],[tr("Status"),labels[w.status]||w.status],[tr("Last observed"),date(w.updated,true)],[tr("Claim generation"),w.generation],[tr("Attempt"),d.attempt?.id||tr("Not yet")],[tr("Track"),w.track]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${d.result?`<div class="quiet">${esc(d.result.summary)}</div>`:''}<a class="section-link" href="#track/${encodeURIComponent(w.track)}">${tr("View full track context")} →</a></div>`;
-  }catch(e){$('taskInspector').innerHTML=`<div class="notice">${esc(e.message)}</div>`;}
+    $('taskInspector').innerHTML=`<div class="panel"><div class="eyebrow">${tr("Selected work")}</div><h2>${esc(roles[w.kind]||w.kind)}</h2><p class="prose">${esc(w.purpose)}</p><dl>${[[tr("Owner"),w.owner||tr("Unassigned")],[tr("Status"),labels[w.status]||w.status],[tr("Last observed"),date(w.updated,true)],[tr("Claim generation"),w.generation],[tr("Attempt"),d.attempt?.id||tr("Not yet")],[tr("Track"),w.track]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${launchPanel(d.launch)}${d.result?`<div class="quiet">${esc(d.result.summary)}</div>`:''}<a class="section-link" href="#track/${encodeURIComponent(w.track)}">${tr("View full track context")} →</a></div>`;
+  }catch(e){if(currentTask!==id)return;$('taskInspector').innerHTML=`<div class="notice">${esc(e.message)}</div>`;}
 }
 function planning(doc) {
   const decisions=(doc.decisionRequests||[]).map(d=>`<div class="condition"><div><strong>${esc(d.question)}</strong><small>${tr("Owner")} · ${esc(d.owner)}</small><small>${tr("Scope this decision unlocks")} · ${esc(d.unlocks)}</small><small>${tr("Work that can proceed now")} · ${esc(d.beforeDecision)}</small></div></div>`).join('');
