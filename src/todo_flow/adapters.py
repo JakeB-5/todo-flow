@@ -5,27 +5,45 @@ import fcntl
 import fnmatch
 import json
 import os
+import re
 import subprocess
+import time
 from pathlib import Path
 
 from .store import Conflict, encode, fingerprint
 
 
 def command(argv, cwd=None, input=None, timeout=120, include_stderr=False):
-    proc = subprocess.run(
-        argv,
-        cwd=cwd,
-        input=input,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
-    if proc.returncode:
-        raise RuntimeError(
-            f"{argv[0]} failed ({proc.returncode}): {proc.stderr[-3000:]} {proc.stdout[-1000:]}"
+    deadline = time.monotonic() + timeout if timeout is not None else None
+    for attempt in range(3):
+        remaining = timeout if attempt == 0 else (
+            max(0, deadline - time.monotonic()) if deadline is not None else None
         )
-    return (proc.stdout + (proc.stderr if include_stderr else "")).strip()
+        proc = subprocess.run(
+            argv,
+            cwd=cwd,
+            input=input,
+            capture_output=True,
+            text=True,
+            timeout=remaining,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+        if not proc.returncode:
+            return (proc.stdout + (proc.stderr if include_stderr else "")).strip()
+        # Shared worktrees can fetch while another track updates origin's refs.
+        # Retry only this local compare-and-swap race, never pushes or arbitrary failures.
+        ref_race = list(argv[:2]) == ["git", "fetch"] and re.search(
+            r"^error: fetching ref refs/remotes/\S+ failed: incorrect old value provided$",
+            proc.stderr,
+            re.MULTILINE,
+        )
+        if not ref_race or attempt == 2:
+            break
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+    raise RuntimeError(
+        f"{argv[0]} failed ({proc.returncode}): {proc.stderr[-3000:]} {proc.stdout[-1000:]}"
+    )
 
 
 @contextlib.contextmanager
