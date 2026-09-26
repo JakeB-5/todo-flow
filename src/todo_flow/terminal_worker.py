@@ -83,9 +83,14 @@ def main(spec_path):
                 thread = threading.Thread(target=relay, args=(stream, folder / name), daemon=True)
                 thread.start()
                 readers.append(thread)
-            if cancelled.exists():
-                raise KeyboardInterrupt
-            code = proc.wait()
+            while True:
+                if cancelled.exists():
+                    raise KeyboardInterrupt
+                try:
+                    code = proc.wait(timeout=0.1)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
         except KeyboardInterrupt:
             code = 130
         except Exception as error:
@@ -120,7 +125,13 @@ def main(spec_path):
                 raise
             save(
                 receipt,
-                {**state, "status": "exited", "returncode": code, "finished_at": time.time()},
+                {
+                    **state,
+                    "status": "exited",
+                    "returncode": code,
+                    "cleanup_confirmed": True,
+                    "finished_at": time.time(),
+                },
             )
             print(f"\nTODO Flow worker exited: {code}", flush=True)
         return code

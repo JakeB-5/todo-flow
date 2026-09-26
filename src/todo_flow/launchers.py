@@ -1,14 +1,16 @@
 """Choose a visible terminal when available; never duplicate an uncertain launch."""
 
+import fcntl
 import json
 import os
 from pathlib import Path
 import shlex
 import shutil
-import signal
 import subprocess
 import sys
 import time
+
+from .verification import VerificationCleanupError
 
 
 def orca_command():
@@ -109,19 +111,27 @@ class TerminalProcess:
 
     def poll(self):
         receipt = self.receipt()
+        if receipt.get("status") == "cleanup_failed":
+            raise VerificationCleanupError(
+                "Terminal cleanup is unconfirmed: "
+                + str(receipt.get("cleanup_error", "unknown cleanup failure"))
+                + f"; inspect {self.folder / 'terminal-process.json'} before retrying"
+            )
         if receipt.get("status") == "exited":
+            if (
+                receipt.get("cleanup_confirmed") is not True
+                or type(receipt.get("returncode")) is not int
+            ):
+                raise VerificationCleanupError(
+                    "Terminal exit receipt does not confirm group cleanup; "
+                    f"inspect {self.folder / 'terminal-process.json'} before retrying"
+                )
             self.returncode = receipt["returncode"]
             return self.returncode
         if not receipt and time.monotonic() - self.started > 30:
-            raise RuntimeError(
+            raise VerificationCleanupError(
                 "Terminal worker start is unconfirmed; inspect launch.json before retrying"
             )
-        pid = receipt.get("runner_pid")
-        if pid:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError as error:
-                raise RuntimeError("Terminal worker disappeared without an exit receipt") from error
         return None
 
     def wait(self, timeout=5):
@@ -132,20 +142,38 @@ class TerminalProcess:
             time.sleep(0.1)
         return self.returncode
 
-    def stop(self):
+    def stop(self, timeout=15):
+        # Only the bridge owns a current Popen object. A persisted PID is not
+        # authority to signal a process, even when that PID currently exists.
         (self.folder / "terminal-cancelled").touch()
-        pid = self.pid
-        if pid:
-            try:
-                os.killpg(pid, signal.SIGTERM)
-                self.wait(timeout=5)
-            except ProcessLookupError:
-                pass
-            except (subprocess.TimeoutExpired, RuntimeError):
+        deadline = time.monotonic() + timeout
+        while True:
+            if self.poll() is not None:
+                return
+            with (self.folder / "terminal-run.lock").open("a") as lock:
                 try:
-                    os.killpg(pid, signal.SIGKILL)
-                except ProcessLookupError:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
                     pass
+                else:
+                    # Re-read under the bridge's launch lock. With no receipt,
+                    # cancellation prevents any late delivery from spawning.
+                    # A running receipt without its lock means the owner died;
+                    # descendants may still exist and must not be guessed at.
+                    if not self.receipt():
+                        return
+                    if self.poll() is not None:
+                        return
+                    raise VerificationCleanupError(
+                        "Terminal bridge stopped without confirmed group cleanup; "
+                        f"inspect {self.folder / 'terminal-process.json'} before retrying"
+                    )
+            if time.monotonic() >= deadline:
+                raise VerificationCleanupError(
+                    "Terminal cancellation did not confirm group cleanup; "
+                    f"inspect {self.folder / 'terminal-process.json'} before retrying"
+                )
+            time.sleep(0.1)
 
 
 def spawn_terminal(launcher, argv, workspace, folder, title):
