@@ -97,32 +97,35 @@ def main(spec_path):
             state["error"] = str(error)
         finally:
             state.update(status="cleaning", worker_returncode=code)
-            save(receipt, state)
             try:
-                if proc is not None:
-                    # Parent exit says nothing about inherited pipes or descendants.
-                    # Readers own the pipes, so communicate must not consume them.
-                    stop_group(proc, collect_output=False)
-                deadline = time.monotonic() + 5
-                for thread in readers:
-                    thread.join(timeout=max(0, deadline - time.monotonic()))
-                if any(thread.is_alive() for thread in readers):
-                    raise VerificationCleanupError("Terminal output readers did not stop")
-                if reader_errors:
-                    raise VerificationCleanupError(
-                        "Cannot preserve terminal output: " + "; ".join(reader_errors)
+                save(receipt, state)
+            finally:
+                # Receipt failures must never bypass cleanup of the live handle.
+                try:
+                    if proc is not None:
+                        # Parent exit says nothing about inherited pipes or descendants.
+                        # Readers own the pipes, so communicate must not consume them.
+                        stop_group(proc, collect_output=False)
+                    deadline = time.monotonic() + 5
+                    for thread in readers:
+                        thread.join(timeout=max(0, deadline - time.monotonic()))
+                    if any(thread.is_alive() for thread in readers):
+                        raise VerificationCleanupError("Terminal output readers did not stop")
+                    if reader_errors:
+                        raise VerificationCleanupError(
+                            "Cannot preserve terminal output: " + "; ".join(reader_errors)
+                        )
+                except BaseException as error:
+                    save(
+                        receipt,
+                        {
+                            **state,
+                            "status": "cleanup_failed",
+                            "cleanup_error": f"{type(error).__name__}: {error}",
+                            "cleanup_checked_at": time.time(),
+                        },
                     )
-            except BaseException as error:
-                save(
-                    receipt,
-                    {
-                        **state,
-                        "status": "cleanup_failed",
-                        "cleanup_error": f"{type(error).__name__}: {error}",
-                        "cleanup_checked_at": time.time(),
-                    },
-                )
-                raise
+                    raise
             save(
                 receipt,
                 {
