@@ -61,7 +61,9 @@ class WorkspaceCreationGate:
                 ) from error
             raise WorkspaceCreationBlocked(f"Creation evidence requires reconciliation: {path}")
 
-    def create_once(self, task, *, request, repo, base, argv, assert_claim, create):
+    def create_once(
+        self, task, *, request, repo, base, argv, assert_claim, create, creation_pins=None
+    ):
         """Persist exact host intent before invoking create(argv).
 
         directory must already exist durably. request is a local correlation
@@ -95,6 +97,25 @@ class WorkspaceCreationGate:
             "base": base,
             "argv": list(argv),
         }
+        if creation_pins is not None:
+            # Import locally: the observation validator also uses this module's
+            # blocking error. Legacy opaque intents remain version 1 and cannot
+            # be interpreted as independently pinned creation evidence.
+            from .orca_adoption import creation_argv, validate_creation_pins
+
+            pins = json.loads(json.dumps(creation_pins, allow_nan=False))
+            validate_creation_pins(pins)
+            if (
+                repo != pins["repo_path"]
+                or base != pins["base"]
+                or len(argv) != 13
+                or argv != creation_argv(argv[0], pins, argv[6])
+            ):
+                raise ValueError("Creation command does not match host pins")
+            intent.update(version=2, creation_pins=pins)
+        intent_digest = hashlib.sha256(
+            json.dumps(intent, allow_nan=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         assert_claim()
         self.require_clear()
         try:
@@ -109,7 +130,13 @@ class WorkspaceCreationGate:
             response = create(list(argv))
             _write_exclusive(
                 self.response,
-                {"version": 1, "request": request, "claim": claim, "response": response},
+                {
+                    "version": intent["version"],
+                    "request": request,
+                    "claim": claim,
+                    "response": response,
+                    **({"intent_sha256": intent_digest} if creation_pins is not None else {}),
+                },
             )
         except Exception as error:
             raise WorkspaceCreationBlocked(
