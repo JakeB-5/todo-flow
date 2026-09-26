@@ -93,7 +93,9 @@ class OrcaWorkspaceTests(unittest.TestCase):
         self.status, self.repo, self.show = deepcopy(STATUS), deepcopy(REPO), deepcopy(SHOW)
         self.repo["result"]["repo"]["path"] = str(self.root)
         worktree = self.show["result"]["worktree"]
-        worktree.update(id="repo-example::" + str(self.workspace), path=str(self.workspace), head=base)
+        worktree.update(
+            id="repo-example::" + str(self.workspace), path=str(self.workspace), head=base
+        )
         worktree["git"].update(path=str(self.workspace), head=base)
         self.expected = WorkspaceExpectation(
             worktree_id=worktree["id"],
