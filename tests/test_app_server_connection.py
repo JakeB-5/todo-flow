@@ -81,18 +81,14 @@ class AppServerConnectionTests(unittest.TestCase):
     def start(self):
         self.initialize()
         request = self.connection.start_thread("/workspace")
-        self.connection.receive(
-            {"id": request["id"], "result": {"thread": {"id": "thread-one"}}}
-        )
+        self.connection.receive({"id": request["id"], "result": {"thread": {"id": "thread-one"}}})
         turn = self.connection.start_turn("/workspace", "prompt")
         self.assertNotEqual(request["id"], turn["id"])
         self.assertEqual(turn["params"]["threadId"], "thread-one")
         return turn
 
     def respond(self, request):
-        self.connection.receive(
-            {"id": request["id"], "result": {"turn": {"id": "turn-one"}}}
-        )
+        self.connection.receive({"id": request["id"], "result": {"turn": {"id": "turn-one"}}})
 
     def test_early_and_late_notifications_deliver_identical_proposals(self):
         for split in range(4):
@@ -144,9 +140,7 @@ class AppServerConnectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.connection.proposal(current=self.binding)
         self.connection.bind(self.binding)
-        self.assertEqual(
-            self.connection.proposal(current=self.binding)["summary"], "합성 제안"
-        )
+        self.assertEqual(self.connection.proposal(current=self.binding)["summary"], "합성 제안")
 
     def test_handshake_and_pending_start_cannot_be_reissued(self):
         with self.assertRaises(ValueError):

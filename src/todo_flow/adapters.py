@@ -16,8 +16,10 @@ from .store import Conflict, encode, fingerprint
 def command(argv, cwd=None, input=None, timeout=120, include_stderr=False):
     deadline = time.monotonic() + timeout if timeout is not None else None
     for attempt in range(3):
-        remaining = timeout if attempt == 0 else (
-            max(0, deadline - time.monotonic()) if deadline is not None else None
+        remaining = (
+            timeout
+            if attempt == 0
+            else (max(0, deadline - time.monotonic()) if deadline is not None else None)
         )
         proc = subprocess.run(
             argv,

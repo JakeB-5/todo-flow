@@ -32,9 +32,7 @@ class FetchRetryTests(unittest.TestCase):
             self.assertLessEqual(call.kwargs["timeout"], 30)
 
     def test_persistent_ref_race_is_bounded_and_reported(self):
-        with patch(
-            "todo_flow.adapters.subprocess.run", return_value=result(1, stderr=RACE)
-        ) as run:
+        with patch("todo_flow.adapters.subprocess.run", return_value=result(1, stderr=RACE)) as run:
             with self.assertRaisesRegex(RuntimeError, "incorrect old value provided"):
                 command(FETCH)
         self.assertEqual(run.call_count, 3)
@@ -53,7 +51,7 @@ class FetchRetryTests(unittest.TestCase):
                     "todo_flow.adapters.subprocess.run",
                     return_value=result(1, stderr=stderr),
                 ) as run:
-                    with self.assertRaises(RuntimeError):
+                    with self.assertRaisesRegex(RuntimeError, "incorrect old value provided") if stderr == RACE else self.assertRaises(RuntimeError):
                         command(argv)
                 self.assertEqual(run.call_count, 1)
 
@@ -72,9 +70,7 @@ class FetchRetryTests(unittest.TestCase):
     def test_exhausted_budget_does_not_start_another_fetch(self):
         with (
             patch("todo_flow.adapters.time.monotonic", side_effect=[100, 111]),
-            patch(
-                "todo_flow.adapters.subprocess.run", return_value=result(1, stderr=RACE)
-            ) as run,
+            patch("todo_flow.adapters.subprocess.run", return_value=result(1, stderr=RACE)) as run,
         ):
             with self.assertRaisesRegex(RuntimeError, "incorrect old value provided"):
                 command(FETCH, timeout=10)
