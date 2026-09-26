@@ -63,7 +63,7 @@ The tour shows a dense, continuous TODO list, selection for `trackrun`, current 
 |---|---|
 | Move several tasks forward | Selected tracks run in separate Git worktrees; workers take bounded pieces of work. |
 | Recover after a session ends | Documents, claims, results, questions and follow-up intent stay in searchable files. |
-| Review the plan before execution | HTML documents preserve diagrams, images, scripts and simulations. Markdown also renders to HTML. |
+| Review the plan before execution | HTML documents preserve diagrams, images, scripts and simulations. Markdown must render to HTML. |
 | Know who is doing what | A compact dashboard shows current work, owners, waits and evidence. Completed work has its own archive. |
 | Deliver with evidence | Exact-candidate verification, independent agent review, authorized landing and post-landing triage. |
 
@@ -115,6 +115,22 @@ todo-flow serve --port 8765
 Use `--language ko` for Korean. Omitting it prompts in an interactive terminal and defaults to English without a terminal. For Claude sessions, install to `.claude/skills`. Skills inherit the configured language. Add `--github OWNER/REPOSITORY` to `init` for GitHub issues and PRs.
 
 Open **http://127.0.0.1:8765**. Ask your agent to use the installed todo skill, review the generated document, then select and run its actual ID. Setup is complete when the dashboard opens, the registered document renders and the requested first run reaches its configured endpoint. [Detailed setup and recovery](AGENT_INSTALL.md).
+
+### Declare verification inputs
+
+The source implementation supports `init --verify-identity`. Check `todo-flow init --help` on the installed engine first; the published `0.0.4` wheel is not assumed to support this option. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:
+
+```sh
+--verify-identity '{"version":1,"files":["/absolute/verification/verify.py","/absolute/python/bin/python3","uv.lock"],"environment":["PATH","VERIFY_MODE"],"nonce":"baseline-1"}'
+```
+
+This is an argument, not a standalone command. `version` must be `1`; `files` contains individual regular files, not directories or globs. Absolute paths identify external inputs; relative paths such as `uv.lock` resolve against the candidate verification workspace. Declare the external runner and relevant input/configuration files explicitly. Missing or unreadable inputs prevent accepting cached success. Keep the runner outside candidate write permissions, pin its interpreter and tools, and install dependencies using your locked process. A stable path or a lockfile alone does not prove that the installed environment is unchanged.
+
+`environment` lists names, never `NAME=value` assignments. Identity evidence stores selected names and digests without their plaintext values; unset and empty values differ. The verifier uses a captured environment with `GIT_TERMINAL_PROMPT=0`. Digests are not password protection, and separately stored runner output can expose values it prints. Keep secrets out of argv, output and nonce labels.
+
+A different `nonce` invalidates prior identity evidence. Use a non-secret label: configuration stores it as text, while identity evidence stores its digest. **Existing configuration is immutable through `Store.configure`, and there is no configuration-update CLI.** Choose the declaration and nonce when initializing new state. Repeating `init` cannot rotate an existing nonce; do not edit or delete canonical state to bypass this restriction. Existing state needs a separately supported configuration migration to change its declaration. An intentional content change to an already declared external input also invalidates its previous identity.
+
+Cache reuse additionally requires the same HEAD, tree, command, timeout and a clean checkout. Legacy success without identity requires fresh verification; unknown identity versions are rejected. File content, resolved paths and metadata are observed before and after execution. This detects ordinary changes, including ordinary change-and-restore writes with changed metadata, but does not execute an immutable snapshot or defend against privileged metadata manipulation. Undeclared files, transitive dependencies, environment variables and remote services are not inferred. See the [self-hosting declaration and operating limits](examples/self-hosting/README.md#declare-verification-inputs-with-a-supporting-engine) for the external runner example.
 
 ## From the first TODO to a result
 

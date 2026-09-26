@@ -17,7 +17,7 @@ import uuid
 from pathlib import Path
 
 from . import documents
-from .release import VERSION, check_catalog
+from .release import VERSION, check_catalog, check_config
 
 TABLES = (
     "config",
@@ -72,8 +72,9 @@ class FileDatabase:
             raise ValueError(
                 "Legacy SQLite state: use todo-flow migrate-files --source OLD --target NEW; source is preserved"
             )
-        if self.catalog.exists():
-            check_catalog(json.loads(self.catalog.read_text()))
+        # Reject unsupported state before creating even disposable cache/lock files.
+        # Recovery repeats this check while holding the lock.
+        self.check_recovery()
         self.cache = self.root / ".cache" / "query.sqlite"
         self.cache.parent.mkdir(exist_ok=True)
         with self.lock():
@@ -111,13 +112,29 @@ class FileDatabase:
             raise ValueError("Invalid state file path")
         return path
 
-    def recover(self):
+    def check_recovery(self):
+        """Read compatibility contracts before applying any recovery write."""
         if self.catalog.exists():
             check_catalog(json.loads(self.catalog.read_text()))
+        config_path = self.path("config/1.json")
+        if config_path.exists():
+            check_config(json.loads(config_path.read_text())["body"])
         if not self.pending.exists():
-            return
+            return None
         journal = json.loads(self.pending.read_text())
         check_catalog(journal["catalog"])
+        for relative, text in journal["writes"].items():
+            path = self.path(relative)
+            if path.resolve() == config_path.resolve() and text is not None:
+                if isinstance(text, dict):
+                    text = base64.b64decode(text["base64"], validate=True)
+                check_config(json.loads(text)["body"])
+        return journal
+
+    def recover(self):
+        journal = self.check_recovery()
+        if journal is None:
+            return
         for relative, text in journal["writes"].items():
             path = self.path(relative)
             if text is None:
@@ -204,6 +221,8 @@ class FileDatabase:
         for name in row.keys() & JSON_FIELDS:
             if row[name] is not None:
                 row[name] = json.loads(row[name])
+        if table == "config":
+            check_config(row["body"])
         if table == "tracks":
             doc = row.pop("document")
             row["document_digest"] = hashlib.sha256(dump(doc).encode()).hexdigest()
