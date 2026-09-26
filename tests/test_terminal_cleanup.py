@@ -74,8 +74,7 @@ class TerminalCleanupTests(unittest.TestCase):
                     "OwnedProcessGroup.stop = checked_stop\n"
                 )
             bootstrap += (
-                "sys.argv = sys.argv[1:]\n"
-                "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+                "sys.argv = sys.argv[1:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n"
             )
             argv = [sys.executable, "-c", bootstrap, terminal_worker.__file__, str(spec)]
         else:
