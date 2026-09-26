@@ -37,7 +37,10 @@ STATUSES = {
         "Terminal request accepted; worker start not established",
         "터미널 요청 수락됨; 워커 시작 근거 아님",
     ),
-    "unconfirmed": ("Launch outcome unconfirmed; do not duplicate", "실행 결과 미확인; 중복 실행 금지"),
+    "unconfirmed": (
+        "Launch outcome unconfirmed; do not duplicate",
+        "실행 결과 미확인; 중복 실행 금지",
+    ),
 }
 
 
