@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from .store import encode
+from .terminal_release import retire_launch
 from .process_inventory import launch_identity
 from .supervised_process import SupervisedProcess
 from .language import output_instruction
@@ -440,6 +441,10 @@ def run_worker(config, context, task, state, heartbeat):
             if isinstance(proc, TerminalProcess):
                 if proc.returncode is None:
                     proc.stop()
+                if (folder / "launch.json").exists():
+                    launch = json.loads((folder / "launch.json").read_text())
+                    if "terminal_slot" in launch or "terminal_ledger" in launch:
+                        retire_launch(folder)
             else:
                 proc.stop()
     if adapter["type"] == "codex":
