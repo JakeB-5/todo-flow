@@ -521,7 +521,9 @@ class Fixture:
                             outcome = third.result(timeout=5)
                             self.admission = outcome
                             if candidate and (outcome != "blocked" or len(self.bridges) != before):
-                                raise ValueError("Third visible request was not blocked before create")
+                                raise ValueError(
+                                    "Third visible request was not blocked before create"
+                                )
                             if not candidate and outcome != "completed":
                                 raise ValueError("Baseline unexpectedly rejected admission")
                             self.sample("third-request-returned-with-barrier-held")
@@ -561,7 +563,9 @@ class Fixture:
                     raise ValueError("Candidate resource bound exceeded")
                 if self.backend == "custom":
                     if report["blocked_requests"] != count - 2 or report["preserved"] != 2:
-                        raise ValueError("Custom backend did not retain two and block the remainder")
+                        raise ValueError(
+                            "Custom backend did not retain two and block the remainder"
+                        )
                 elif report["preserved"] != 0:
                     raise ValueError("Candidate retained an owned tab")
             if self.backend == "headless" and report["created"] != 0:

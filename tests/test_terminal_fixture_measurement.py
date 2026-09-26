@@ -62,7 +62,9 @@ class TerminalFixtureMeasurementTests(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 fixture.cli(argv)
-        events = [json.loads(line) for line in (fixture.output / "cli.jsonl").read_text().splitlines()]
+        events = [
+            json.loads(line) for line in (fixture.output / "cli.jsonl").read_text().splitlines()
+        ]
         self.assertEqual(len(events), 3)
         self.assertTrue(all("error" in event for event in events))
         self.assertEqual(fixture.bridges, {})
@@ -103,9 +105,10 @@ class TerminalFixtureMeasurementTests(unittest.TestCase):
         self.assertTrue(fixture.rows[handle]["connected"])
         self.assertTrue(fixture.rows[handle]["writable"])
         self.assertTrue(
-            (folder / "fixture-bridge.stdout").read_text().rstrip().endswith(
-                "TODO Flow worker exited: 0"
-            )
+            (folder / "fixture-bridge.stdout")
+            .read_text()
+            .rstrip()
+            .endswith("TODO Flow worker exited: 0")
         )
         receipt = json.loads((folder / "fixture-bridge-exit.json").read_text())
         self.assertEqual(receipt["returncode"], 0)
@@ -251,12 +254,12 @@ class TerminalFixtureMeasurementTests(unittest.TestCase):
         final = fixture.sample("collected")
         self.assertEqual(final["owned_tabs"], 0)
         self.assertEqual(len(fixture.bridges), 3)
-        samples = [json.loads(line) for line in (fixture.output / "samples.jsonl").read_text().splitlines()]
+        samples = [
+            json.loads(line) for line in (fixture.output / "samples.jsonl").read_text().splitlines()
+        ]
         self.assertEqual([row["sequence"] for row in samples], list(range(len(samples))))
         for row in samples:
             self.assertEqual(row["owned_tabs"], len(row["inventory"]))
-            self.assertEqual(
-                row["active_tabs"], sum(tab["connected"] for tab in row["inventory"])
-            )
+            self.assertEqual(row["active_tabs"], sum(tab["connected"] for tab in row["inventory"]))
         for line in (fixture.output / "cli.jsonl").read_text().splitlines():
             self.assertEqual(json.loads(line)["returncode"], 0)
