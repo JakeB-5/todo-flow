@@ -1,8 +1,9 @@
 """Host-only retirement entry point shared by worker exit and later cleanup.
 
-Adapters must observe a complete physical inventory and atomically refuse a
-close if the observed incarnation or activity token changed. No adapter is
-selected by worker output or executable names in a launch record.
+Adapters verify ownership, activity and exit before close. The Orca policy in
+decision-95af607c8a6244a8 permits input racing after that inspection; it does not
+require an external atomic-close API. No adapter is selected by worker output
+or executable names in a launch record.
 """
 
 import json
@@ -11,6 +12,7 @@ import subprocess
 from typing import Protocol
 
 from .maintenance import write_json
+from .terminal_orca import OrcaTerminalAdapter
 from .terminal_retirement import TerminalObservation, retire_terminal
 from .terminal_slots import TerminalCapacityError, TerminalSlots
 from .terminal_tmux import TmuxTerminalAdapter
@@ -22,25 +24,25 @@ class TerminalAdapter(Protocol):
         ...
 
     def close(self, observation: TerminalObservation) -> None:
-        """Conditionally close only the observed incarnation/activity."""
+        """Close only the verified owned terminal under the backend policy."""
         ...
 
 
 class UnsupportedTerminalAdapter:
     def inspect(self, resource):
         return TerminalObservation(
-            "unknown", resource, "Backend has no verified conditional close adapter"
+            "unknown", resource, "Backend has no verified retirement adapter"
         )
 
     def close(self, observation):
-        raise TerminalCapacityError("Backend cannot conditionally close this terminal")
+        raise TerminalCapacityError("Backend cannot safely close this terminal")
 
 
 def terminal_adapter(launch) -> TerminalAdapter:
     if launch.get("backend") == "tmux":
         return TmuxTerminalAdapter(launch)
-    # Orca's current public close command has no activity precondition. Custom
-    # launchers likewise provide no trusted inventory/conditional-close contract.
+    if launch.get("backend") == "orca":
+        return OrcaTerminalAdapter(launch)
     return UnsupportedTerminalAdapter()
 
 

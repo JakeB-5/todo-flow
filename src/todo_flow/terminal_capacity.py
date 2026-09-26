@@ -14,20 +14,26 @@ from .terminal_tmux import socket_identity
 
 
 def reconcile_tmux_terminals(slots):
-    """Reobserve pending automatic removals before reserving another terminal.
+    """Reobserve supported pending retirements before reserving another terminal.
+
+    Keep the existing entry-point name for callers. Orca active leases also need
+    inspection when the bridge receipt preceded PTY exit. retire_launch checks
+    process confirmation before contacting a backend, so live executions cannot
+    be closed. Closing leases only observe; they never replay a close dispatch.
 
     Snapshot without retaining the ledger lock across retirement: retirement
     acquires the attempt inventory and launch locks before the ledger lock.
-    It rechecks the current claim, execution, resource and process confirmation.
     Reserved launches remain charged and are never inferred from physical absence.
-    The tmux adapter only observes; it cannot close a retained or reused window.
     """
     if not slots.path.exists():
         return
     snapshot = slots.snapshot()
     for row in snapshot["slots"].values():
         current = row["history"][-1]
-        if row["backend"] != "tmux" or current["state"] not in ("quarantined", "closing"):
+        eligible = {"quarantined", "closing"}
+        if row["backend"] == "orca":
+            eligible.add("active")
+        if row["backend"] not in ("tmux", "orca") or current["state"] not in eligible:
             continue
         launch_record = current["resource"].get("launch_record")
         if not isinstance(launch_record, str) or not launch_record:

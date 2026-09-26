@@ -27,6 +27,7 @@ def orca_command():
 
 
 def orca_result(cli, args, cwd):
+    started = time.time()
     completed = subprocess.run(
         [cli, *args, "--json"],
         cwd=cwd,
@@ -38,7 +39,21 @@ def orca_result(cli, args, cwd):
     payload = json.loads(completed.stdout)
     if not payload.get("ok"):
         raise RuntimeError("Orca could not resolve this project terminal context")
-    return payload["result"]
+    result = payload["result"]
+    if args[:2] == ["terminal", "create"]:
+        # Keep dispatch-time runtime evidence inside the immutable lease resource.
+        # Missing metadata preserves the launch but cannot authorize retirement.
+        command = args[args.index("--command") + 1] if "--command" in args else ""
+        result["terminal"] = {
+            **result["terminal"],
+            "_todo_flow": {
+                "runtimeId": payload.get("_meta", {}).get("runtimeId"),
+                "started_at": started,
+                "exec_bridge": command.startswith("exec "),
+                "decision": "decision-95af607c8a6244a8",
+            },
+        }
+    return result
 
 
 def select_launcher(config, workspace):
@@ -262,7 +277,7 @@ def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=
                     "--title",
                     title,
                     "--command",
-                    command,
+                    "exec " + command,
                 ],
                 launcher["repo"],
             )

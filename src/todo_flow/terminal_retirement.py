@@ -1,14 +1,14 @@
 """Serialize terminal retirement after independently confirmed process cleanup.
 
-The callbacks are trusted host adapters, never worker proposals. inspect_resource
-must query a complete physical inventory and return an attributed observation.
-An idle observation requires unchanged physical identity, verified absence of
-user input and late output, and a confirmed idle shell. close_resource must
-conditionally close that exact incarnation/activity snapshot, or refuse. A
-backend without those capabilities must return unknown, never guessed idle.
+Callbacks are trusted host adapters, never worker proposals. inspect_resource
+must attribute physical observations to the original resource and runtime.
+An idle observation requires verified identity, activity and execution exit.
+The Orca policy decision-95af607c8a6244a8 permits input racing after inspection;
+it does not waive any pre-close check or require an atomic backend API.
 
-This module deliberately does not implement backend commands. Both immediate
-retirement and later cleanup must use this boundary once adapters are connected.
+A pending observation is a delayed exit, not permission to close. It retains
+capacity and permits later inspection. Busy or unknown resources quarantine;
+only verified physical absence releases capacity.
 """
 
 from dataclasses import dataclass
@@ -39,7 +39,7 @@ def inspect_checked(inspect_resource, resource):
     observation = inspect_resource(resource)
     if (
         not isinstance(observation, TerminalObservation)
-        or observation.status not in ("absent", "idle", "busy", "unknown")
+        or observation.status not in ("absent", "idle", "busy", "unknown", "pending")
         or observation.resource != resource
         or not isinstance(observation.proof, str)
         or not observation.proof.strip()
@@ -107,11 +107,13 @@ def retire_terminal(slots, lease, *, inspect_resource, close_resource):
             # quarantine also needs explicit recovery rather than automatic retry.
             if current["state"] in ("closing", "quarantined"):
                 return current
+            if observation.status == "pending":
+                return current
             if observation.status != "idle":
                 return slots.transition(current, "quarantined", evidence=evidence)
             current = slots.transition(current, "closing", evidence=evidence)
-            # No code above this point may issue a close. The adapter must refuse
-            # if identity/activity changes between its observation and dispatch.
+            # No code above this point may issue a close. Backend-specific
+            # preconditions were inspected under the ownership locks above.
             close_resource(observation)
             after = inspect_checked(inspect_resource, current["resource"])
             if after.status == "absent":
