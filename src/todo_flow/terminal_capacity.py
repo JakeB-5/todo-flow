@@ -18,9 +18,7 @@ def reserve_terminal(launcher, identity, folder):
         return None
     directory = Path(identity["directory"])
     limits = launcher.get("terminal_limits", {"concurrency": 2, "idle": 1})
-    slots = TerminalSlots(
-        directory, concurrency=limits["concurrency"], idle_limit=limits["idle"]
-    )
+    slots = TerminalSlots(directory, concurrency=limits["concurrency"], idle_limit=limits["idle"])
     inventory = ProcessInventory(directory, identity["track"], identity["attempt"])
     evidence = {
         "launch_record": str(folder / "launch.json"),

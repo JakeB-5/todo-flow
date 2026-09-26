@@ -72,9 +72,7 @@ def retire_terminal(slots, lease, *, inspect_resource, close_resource):
         owner["task"],
         owner["generation"],
     )
-    gate = LaunchGate(
-        slots.directory, owner["track"], owner["attempt"], owner["execution"]
-    )
+    gate = LaunchGate(slots.directory, owner["track"], owner["attempt"], owner["execution"])
     with inventory.locked():
         recorded = inventory.read()
         if recorded["executions"].get(owner["execution"]) is not True:

@@ -26,9 +26,7 @@ class TerminalCapacityDispatchTests(unittest.TestCase):
         # Each request belongs to an independent track. A single track's process
         # barrier intentionally rejects another execution while its first launch
         # is unresolved; this fixture exercises the shared terminal limit instead.
-        inventory = ProcessInventory(
-            self.root, f"fixture-{number}", f"attempt-{number}", "task", 7
-        )
+        inventory = ProcessInventory(self.root, f"fixture-{number}", f"attempt-{number}", "task", 7)
         inventory.start()
         return inventory.register()
 
@@ -64,9 +62,7 @@ class TerminalCapacityDispatchTests(unittest.TestCase):
                 else:
                     with self.assertRaises(TerminalCapacityError):
                         self.dispatch(number, launcher)
-                    self.assertFalse(
-                        (self.root / f"attempt-{number}/terminal-spec.json").exists()
-                    )
+                    self.assertFalse((self.root / f"attempt-{number}/terminal-spec.json").exists())
         self.assertEqual(len(accepted), 2)
         snapshot = self.slots().snapshot()
         self.assertEqual(snapshot["max_owned"], 2)
@@ -102,7 +98,9 @@ class TerminalCapacityDispatchTests(unittest.TestCase):
         for number in range(2):
             folder = self.root / f"attempt-{number}"
             self.assertTrue((folder / "terminal-cancelled").exists())
-            self.assertEqual(json.loads((folder / "launch.json").read_text())["status"], "unconfirmed")
+            self.assertEqual(
+                json.loads((folder / "launch.json").read_text())["status"], "unconfirmed"
+            )
 
     def test_tmux_duplicate_execution_is_rejected_before_second_create(self):
         launcher = {"backend": "tmux", "socket": "synthetic"}
