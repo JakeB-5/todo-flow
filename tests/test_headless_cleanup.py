@@ -101,7 +101,7 @@ class HeadlessCleanupTests(unittest.TestCase):
                                     while not (root / "ready").exists():
                                         if time.monotonic() >= deadline:
                                             self.fail("Child did not become ready")
-                                        time.sleep(.01)
+                                        time.sleep(0.01)
                                     if outcome == "interrupt":
                                         raise KeyboardInterrupt
 
@@ -129,7 +129,7 @@ class HeadlessCleanupTests(unittest.TestCase):
                                     self.assertFalse(verification.group_running(proc.pid))
                                     writes = root / "writes"
                                     before = writes.read_bytes() if writes.exists() else b""
-                                    time.sleep(.1)
+                                    time.sleep(0.1)
                                     after = writes.read_bytes() if writes.exists() else b""
                                     self.assertEqual(before, after)
                                     self.assertIsNone(control.poll())
