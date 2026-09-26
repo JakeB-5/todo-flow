@@ -10,7 +10,7 @@ from .store import encode
 from .process_inventory import launch_identity
 from .supervised_process import SupervisedProcess
 from .language import output_instruction
-from .launchers import TerminalProcess, select_launcher, spawn_terminal
+from .launchers import LauncherUnavailable, TerminalProcess, select_launcher, spawn_terminal
 
 SCHEMA = {
     "type": "object",
@@ -395,7 +395,26 @@ def run_worker(config, context, task, state, heartbeat):
         args = adapter["argv"]
     else:
         raise ValueError("Unknown worker adapter")
-    launcher = select_launcher(config, context["workspace"])
+    try:
+        launcher = select_launcher(config, context["workspace"])
+    except LauncherUnavailable as error:
+        (folder / "launch.json").write_text(
+            encode(
+                {
+                    "backend": None,
+                    "status": "unavailable",
+                    "selection": error.selection,
+                    "error_type": type(error).__name__,
+                }
+            ),
+            encoding="utf-8",
+        )
+        raise
+    # Record selection before any launch. Selection is not proof of process start;
+    # process ownership and cleanup remain the supervisor/bridge's responsibility.
+    (folder / "launch.json").write_text(
+        encode({**launcher, "status": "selected"}), encoding="utf-8"
+    )
     env = dict(os.environ)
     env.pop("CLAUDECODE", None)
     started = time.monotonic()
@@ -407,7 +426,6 @@ def run_worker(config, context, task, state, heartbeat):
         (folder / "stderr.log").open("w") as err,
     ):
         if launcher["backend"] == "headless":
-            (folder / "launch.json").write_text(encode({"backend": "headless"}))
             proc = SupervisedProcess(
                 args,
                 identity=launch_identity(state, task),
