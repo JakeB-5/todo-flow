@@ -2,6 +2,10 @@
 
 [README](README.md) · [한국어](README.ko.md) · [Operations](OPERATIONS.md)
 
+## This repository's own setup
+
+The [self-hosting walkthrough](examples/self-hosting/README.md) records this repository's real September 26, 2026 setup: a separately installed `0.0.4` engine, Korean project language, Codex workers and a review endpoint. It includes the actual empty dashboard and a portable verification recipe. At that snapshot, no tracks had been registered or executed in this project. Future real task results belong alongside that setup record.
+
 ## Dashboard tour
 
 ![Dashboard tour](assets/demo/dashboard-tour.gif)

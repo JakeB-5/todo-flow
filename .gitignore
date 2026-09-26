@@ -4,6 +4,10 @@ dist/
 .DS_Store
 .todo-flow/
 
+# Per-checkout TODO Flow state and preserved development skill link
+/todo/
+/.agents/skills.source-link
+
 .venv/
 __pycache__/
 *.pyc

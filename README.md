@@ -47,6 +47,8 @@ Adjusted source changes per day increased **4.52× from June to September**; rec
 
 ## See it in action
 
+**We have started applying TODO Flow to this repository.** See the [actual setup, dashboard capture and reproducible configuration](examples/self-hosting/README.md). The initial snapshot has no registered tracks yet; execution results will be documented as real work runs.
+
 ![TODO selection, activity, document review and archive in the running dashboard](assets/demo/dashboard-tour.gif)
 
 *Captured from the real dashboard with explicitly labeled synthetic data. This UI tour does not represent a live model run.*

@@ -47,6 +47,8 @@ https://github.com/user-attachments/assets/dc5edeed-3c93-486d-936b-33da4cc4aac1
 
 ## 작동 화면
 
+**이 저장소 자체에도 TODO Flow를 적용하기 시작했습니다.** [실제 설정·대시보드 화면·재현 방법](examples/self-hosting/README.md)을 공개합니다. 최초 기록은 아직 트랙이 등록되지 않은 설치 완료 상태이며, 실제 작업을 실행하면서 결과를 덧붙입니다.
+
 ![실제 대시보드의 TODO 선정·실행 현황·문서·완료 검색](assets/demo/dashboard-tour.gif)
 
 *실제 대시보드에 명시적으로 표시된 합성 데이터를 넣어 촬영한 UI 데모입니다. 실제 모델 실행 영상은 아닙니다.*
