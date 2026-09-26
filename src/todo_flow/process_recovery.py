@@ -2,8 +2,9 @@
 
 The caller must fence the expired claim and hold the track's execution lock
 through this check and any requeue. This helper never signals stored PIDs.
-A clear journal only covers recorded launches; callers must still journal every
-spawn and prevent delayed, unrecorded dispatch before enabling automatic recovery.
+A clear journal only covers recorded launches. Until an attempt-wide inventory
+contract covers every spawn and delayed dispatch, automatic recovery stays held
+even when every recorded execution has confirmed cleanup.
 """
 
 import hashlib
@@ -31,18 +32,20 @@ def require_recovery_clear(directory, track, attempt, *, task, generation):
     barrier = ProcessBarrier(directory, track)
     barrier.require_clear()
     history = barrier.history()
-    if any(event["attempt"] == attempt for event in history):
-        # All executions, including those from other attempts, must be clear.
-        barrier.require_clear()
-        return
+    recorded = sorted({event["execution"] for event in history if event["attempt"] == attempt})
+    # There is currently no attempt-wide inventory contract. Even several
+    # confirmed launches cannot rule out an unrecorded headless or verification
+    # spawn. Keep legacy and partially instrumented attempts blocked until that
+    # contract covers every dispatch path; never infer coverage from one receipt.
     identity = [track, attempt, task, generation]
     execution = (
         "unattributed-recovery-"
         + hashlib.sha256(json.dumps(identity, ensure_ascii=True).encode("utf-8")).hexdigest()
     )
-    reason = "Expired attempt has no attributed launch or cleanup evidence"
+    reason = "Expired attempt lacks proof that all process launches were recorded"
     evidence = {
-        "origin": "expired-claim-without-process-evidence",
+        "origin": "expired-claim-without-complete-launch-inventory",
+        "recorded_executions": recorded,
         "task": task,
         "generation": generation,
         "attempt": attempt,

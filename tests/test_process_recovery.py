@@ -60,11 +60,51 @@ class RecoveryEvidenceTests(unittest.TestCase):
         self.assertEqual(history[-1]["attempt"], "attempt")
         self.assertEqual(history[-1]["state"], "unknown")
 
-    def test_cancelled_current_attempt_can_pass_without_new_evidence(self):
+    def test_cancelled_launch_does_not_prove_complete_attempt_inventory(self):
         self.cancel("attempt", "execution")
-        original = self.barrier().path.read_bytes()
-        self.check()
-        self.assertEqual(self.barrier().path.read_bytes(), original)
+        original = self.barrier().history()
+        with self.assertRaisesRegex(ProcessBarrierError, "all process launches"):
+            self.check()
+        history = self.barrier().history()
+        self.assertEqual(history[: len(original)], original)
+        self.assertEqual(history[-1]["evidence"]["recorded_executions"], ["execution"])
+        self.assertEqual(history[-1]["state"], "unknown")
+        held = self.barrier().path.read_bytes()
+        with self.assertRaises(ProcessBarrierError):
+            self.check()
+        self.assertEqual(self.barrier().path.read_bytes(), held)
+        self.barrier("other-track").require_clear()
+
+    def test_multiple_confirmed_groups_do_not_prove_inventory_completeness(self):
+        for execution in ("worker", "verification"):
+            barrier = self.barrier()
+            barrier.begin("attempt", execution, reason="launch", evidence={"backend": "test"})
+            revision = barrier.advance(
+                "attempt",
+                execution,
+                "cleaning",
+                expected_revision=len(barrier.history()),
+                reason="cleanup",
+                evidence={"fixture": "supervisor"},
+            )
+            barrier.advance(
+                "attempt",
+                execution,
+                "confirmed",
+                expected_revision=revision,
+                reason="owned group exited",
+                evidence={
+                    "identity": {"track": "track", "attempt": "attempt", "execution": execution},
+                    "outcome": "group-exited",
+                    "proof": "Synthetic supervisor exit fixture",
+                },
+            )
+        original = self.barrier().history()
+        with self.assertRaises(ProcessBarrierError):
+            self.check()
+        history = self.barrier().history()
+        self.assertEqual(history[: len(original)], original)
+        self.assertEqual(history[-1]["evidence"]["recorded_executions"], ["verification", "worker"])
 
     def test_later_unresolved_execution_cannot_be_hidden_by_confirmation(self):
         self.cancel("attempt", "execution")

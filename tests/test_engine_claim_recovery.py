@@ -10,7 +10,6 @@ import test_flow
 from todo_flow.adapters import file_lock
 from todo_flow.engine import Engine
 from todo_flow.process_barrier import ProcessBarrierError
-from todo_flow.process_launch import LaunchGate
 from todo_flow.store import Store
 
 
@@ -64,35 +63,36 @@ class EngineClaimRecoveryTests(unittest.TestCase):
         self.assert_preserved(before)
         self.assertEqual(self.engine.process_barrier("addition").history()[-1]["state"], "unknown")
 
-    def test_lock_contention_preserves_claim_and_other_track_recovers(self):
+    def test_lock_contention_and_partial_inventory_do_not_block_other_track(self):
         self.expire()
         self.cancel()
         self.s.register({**test_flow.DOC, "id": "second"})
         self.s.start("second")
-        second = self.s.claim("other-driver")
-        LaunchGate.prepare(
-            self.s.path, "second", second["attempt"], "never-dispatched", backend="test"
-        ).cancel_pending()
-        with self.s.transaction() as connection:
-            connection.execute("UPDATE tasks SET lease=0 WHERE id=?", (second["id"],))
         before = next(row for row in self.s.snapshot()["tasks"] if row["id"] == self.task["id"])
         with file_lock(self.lock):
             self.engine.reconcile()
             first = self.diagnostics()
             Engine(Store(self.s.path)).reconcile()
             self.assertEqual(self.diagnostics(), first)
-        snapshot = self.s.snapshot()
-        self.assertEqual(
-            next(row for row in snapshot["tasks"] if row["id"] == self.task["id"]), before
-        )
-        other = next(row for row in snapshot["tasks"] if row["id"] == second["id"])
-        self.assertEqual(other["status"], "queued")
-        self.assertGreater(other["generation"], second["generation"])
         self.assertIn("owned", self.diagnostics()[0]["reason"])
         Engine(Store(self.s.path)).reconcile()
         current = next(row for row in self.s.snapshot()["tasks"] if row["id"] == self.task["id"])
-        self.assertEqual(current["status"], "queued")
-        self.assertGreater(current["generation"], self.task["generation"])
+        self.assertEqual(current, before)
+        self.assertEqual(self.engine.process_barrier("addition").history()[-1]["state"], "unknown")
+        self.assertTrue(any("all process launches" in row["reason"] for row in self.diagnostics()))
+        diagnostics = self.diagnostics()
+        Engine(Store(self.s.path)).reconcile()
+        self.assertEqual(self.diagnostics(), diagnostics)
+        other = self.s.claim("other-driver")
+        self.assertIsNotNone(other)
+        self.assertEqual(other["track"], "second")
+        with self.assertRaises(ProcessBarrierError):
+            Engine(Store(self.s.path)).verify(self.task, self.repo)
+        with self.assertRaises(ProcessBarrierError):
+            Engine(Store(self.s.path)).apply_changes(
+                self.task, self.repo, [{"path": "calc.py", "content": "unexpected"}]
+            )
+        self.assertIn("NotImplementedError", (self.repo / "calc.py").read_text())
 
     def test_missing_and_duplicate_attempts_remain_blocked_and_diagnosable(self):
         self.expire()

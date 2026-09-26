@@ -70,10 +70,19 @@ class ExpiredClaimRecoveryTests(unittest.TestCase):
             self.recover()
         self.assert_unchanged(before)
 
-    def test_cancelled_launch_recovers_and_fences_old_generation(self):
+    def test_approved_recovery_fences_old_generation(self):
         self.expire()
         self.cancel()
-        self.assertTrue(self.recover())
+        # Isolate generation fencing from the still-unimplemented inventory proof.
+        with patch("todo_flow.claim_recovery.require_recovery_clear") as clearance:
+            self.assertTrue(self.recover())
+        clearance.assert_called_once_with(
+            self.s.path,
+            "addition",
+            self.task["attempt"],
+            task=self.task["id"],
+            generation=self.task["generation"],
+        )
         replacement = self.s.claim("replacement")
         self.assertGreater(replacement["generation"], self.task["generation"])
         with self.assertRaises(Conflict):
@@ -81,6 +90,15 @@ class ExpiredClaimRecoveryTests(unittest.TestCase):
         attempts = self.s.snapshot()["attempts"]
         previous = next(row for row in attempts if row["id"] == self.task["attempt"])
         self.assertEqual(previous["status"], "abandoned")
+
+    def test_cancelled_launch_cannot_authorize_attempt_recovery(self):
+        self.expire()
+        self.cancel()
+        before = self.s.snapshot()
+        with self.assertRaisesRegex(ProcessBarrierError, "all process launches"):
+            self.recover()
+        self.assert_unchanged(before)
+        self.assertEqual(self.engine.process_barrier("addition").history()[-1]["state"], "unknown")
 
     def test_live_execution_lock_prevents_recovery(self):
         self.expire()
@@ -90,7 +108,10 @@ class ExpiredClaimRecoveryTests(unittest.TestCase):
             with self.assertRaises(Conflict):
                 self.recover()
         self.assert_unchanged(before)
-        self.assertTrue(self.recover())
+        # Releasing the lock is not evidence that unrecorded launches stopped.
+        with self.assertRaises(ProcessBarrierError):
+            self.recover()
+        self.assert_unchanged(before)
 
     def test_execution_lock_remains_held_after_durable_commit(self):
         self.expire()
@@ -108,7 +129,12 @@ class ExpiredClaimRecoveryTests(unittest.TestCase):
                     self.fail("Execution lock released before durable commit")
             observed.append(True)
 
-        with patch.object(self.engine.store, "transaction", observe_commit):
+        # This unit test assumes the gate approved; production incomplete
+        # inventories are covered by the negative recovery tests.
+        with (
+            patch.object(self.engine.store, "transaction", observe_commit),
+            patch("todo_flow.claim_recovery.require_recovery_clear"),
+        ):
             self.assertTrue(self.recover())
         self.assertEqual(observed, [True])
         with file_lock(self.lock):

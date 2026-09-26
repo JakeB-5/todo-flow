@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from todo_flow.adapters import command, permitted
 from todo_flow.engine import Engine
+from todo_flow.process_barrier import ProcessBarrierError
 from todo_flow.process_launch import LaunchGate
 from todo_flow.store import Conflict, Store, encode
 
@@ -162,7 +163,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(Engine(self.s).run(max_tasks=3), 0)
         self.assertTrue(all(w["status"] == "done" for w in snap["tasks"]))
 
-    def test_recovery_fences_expired_claim(self):
+    def test_partial_launch_evidence_cannot_recover_expired_claim(self):
         self.s.start("addition")
         old = self.s.claim("dead")
         LaunchGate.prepare(
@@ -170,12 +171,16 @@ class IntegrationTests(unittest.TestCase):
         ).cancel_pending()
         with self.s.transaction() as c:
             c.execute("UPDATE tasks SET lease=?", (time.time() - 60,))
+        before = self.s.snapshot()
         Engine(self.s).reconcile()
-        new = self.s.claim("new")
-        self.assertGreater(new["generation"], old["generation"])
-        with self.assertRaises(Conflict):
-            self.s.finish(old, {"summary": "late"})
-        self.s.finish(new, {"summary": "recovered", "question": "continue?"})
+        self.assertIsNone(self.s.claim("new"))
+        after = self.s.snapshot()
+        self.assertEqual(after["tasks"], before["tasks"])
+        self.assertEqual(after["attempts"], before["attempts"])
+        self.assertFalse(any(event["type"] == "claim.recovered" for event in after["events"]))
+        with self.assertRaises(ProcessBarrierError):
+            Engine(self.s).apply_changes(old, self.repo, [{"path": "calc.py", "content": "late"}])
+        self.assertIn("NotImplementedError", (self.repo / "calc.py").read_text())
 
     def test_unreviewed_landing_refused(self):
         self.s.start("addition")
@@ -276,7 +281,7 @@ class IntegrationTests(unittest.TestCase):
                     observers.append(pool.submit(engine.reconcile))
                     try:
                         observers[-1].result(timeout=0.5)
-                    except concurrent.futures.TimeoutError:
+                    except concurrent.futures.TimeoutExpired:
                         pass  # Atomic completion keeps the observer outside the transaction.
                 return value
 

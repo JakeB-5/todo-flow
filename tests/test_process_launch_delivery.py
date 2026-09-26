@@ -66,7 +66,7 @@ class DelayedLaunchDeliveryTests(unittest.TestCase):
                 delivery.kill()
             delivery.communicate(timeout=5)
 
-    def test_cancelled_delivery_cannot_spawn_after_new_engine_recovery(self):
+    def test_cancelled_delivery_cannot_spawn_while_attempt_inventory_is_unproven(self):
         task, gate = self.prepare()
 
         def recover():
@@ -74,12 +74,14 @@ class DelayedLaunchDeliveryTests(unittest.TestCase):
             recovered = Engine(Store(self.s.path))
             recovered.process_barrier("addition").require_clear()
             recovered.reconcile()
-            self.assertTrue(
+            self.assertFalse(
                 any(event["type"] == "claim.recovered" for event in self.s.snapshot()["events"])
             )
+            self.assertIsNone(self.s.claim("replacement"))
 
         self.assert_delayed_delivery_rejected(task, recover)
-        Engine(Store(self.s.path)).process_barrier("addition").require_clear()
+        with self.assertRaises(ProcessBarrierError):
+            Engine(Store(self.s.path)).process_barrier("addition").require_clear()
 
     def test_consumed_delivery_stays_blocked_after_driver_death_and_restart(self):
         task, gate = self.prepare()
