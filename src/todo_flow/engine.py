@@ -12,6 +12,7 @@ from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
 from .maintenance import guarded
 from . import integration as integration_repair
+from . import verification_identity
 from .checkout import require_clean
 from .verification import run as run_verification
 
@@ -85,24 +86,54 @@ class Engine:
             raise Conflict("Verification requires a committed, resolved merge")
         head = require_clean(workspace)
         tree = command(["git", "rev-parse", "HEAD^{tree}"], workspace)
+        environment = verification_identity.execution_environment()
+        identity = verification_identity.capture(self.config, workspace, environment)
         key = fingerprint([tree, self.config["verify"]])
         prior = self.store.track(task["track"])["verification"]
         if prior:
             prior = json.loads(prior)
-            if prior["key"] == key and prior["ok"] and prior["head"] == head:
+            same_identity = verification_identity.matches(prior.get("identity"), identity)
+            if (
+                prior.get("key") == key
+                and prior.get("ok")
+                and prior.get("head") == head
+                and prior.get("tree") == tree
+                and prior.get("command") == self.config["verify"]
+                and same_identity
+            ):
+                require_clean(workspace, head)
                 return prior
         log = self.store.path / "attempts" / task["attempt"]
         log.mkdir(parents=True, exist_ok=True)
         started = time.time()
         try:
+            before = verification_identity.capture(self.config, workspace, environment)
+            if not verification_identity.matches(identity, before):
+                raise verification_identity.VerificationIdentityError(
+                    "Verification inputs changed before execution"
+                )
             output = run_verification(
                 self.config["verify"],
                 workspace,
                 timeout=self.config.get("verify_timeout", 180),
+                env=environment,
             )
             ok, error = True, None
-        except (RuntimeError, subprocess.TimeoutExpired) as e:
+        except (
+            RuntimeError,
+            subprocess.TimeoutExpired,
+            verification_identity.VerificationIdentityError,
+        ) as e:
             output, ok, error = str(e), False, type(e).__name__
+        try:
+            after = verification_identity.capture(self.config, workspace, environment)
+            if not verification_identity.matches(identity, after):
+                raise verification_identity.VerificationIdentityError(
+                    "Verification inputs changed during execution"
+                )
+        except verification_identity.VerificationIdentityError as e:
+            output = (output + "\n" + str(e)).strip()
+            ok, error = False, type(e).__name__
         try:
             require_clean(workspace, head)
         except Conflict as e:
@@ -112,6 +143,7 @@ class Engine:
             "tree": tree,
             "key": key,
             "command": self.config["verify"],
+            "identity": identity,
             "ok": ok,
             "output": output[-12000:],
             "error": error,
@@ -363,7 +395,7 @@ class Engine:
                     (effect, t["id"], "landing", encode(intent), time.time()),
                 )
             # --force-with-lease is used ONLY as a compare-and-swap. Both ancestry checks forbid
-            # history rewriting: the candidate's exact tested merge includes base and PR head.
+            # history rewriting: the exact tested merge includes base and PR head.
             command(["git", "merge-base", "--is-ancestor", base, merged], integration)
             command(["git", "merge-base", "--is-ancestor", t["head"], merged], integration)
             command(

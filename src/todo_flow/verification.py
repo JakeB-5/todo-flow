@@ -61,7 +61,7 @@ def stop_group(proc):
     return output
 
 
-def run(argv, workspace, timeout):
+def run(argv, workspace, timeout, env=None):
     proc = subprocess.Popen(
         argv,
         cwd=workspace,
@@ -70,7 +70,7 @@ def run(argv, workspace, timeout):
         stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"} if env is None else env,
     )
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
