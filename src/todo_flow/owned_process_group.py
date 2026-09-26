@@ -3,8 +3,9 @@
 Only this object may reap its direct child. Do not install a SIGCHLD reaper,
 call waitpid(-1), or pass its private Popen to other code. This is a live-driver
 ownership primitive, not permission to reconstruct ownership from stored PIDs.
-Callers must journal intent before spawn and retain this object on cleanup
-failure. Driver-death recovery still needs a separately surviving supervisor.
+Callers must journal intent before spawn. Failed cleanup retains the live object
+in this driver's pending registry until a successful retry. Driver-death recovery
+still needs a separately surviving supervisor.
 
 leader_exited() observes zombies without reaping them. The unreaped session
 leader pins the PID/PGID even after its command exits. No group lookup or signal
@@ -18,6 +19,30 @@ import threading
 import time
 
 from .verification import VerificationCleanupError
+
+
+_pending_cleanup = set()
+_pending_lock = threading.Lock()
+
+
+def retry_pending_cleanup():
+    """Retry only cleanup already attempted by this live driver.
+
+    Never rebuild ownership from PIDs or clear durable execution barriers here.
+    A snapshot allows independent failures to be retried without holding the
+    registry lock during process operations. Concurrent stop calls serialize on
+    each owner; a completed owner never signals its released group again.
+    """
+    with _pending_lock:
+        pending = tuple(_pending_cleanup)
+    failures = []
+    for owner in pending:
+        try:
+            owner.stop()
+        except VerificationCleanupError as error:
+            failures.append(f"{owner.pid}: {error}")
+    if failures:
+        raise VerificationCleanupError("Pending group cleanup failed: " + "; ".join(failures))
 
 
 class OwnedProcessGroup:
@@ -132,8 +157,12 @@ class OwnedProcessGroup:
         retry by this same supervisor, and is never an exit receipt.
         """
         with self._lock:
+            with _pending_lock:
+                _pending_cleanup.add(self)
             self._require_child_retention()
             if self._confirmed:
+                with _pending_lock:
+                    _pending_cleanup.discard(self)
                 return self._proc.returncode
             if not self._sealed:
                 self._send(signal.SIGTERM)
@@ -149,4 +178,6 @@ class OwnedProcessGroup:
             except (OSError, subprocess.TimeoutExpired) as error:
                 raise VerificationCleanupError("Cannot reap owned session leader") from error
             self._confirmed = True
+            with _pending_lock:
+                _pending_cleanup.discard(self)
             return code
