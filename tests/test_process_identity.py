@@ -36,9 +36,7 @@ class ProcessIdentityTests(unittest.TestCase):
         original.pid = control.pid
         try:
             with patch("todo_flow.verification.os.killpg", wraps=os.killpg) as send:
-                with self.assertRaisesRegex(
-                    verification.VerificationCleanupError, "reaped PID"
-                ):
+                with self.assertRaisesRegex(verification.VerificationCleanupError, "reaped PID"):
                     verification.stop_group(original, collect_output=False)
                 send.assert_not_called()
             self.assertIsNone(control.poll())
