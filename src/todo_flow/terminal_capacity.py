@@ -8,8 +8,9 @@ including after process exit, driver death or an ambiguous launcher response.
 from pathlib import Path
 
 from .process_inventory import ProcessInventory
+from .terminal_capacity_audit import AuditedTerminalSlots as TerminalSlots
 from .terminal_release import retire_launch
-from .terminal_slots import TerminalCapacityError, TerminalSlots
+from .terminal_slots import TerminalCapacityError
 from .terminal_tmux import socket_identity
 
 
