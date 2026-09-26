@@ -15,6 +15,7 @@ from . import integration as integration_repair
 from . import verification_identity
 from .checkout import require_clean
 from .verification import run as run_verification
+from .verification_evidence import require_current
 
 
 class Engine:
@@ -218,13 +219,12 @@ class Engine:
 
     def publish(self, task, workspace, doc):
         t = self.store.track(task["track"])
-        require_clean(workspace, t["head"])
-        v = json.loads(t["verification"]) if t["verification"] else {}
-        if not v.get("ok") or v.get("head") != t["head"]:
-            raise Conflict("Publish requires verification of current head")
+        require_current(self.config, workspace, t["head"], t["verification"])
         with file_lock(self.store.path / "locks" / "publish.lock", blocking=True):
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
+            t = self.store.track(task["track"])
+            require_current(self.config, workspace, t["head"], t["verification"])
             command(["git", "push", "origin", t["branch"]], workspace)
             if self.remote:
                 pr = self.remote.pr(task, t, doc)
@@ -312,16 +312,13 @@ class Engine:
         if integration_repair.pending(t):
             raise Conflict("Integration repair requires new verification and independent review")
         review = json.loads(t["review"]) if t["review"] else {}
-        verify = json.loads(t["verification"]) if t["verification"] else {}
         if (
             review.get("verdict") != "met"
             or review.get("head") != t["head"]
             or review.get("documentRevision") != t["revision"]
         ):
             raise Conflict("Current independent review is missing or not met")
-        if not verify.get("ok") or verify.get("head") != t["head"]:
-            raise Conflict("Current verification missing")
-        require_clean(t["workspace"], t["head"])
+        require_current(self.config, t["workspace"], t["head"], t["verification"])
         return t
 
     def land(self, task):
