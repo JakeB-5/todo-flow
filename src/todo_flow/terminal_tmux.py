@@ -68,7 +68,9 @@ class TmuxTerminalAdapter:
         if not windows or any(re.fullmatch(r"@[0-9]+", item) is None for item in windows):
             return unknown("Tmux inventory is empty or malformed")
         if handle in windows:
-            return unknown("Tmux window remains present; no activity-conditional close is available")
+            return unknown(
+                "Tmux window remains present; no activity-conditional close is available"
+            )
         proof = json.dumps(
             {"socket": self.identity, "windows": sorted(set(windows)), "absent": handle},
             sort_keys=True,
