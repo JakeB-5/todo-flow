@@ -129,7 +129,61 @@ def stop_group(proc, *, collect_output=True):
     return output
 
 
-def run(argv, workspace, timeout):
+def run_supervised(argv, workspace, timeout, identity):
+    # Imported lazily because terminal_worker also imports this file directly.
+    from .process_launch import LaunchGate
+
+    gate = LaunchGate.prepare(**identity, backend="verification")
+    proc = None
+    try:
+        # Assignment and durable acknowledgement both belong inside the finally.
+        with gate.launching():
+            proc = subprocess.Popen(
+                argv,
+                cwd=workspace,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            )
+        stdout, stderr = proc.communicate(timeout=timeout)
+        if proc.returncode:
+            raise RuntimeError(
+                f"{argv[0]} failed ({proc.returncode}): {stderr[-3000:]} {stdout[-1000:]}"
+            )
+    finally:
+        if proc is not None:
+            try:
+                gate._advance(
+                    gate._event(),
+                    "cleaning",
+                    "Verification supervisor is attempting physical cleanup",
+                    {"pid": proc.pid},
+                )
+            finally:
+                # A journal write failure must never bypass the live handle.
+                try:
+                    stop_group(proc)
+                finally:
+                    event = gate._event()
+                    if event["state"] in ("intent", "running", "cleaning"):
+                        gate._advance(
+                            event,
+                            "unknown",
+                            "Verification cleanup lacks durable group ownership proof",
+                            {"pid": proc.pid, "permit": str(gate.path)},
+                        )
+    # No attributed exit receipt until stop_group has a real ownership contract.
+    raise VerificationCleanupError(
+        f"Verification group ownership remains unconfirmed; reconcile {gate.barrier.path}"
+    )
+
+
+def run(argv, workspace, timeout, *, launch_identity=None):
+    if launch_identity is not None:
+        return run_supervised(argv, workspace, timeout, launch_identity)
     proc = subprocess.Popen(
         argv,
         cwd=workspace,
