@@ -15,11 +15,12 @@ import hashlib
 import json
 import math
 import os
-import re
 import stat
 from pathlib import Path
 
-VERSION = 1
+from .release import VERIFICATION_IDENTITY_VERSION, validate_verify_identity
+
+VERSION = VERIFICATION_IDENTITY_VERSION
 
 
 class VerificationIdentityError(ValueError):
@@ -32,39 +33,11 @@ def _digest(value):
 
 
 def validate(config):
-    """Return a detached declaration; absence is the legacy configuration default.
-
-    Validate this during configuration compatibility checks, before recovery writes.
-    An absent declaration does not make identity-free verification evidence current.
-    """
-    if "verify_identity" not in config:
-        return {"version": VERSION, "files": [], "environment": [], "nonce": ""}
-    declaration = config["verify_identity"]
-    if not isinstance(declaration, dict):
-        raise VerificationIdentityError("verify_identity must be an object")
-    if set(declaration) - {"version", "files", "environment", "nonce"}:
-        raise VerificationIdentityError("Unknown verify_identity fields")
-    if type(declaration.get("version")) is not int or declaration["version"] != VERSION:
-        raise VerificationIdentityError("Unsupported verification identity configuration version")
-    result = {"version": VERSION}
-    for field in ("files", "environment"):
-        values = declaration.get(field, [])
-        if not isinstance(values, list) or any(
-            not isinstance(value, str) or not value or "\0" in value for value in values
-        ):
-            raise VerificationIdentityError(
-                f"verify_identity.{field} must contain nonempty strings"
-            )
-        if len(set(values)) != len(values):
-            raise VerificationIdentityError(f"Duplicate verify_identity.{field} entries")
-        result[field] = sorted(values)
-    if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) for name in result["environment"]):
-        raise VerificationIdentityError("Invalid verification environment variable name")
-    nonce = declaration.get("nonce", "")
-    if not isinstance(nonce, str):
-        raise VerificationIdentityError("verify_identity.nonce must be a string")
-    result["nonce"] = nonce
-    return result
+    """Return a detached declaration using the standalone compatibility contract."""
+    try:
+        return validate_verify_identity(config)
+    except ValueError as error:
+        raise VerificationIdentityError(str(error)) from error
 
 
 def execution_environment(environ=None):
