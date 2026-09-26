@@ -49,9 +49,7 @@ class VerificationEffectBoundaryTests(unittest.TestCase):
                     {
                         "summary": "Boundary test review fixture",
                         "verdict": "met",
-                        "conditions": [
-                            {"id": "sum", "verdict": "met", "evidence": "Test fixture"}
-                        ],
+                        "conditions": [{"id": "sum", "verdict": "met", "evidence": "Test fixture"}],
                     },
                 )
                 yield engine, reviewer, workspace, runner
@@ -118,9 +116,7 @@ class VerificationEffectBoundaryTests(unittest.TestCase):
             with self.effects(engine) as (push, remote):
                 self.assertEqual(engine.gate(task)["head"], before["head"])
                 engine.publish(task, workspace, test_flow.DOC)
-            push.assert_called_once_with(
-                ["git", "push", "origin", before["branch"]], workspace
-            )
+            push.assert_called_once_with(["git", "push", "origin", before["branch"]], workspace)
             remote.pr.assert_called_once()
             after = engine.store.track(task["track"])
             self.assertEqual(after["verification"], before["verification"])
