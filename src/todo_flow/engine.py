@@ -20,7 +20,7 @@ from .claim_recovery import recover_expired_claim
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
 from .process_inventory import ProcessInventory, launch_identity
-from .workspace_creation import WorkspaceCreationGate
+from . import managed_workspace
 
 
 class Engine:
@@ -87,10 +87,8 @@ class Engine:
         with file_lock(self.store.path / "locks" / "git-metadata.lock", blocking=True):
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
-                # Unresolved creation evidence is not checkout ownership. Block before
-                # route selection or track mutation, including an existing Git checkout.
-                WorkspaceCreationGate(self.store.path, task["track"]).require_clear()
-            return self._ensure_workspace(task)
+            managed = managed_workspace.ensure(self, task)
+            return managed if managed is not None else self._ensure_workspace(task)
 
     def _ensure_workspace(self, task):
         t = self.store.track(task["track"])
