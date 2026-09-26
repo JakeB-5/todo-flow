@@ -8,8 +8,33 @@ including after process exit, driver death or an ambiguous launcher response.
 from pathlib import Path
 
 from .process_inventory import ProcessInventory
+from .terminal_release import retire_launch
 from .terminal_slots import TerminalCapacityError, TerminalSlots
 from .terminal_tmux import socket_identity
+
+
+def reconcile_tmux_terminals(slots):
+    """Reobserve pending automatic removals before reserving another terminal.
+
+    Snapshot without retaining the ledger lock across retirement: retirement
+    acquires the attempt inventory and launch locks before the ledger lock.
+    It rechecks the current claim, execution, resource and process confirmation.
+    Reserved launches remain charged and are never inferred from physical absence.
+    The tmux adapter only observes; it cannot close a retained or reused window.
+    """
+    if not slots.path.exists():
+        return
+    snapshot = slots.snapshot()
+    for row in snapshot["slots"].values():
+        current = row["history"][-1]
+        if row["backend"] != "tmux" or current["state"] not in ("quarantined", "closing"):
+            continue
+        launch_record = current["resource"].get("launch_record")
+        if not isinstance(launch_record, str) or not launch_record:
+            continue
+        # retire_launch validates the launch's ledger, identity and resource.
+        # Missing or changed evidence preserves capacity and a recovery reason.
+        retire_launch(Path(launch_record).parent)
 
 
 def reserve_terminal(launcher, identity, folder):
@@ -20,6 +45,9 @@ def reserve_terminal(launcher, identity, folder):
     directory = Path(identity["directory"])
     limits = launcher.get("terminal_limits", {"concurrency": 2, "idle": 1})
     slots = TerminalSlots(directory, concurrency=limits["concurrency"], idle_limit=limits["idle"])
+    # Do this before acquiring the requesting attempt's inventory lock. Each
+    # pending retirement acquires its own locks and rechecks durable ownership.
+    reconcile_tmux_terminals(slots)
     inventory = ProcessInventory(directory, identity["track"], identity["attempt"])
     evidence = {
         "launch_record": str(folder / "launch.json"),
