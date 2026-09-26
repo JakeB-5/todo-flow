@@ -184,3 +184,22 @@ class ExecutionBoundaryTests(unittest.TestCase):
         self.assertFalse(any(row["status"] == "queued" for row in snapshot["tasks"]))
         self.assertEqual(len(snapshot["decisions"]), 1)
         self.assertIn("Cannot confirm exit", snapshot["decisions"][0]["question"])
+
+    def test_process_journal_failure_is_attention_not_ordinary_rework(self):
+        from todo_flow.process_barrier import ProcessBarrierError
+
+        engine, task, _ = self.verified()
+        engine.update(task, verification=None)
+        self.s.finish(
+            task, {"summary": "Recheck", "next": [{"kind": "verify", "purpose": "Verify"}]}
+        )
+        verification = self.s.claim("verifier")
+        with patch(
+            "todo_flow.engine.run_verification",
+            side_effect=ProcessBarrierError("Cannot confirm launch journal"),
+        ):
+            engine.execute(verification)
+        snapshot = self.s.snapshot()
+        self.assertFalse(any(row["status"] == "queued" for row in snapshot["tasks"]))
+        self.assertEqual(len(snapshot["decisions"]), 1)
+        self.assertIn("Cannot confirm launch journal", snapshot["decisions"][0]["question"])

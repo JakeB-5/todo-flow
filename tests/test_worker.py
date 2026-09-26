@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import sys
 from pathlib import Path
+from todo_flow.supervised_process import SupervisedProcess
 from unittest.mock import patch
 
 from todo_flow.worker import SCHEMA, codex_schema, run_worker, worker_error
@@ -24,6 +25,8 @@ class WorkerAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
 
             def spawn(args, **kwargs):
+                self.assertEqual(args[0], "codex")
+                self.assertIn("identity", kwargs)
                 self.assertIn("--output-schema", args)
                 self.assertIn("--ignore-user-config", args)
                 self.assertIn("read-only", args)
@@ -45,11 +48,11 @@ class WorkerAdapterTests(unittest.TestCase):
                         }
                     )
                 )
-                from unittest.mock import Mock
+                return SupervisedProcess([sys.executable, "-c", "pass"], **kwargs)
 
-                return Mock(poll=lambda: 0, returncode=0)
-
-            with patch("todo_flow.worker.subprocess.Popen", side_effect=spawn):
+            # Replace only the adapter's module reference so cleanup still uses
+            # real subprocesses for process inspection and a real child to reap.
+            with patch("todo_flow.worker.SupervisedProcess", spawn):
                 result = run_worker(
                     {"worker": {"type": "codex"}, "worker_launcher": "headless"},
                     {"goal": "Example", "workspace": tmp},
@@ -102,7 +105,7 @@ class WorkerAdapterTests(unittest.TestCase):
             self.assertEqual((workspace / "large.py").read_text(), source)
 
     def test_legacy_custom_worker_fails_before_spawn(self):
-        with patch("todo_flow.worker.subprocess.Popen") as spawn:
+        with patch("todo_flow.worker.SupervisedProcess") as spawn:
             with self.assertRaisesRegex(ValueError, "worker_protocol=2"):
                 run_worker(
                     {"worker": {"type": "command", "argv": ["unused"]}}, {}, {}, ".", lambda _: None
@@ -113,6 +116,8 @@ class WorkerAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
 
             def spawn(args, **kwargs):
+                self.assertEqual(args[0], "claude")
+                self.assertIn("identity", kwargs)
                 self.assertIn("--restricted", args)
                 self.assertEqual(args[args.index("--tools") + 1], "Read,Glob,Grep")
                 self.assertEqual(args[args.index("--permission-mode") + 1], "dontAsk")
@@ -127,11 +132,10 @@ class WorkerAdapterTests(unittest.TestCase):
                     + "\n"
                 )
                 kwargs["stdout"].flush()
-                from unittest.mock import Mock
+                return SupervisedProcess([sys.executable, "-c", "pass"], **kwargs)
 
-                return Mock(poll=lambda: 0, returncode=0)
-
-            with patch("todo_flow.worker.subprocess.Popen", side_effect=spawn):
+            # Keep process inspection outside the adapter launch replacement.
+            with patch("todo_flow.worker.SupervisedProcess", spawn):
                 result = run_worker(
                     {"worker": {"type": "claude"}, "worker_launcher": "headless"},
                     {"workspace": tmp},

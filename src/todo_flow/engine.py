@@ -1,5 +1,6 @@
 """Durable agenda runner. Agents choose work; the host enforces only effect boundaries."""
 
+from contextlib import contextmanager
 import concurrent.futures
 import json
 import subprocess
@@ -14,8 +15,11 @@ from .maintenance import guarded
 from . import integration as integration_repair
 from . import verification_identity
 from .checkout import require_clean
-from .verification import run as run_verification
 from .verification_evidence import require_current
+from .claim_recovery import recover_expired_claim
+from .verification import VerificationCleanupError, run as run_verification
+from .process_barrier import ProcessBarrier, ProcessBarrierError
+from .process_inventory import ProcessInventory, launch_identity
 
 
 class Engine:
@@ -24,6 +28,38 @@ class Engine:
         self.config = store.config()
         self.root = Path(self.config["repo"])
         self.remote = GitHub(store) if self.config.get("github") else None
+
+    def process_barrier(self, track):
+        # Store already owns this durable directory; no recoverable mkdir gap.
+        return ProcessBarrier(self.store.path, track)
+
+    def cleanup_blocked(self, track):
+        try:
+            self.process_barrier(track).require_clear()
+        except ProcessBarrierError:
+            return True
+        return False
+
+    def preserve_cleanup_failure(self, task, error):
+        barrier = self.process_barrier(task["track"])
+        try:
+            barrier.require_clear()
+        except ProcessBarrierError:
+            # Existing unresolved or corrupt evidence must never be replaced.
+            return
+        # Compatibility hold for callers not yet recording pre-spawn intent.
+        # This is not launch/ownership evidence and cannot authorize signalling.
+        execution = uid("unattributed-cleanup")
+        evidence = {"task": task["id"], "error": str(error), "origin": "cleanup-failure"}
+        revision = barrier.begin(task["attempt"], execution, reason=str(error), evidence=evidence)
+        barrier.advance(
+            task["attempt"],
+            execution,
+            "unknown",
+            expected_revision=revision,
+            reason="Unattributed cleanup failure requires supervisor reconciliation",
+            evidence=evidence,
+        )
 
     def update(self, task, **values):
         allowed = {
@@ -83,6 +119,7 @@ class Engine:
         return workspace
 
     def verify(self, task, workspace):
+        self.process_barrier(task["track"]).require_clear()
         if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
             raise Conflict("Verification requires a committed, resolved merge")
         head = require_clean(workspace)
@@ -118,8 +155,12 @@ class Engine:
                 workspace,
                 timeout=self.config.get("verify_timeout", 180),
                 env=environment,
+                launch_identity=launch_identity(self.store.path, task),
             )
             ok, error = True, None
+        except ProcessBarrierError:
+            # Uncertain launch/cleanup evidence blocks further work.
+            raise
         except (
             RuntimeError,
             subprocess.TimeoutExpired,
@@ -157,6 +198,7 @@ class Engine:
         return record
 
     def apply_changes(self, task, workspace, changes, repair=None):
+        self.process_barrier(task["track"]).require_clear()
         if repair:
             integration_repair.validate_resolution(workspace, changes, repair)
         paths = [x["path"] for x in changes]
@@ -218,6 +260,7 @@ class Engine:
             self.update(task, head=head, review=None, verification=None, landing=None)
 
     def publish(self, task, workspace, doc):
+        self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
         require_current(self.config, workspace, t["head"], t["verification"])
         with file_lock(self.store.path / "locks" / "publish.lock", blocking=True):
@@ -308,6 +351,7 @@ class Engine:
         self.update(task, review=encode(review))
 
     def gate(self, task):
+        self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
         if integration_repair.pending(t):
             raise Conflict("Integration repair requires new verification and independent review")
@@ -479,6 +523,16 @@ class Engine:
             "adopt_completion": True,
         }
 
+    @contextmanager
+    def process_attempt(self, task):
+        with file_lock(self.store.path / "locks" / (task["track"] + ".lock")):
+            with self.store.transaction() as connection:
+                self.store.assert_claim(connection, task)
+            with ProcessInventory(
+                self.store.path, task["track"], task["attempt"], task["id"], task["generation"]
+            ).lifecycle():
+                yield
+
     @guarded
     def execute(self, task):
         stop = threading.Event()
@@ -494,7 +548,8 @@ class Engine:
         thread = threading.Thread(target=pulse, daemon=True)
         thread.start()
         try:
-            with file_lock(self.store.path / "locks" / (task["track"] + ".lock")):
+            with self.process_attempt(task):
+                self.process_barrier(task["track"]).require_clear()
                 workspace = self.ensure_workspace(task)
                 t = self.store.track(task["track"])
                 doc = json.loads(t["document"])
@@ -680,6 +735,10 @@ class Engine:
                 )
 
     def fail(self, task, error):
+        if isinstance(error, VerificationCleanupError):
+            # Persist the hold before creating an answerable recovery decision.
+            # If persistence fails, leave the claim unresolved and propagate.
+            self.preserve_cleanup_failure(task, error)
         try:
             self.store.finish(
                 task,
@@ -702,20 +761,44 @@ class Engine:
             )
 
     def reconcile(self):
+        # Recovery owns its own execution lock and durable transaction. Close the
+        # snapshot connection before entering it; never nest store transactions.
+        with self.store.connect() as c:
+            expired = [
+                dict(row)
+                for row in c.execute(
+                    "SELECT * FROM tasks WHERE status='running' AND lease<?", (time.time(),)
+                ).fetchall()
+            ]
+        deferred = []
+        blocked_tracks = set()
+        for task in expired:
+            try:
+                recover_expired_claim(self.store, task)
+            except (Conflict, ProcessBarrierError) as error:
+                blocked_tracks.add(task["track"])
+                deferred.append(
+                    (
+                        task["track"],
+                        {
+                            "workId": task["id"],
+                            "generation": task["generation"],
+                            "reason": str(error),
+                            "retry": "Reconcile after checking attempt identity, launch evidence "
+                            "and the execution lock; do not clear evidence to force recovery",
+                        },
+                    )
+                )
         with self.store.transaction() as c:
-            expired = c.execute(
-                "SELECT * FROM tasks WHERE status='running' AND lease<?", (time.time(),)
-            ).fetchall()
-            for w in expired:
-                c.execute(
-                    "UPDATE tasks SET status='queued',generation=generation+1,owner=NULL,lease=NULL WHERE id=?",
-                    (w["id"],),
-                )
-                c.execute(
-                    "UPDATE attempts SET status='abandoned',finished=? WHERE task=? AND status='running'",
-                    (time.time(), w["id"]),
-                )
-                self.store.event(c, "claim.recovered", w["track"], {"workId": w["id"]})
+            for track, evidence in deferred:
+                # Retain a diagnostic even when no unique attempt can own a
+                # process journal. Repeated reconciliation must not flood it.
+                if not c.execute(
+                    "SELECT 1 FROM events WHERE type='claim.recovery_blocked' "
+                    "AND track=? AND body=?",
+                    (track, encode(evidence)),
+                ).fetchone():
+                    self.store.event(c, "claim.recovery_blocked", track, evidence)
             c.execute(
                 "UPDATE tracks SET control='paused' WHERE control='pause-requested' AND NOT EXISTS "
                 "(SELECT 1 FROM tasks WHERE tasks.track=tracks.id AND tasks.status='running')"
@@ -723,6 +806,8 @@ class Engine:
             for t in c.execute(
                 "SELECT * FROM tracks WHERE control='active' AND status='open'"
             ).fetchall():
+                if t["id"] in blocked_tracks or self.cleanup_blocked(t["id"]):
+                    continue
                 # Semantic coalescing repairs pre-existing duplicate follow-ups too. Keep history.
                 for kind in ("review", "land", "triage", "complete", "verify"):
                     pending = c.execute(
