@@ -13,6 +13,7 @@ from .worker import run_worker
 from .maintenance import guarded
 from . import integration as integration_repair
 from .checkout import require_clean
+from .claim_recovery import recover_expired_claim
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
 
@@ -715,22 +716,44 @@ class Engine:
             )
 
     def reconcile(self):
+        # Recovery owns its own execution lock and durable transaction. Close the
+        # snapshot connection before entering it; never nest store transactions.
+        with self.store.connect() as c:
+            expired = [
+                dict(row)
+                for row in c.execute(
+                    "SELECT * FROM tasks WHERE status='running' AND lease<?", (time.time(),)
+                ).fetchall()
+            ]
+        deferred = []
+        blocked_tracks = set()
+        for task in expired:
+            try:
+                recover_expired_claim(self.store, task)
+            except (Conflict, ProcessBarrierError) as error:
+                blocked_tracks.add(task["track"])
+                deferred.append(
+                    (
+                        task["track"],
+                        {
+                            "workId": task["id"],
+                            "generation": task["generation"],
+                            "reason": str(error),
+                            "retry": "Reconcile after checking attempt identity, launch evidence "
+                            "and the execution lock; do not clear evidence to force recovery",
+                        },
+                    )
+                )
         with self.store.transaction() as c:
-            expired = c.execute(
-                "SELECT * FROM tasks WHERE status='running' AND lease<?", (time.time(),)
-            ).fetchall()
-            for w in expired:
-                if self.cleanup_blocked(w["track"]):
-                    continue
-                c.execute(
-                    "UPDATE tasks SET status='queued',generation=generation+1,owner=NULL,lease=NULL WHERE id=?",
-                    (w["id"],),
-                )
-                c.execute(
-                    "UPDATE attempts SET status='abandoned',finished=? WHERE task=? AND status='running'",
-                    (time.time(), w["id"]),
-                )
-                self.store.event(c, "claim.recovered", w["track"], {"workId": w["id"]})
+            for track, evidence in deferred:
+                # Retain a diagnostic even when no unique attempt can own a
+                # process journal. Repeated reconciliation must not flood it.
+                if not c.execute(
+                    "SELECT 1 FROM events WHERE type='claim.recovery_blocked' "
+                    "AND track=? AND body=?",
+                    (track, encode(evidence)),
+                ).fetchone():
+                    self.store.event(c, "claim.recovery_blocked", track, evidence)
             c.execute(
                 "UPDATE tracks SET control='paused' WHERE control='pause-requested' AND NOT EXISTS "
                 "(SELECT 1 FROM tasks WHERE tasks.track=tracks.id AND tasks.status='running')"
@@ -738,7 +761,7 @@ class Engine:
             for t in c.execute(
                 "SELECT * FROM tracks WHERE control='active' AND status='open'"
             ).fetchall():
-                if self.cleanup_blocked(t["id"]):
+                if t["id"] in blocked_tracks or self.cleanup_blocked(t["id"]):
                     continue
                 # Semantic coalescing repairs pre-existing duplicate follow-ups too. Keep history.
                 for kind in ("review", "land", "triage", "complete", "verify"):

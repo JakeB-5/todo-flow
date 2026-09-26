@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from todo_flow.adapters import command, permitted
 from todo_flow.engine import Engine
+from todo_flow.process_launch import LaunchGate
 from todo_flow.store import Conflict, Store, encode
 
 DOC = {
@@ -164,6 +165,9 @@ class IntegrationTests(unittest.TestCase):
     def test_recovery_fences_expired_claim(self):
         self.s.start("addition")
         old = self.s.claim("dead")
+        LaunchGate.prepare(
+            self.s.path, "addition", old["attempt"], "never-dispatched", backend="test"
+        ).cancel_pending()
         with self.s.transaction() as c:
             c.execute("UPDATE tasks SET lease=?", (time.time() - 60,))
         Engine(self.s).reconcile()
