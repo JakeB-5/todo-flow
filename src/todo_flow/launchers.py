@@ -95,9 +95,7 @@ def select_launcher(config, workspace):
                     selection["host"] = host
                     # Missing host evidence is not proof that the PTY is local.
                     if host != "local":
-                        selection["reason"] = (
-                            "remote_host_mismatch" if host else "host_unverified"
-                        )
+                        selection["reason"] = "remote_host_mismatch" if host else "host_unverified"
                         raise RuntimeError("Orca terminals require a confirmed host-local driver")
                     worktree_id = worktree.get("id")
                     if not isinstance(worktree_id, str) or "::" not in worktree_id:
@@ -105,9 +103,7 @@ def select_launcher(config, workspace):
                     selection["reason"] = selection["orca"]["status"]
                     # This remains the existing terminal bridge. Schema discovery
                     # alone must never silently promote it to a native session.
-                    return selected(
-                        "orca", cli=cli, worktree="id:" + worktree_id, repo=repo
-                    )
+                    return selected("orca", cli=cli, worktree="id:" + worktree_id, repo=repo)
             except (
                 OSError,
                 subprocess.SubprocessError,

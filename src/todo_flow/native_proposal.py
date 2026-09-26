@@ -129,7 +129,9 @@ def _check_schema(value, schema, path="$"):
         for key, item in value.items():
             _check_schema(item, properties[key], path + "." + key)
     elif schema.get("type") == "array":
-        if len(value) < schema.get("minItems", 0) or len(value) > schema.get("maxItems", len(value)):
+        if len(value) < schema.get("minItems", 0) or len(value) > schema.get(
+            "maxItems", len(value)
+        ):
             raise ValueError("Invalid proposal array length at " + path)
         for index, item in enumerate(value):
             _check_schema(item, schema["items"], f"{path}[{index}]")
@@ -157,7 +159,16 @@ def decode_native_proposal(text, *, launch, current, implementation_sessions=fro
     result = {key: value for key, value in result.items() if value is not None}
     if result.get("question") and any(
         result.get(key)
-        for key in ("changes", "verify", "publish", "next", "watches", "findings", "triage", "triage_search")
+        for key in (
+            "changes",
+            "verify",
+            "publish",
+            "next",
+            "watches",
+            "findings",
+            "triage",
+            "triage_search",
+        )
     ):
         raise ValueError("A decision wait cannot request effects")
     return validate(result, current.kind)
