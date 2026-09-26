@@ -13,6 +13,7 @@ from typing import Protocol
 from .maintenance import write_json
 from .terminal_retirement import TerminalObservation, retire_terminal
 from .terminal_slots import TerminalCapacityError, TerminalSlots
+from .terminal_tmux import TmuxTerminalAdapter
 
 
 class TerminalAdapter(Protocol):
@@ -36,7 +37,10 @@ class UnsupportedTerminalAdapter:
 
 
 def terminal_adapter(launch) -> TerminalAdapter:
-    # Real backends remain charged until their conditional-close contract exists.
+    if launch.get("backend") == "tmux":
+        return TmuxTerminalAdapter(launch)
+    # Orca's current public close command has no activity precondition. Custom
+    # launchers likewise provide no trusted inventory/conditional-close contract.
     return UnsupportedTerminalAdapter()
 
 
@@ -66,6 +70,8 @@ def retire_launch(folder, *, dry_run=False):
             "handle": launch.get("handle"),
             "launch_record": str(folder / "launch.json"),
         }
+        if launch["backend"] == "tmux" and "tmux_socket_identity" in lease["resource"]:
+            resource["tmux_socket_identity"] = launch.get("tmux_socket_identity")
         if lease["resource"] != resource or lease["owner"]["attempt"] != folder.name:
             raise TerminalCapacityError("Terminal resource does not match accepted launch")
         limits = json.loads(ledger.read_text())["limits"]

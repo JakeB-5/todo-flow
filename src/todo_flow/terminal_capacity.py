@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .process_inventory import ProcessInventory
 from .terminal_slots import TerminalCapacityError, TerminalSlots
+from .terminal_tmux import socket_identity
 
 
 def reserve_terminal(launcher, identity, folder):
@@ -49,6 +50,10 @@ def reserve_terminal(launcher, identity, folder):
         owner.update(task=identity["execution"], generation=0)
         evidence["claim_kind"] = "standalone"
         lease = slots.reserve(owner, launcher["backend"], evidence=evidence)
+    if launcher["backend"] == "tmux":
+        # spawn_terminal persists this launcher snapshot before new-window.
+        # A missing identity never grants permission to release capacity later.
+        launcher["tmux_socket_identity"] = socket_identity(launcher.get("socket"))
     return slots, lease
 
 
@@ -56,15 +61,18 @@ def accept_terminal(reservation, record, folder):
     if reservation is None:
         return None
     slots, lease = reservation
+    resource = {
+        "backend": record["backend"],
+        "terminal": record.get("terminal"),
+        "handle": record.get("handle"),
+        "launch_record": str(folder / "launch.json"),
+    }
+    if record["backend"] == "tmux":
+        resource["tmux_socket_identity"] = record.get("tmux_socket_identity")
     return slots.transition(
         lease,
         "active",
-        resource={
-            "backend": record["backend"],
-            "terminal": record.get("terminal"),
-            "handle": record.get("handle"),
-            "launch_record": str(folder / "launch.json"),
-        },
+        resource=resource,
         evidence={
             "dispatch": "accepted",
             "ownership": "not verified for reuse or close",
