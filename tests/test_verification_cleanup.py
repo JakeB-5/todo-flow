@@ -144,15 +144,20 @@ class VerificationCleanupTests(unittest.TestCase):
                 verification.run([sys.executable, "-c", "import time; time.sleep(1)"], tmp, 0.05)
 
     def test_interrupt_is_preserved_after_confirmed_cleanup(self):
-        communicate = subprocess.Popen.communicate
+        from todo_flow.supervised_process import SupervisedProcess
 
-        def interrupt_once(proc, *args, **kwargs):
-            if kwargs.get("timeout") == 0.125:
+        poll = SupervisedProcess.poll
+        interrupted = False
+
+        def interrupt_once(proc):
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
                 raise KeyboardInterrupt
-            return communicate(proc, *args, **kwargs)
+            return poll(proc)
 
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(subprocess.Popen, "communicate", interrupt_once):
+            with patch.object(SupervisedProcess, "poll", interrupt_once):
                 with self.assertRaises(KeyboardInterrupt):
                     verification.run(
                         [sys.executable, "-c", "import time; time.sleep(1)"], tmp, 0.125

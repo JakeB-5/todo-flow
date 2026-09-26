@@ -185,3 +185,53 @@ run_worker({'worker_protocol':2,'worker_launcher':'headless',
         history = ProcessBarrier(self.s.path, "addition").history()
         self.assertEqual(history[-1]["evidence"]["outcome"], "not-spawned")
         self.assertEqual(self.s.snapshot()["tasks"][0]["status"], "queued")
+
+    def test_terminal_delivered_after_driver_death_never_starts_worker(self):
+        self.s.start("addition")
+        task = self.s.claim("driver")
+        delivery, unexpected = self.root / "delivery", self.root / "unexpected"
+        code = """
+import json,sys
+from todo_flow.engine import Engine
+from todo_flow.store import Store
+engine=Engine(Store(sys.argv[1]))
+engine.config.update(worker_protocol=2,worker_launcher='terminal',
+    worker={'type':'command','argv':[sys.executable,'-c',
+        'from pathlib import Path; Path('+repr(sys.argv[4])+').touch()']},
+    terminal_command=[sys.executable,'-c',
+        'import sys; from pathlib import Path; Path(sys.argv[1]).write_text(sys.argv[2])',
+        sys.argv[3],'{command}'])
+engine.execute(json.loads(sys.argv[2]))
+"""
+        driver = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                code,
+                str(self.s.path),
+                json.dumps(task),
+                str(delivery),
+                str(unexpected),
+            ],
+            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.addCleanup(lambda: driver.poll() is None and driver.kill())
+        self.wait_for(lambda: delivery.exists() and delivery.stat().st_size > 0)
+        driver.kill()
+        driver.wait(timeout=5)
+        import shlex
+
+        bridge = subprocess.run(
+            shlex.split(delivery.read_text()), capture_output=True, text=True, timeout=5
+        )
+        self.assertNotEqual(bridge.returncode, 0, bridge.stdout + bridge.stderr)
+        self.assertFalse(unexpected.exists(), "Late delivery started after its driver died")
+        barrier = ProcessBarrier(self.s.path, "addition")
+        barrier.require_clear()
+        self.assertEqual(barrier.history()[-1]["evidence"]["outcome"], "not-spawned")
+        with self.s.transaction() as connection:
+            connection.execute("UPDATE tasks SET lease=0 WHERE id=?", (task["id"],))
+        Engine(Store(self.s.path)).reconcile()
+        self.assertEqual(self.s.snapshot()["tasks"][0]["status"], "queued")

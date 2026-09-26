@@ -139,6 +139,10 @@ class Engine:
                 launch_identity=launch_identity(self.store.path, task),
             )
             ok, error = True, None
+        except ProcessBarrierError:
+            # Uncertain launch/cleanup evidence is an execution attention wait,
+            # never a failed test that may schedule ordinary implementation.
+            raise
         except (RuntimeError, subprocess.TimeoutExpired) as e:
             output, ok, error = str(e), False, type(e).__name__
         try:

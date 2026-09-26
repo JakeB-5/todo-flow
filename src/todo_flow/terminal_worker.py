@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import signal
-import select
 import subprocess
 import sys
 import threading
@@ -32,6 +31,19 @@ def save(path, value):
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value))
     temporary.replace(path)
+
+
+def lease_closed(descriptor):
+    if descriptor is None:
+        return False
+    try:
+        # A FIFO whose writer died before the first reader opened may not be
+        # reported readable by select on macOS. Nonblocking read distinguishes
+        # that EOF from an attached writer with no data (EAGAIN).
+        os.read(descriptor, 1)
+        return True
+    except BlockingIOError:
+        return False
 
 
 def main(spec_path):
@@ -90,7 +102,7 @@ def main(spec_path):
             env = dict(os.environ)
             env.pop("CLAUDECODE", None)
             print(f"TODO Flow worker: {spec['title']}\nWorkspace: {spec['cwd']}", flush=True)
-            if lease is not None and select.select([lease], [], [], 0)[0]:
+            if lease_closed(lease):
                 gate.cancel_pending()
                 raise KeyboardInterrupt
             with (
@@ -112,9 +124,7 @@ def main(spec_path):
                 thread.start()
                 readers.append(thread)
             while True:
-                if cancelled.exists() or (
-                    lease is not None and select.select([lease], [], [], 0)[0]
-                ):
+                if cancelled.exists() or lease_closed(lease):
                     raise KeyboardInterrupt
                 if proc.leader_exited():
                     leader_completed = True
