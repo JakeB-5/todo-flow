@@ -108,9 +108,7 @@ class LaunchSelectionEvidenceTests(unittest.TestCase):
                 self.assertEqual(record["selection"]["host"], "runtime:remote")
                 self.assertEqual(record["selection"]["orca"], probe)
                 self.assertEqual(record["backend"], "headless" if mode == "auto" else None)
-                self.assertEqual(
-                    record["status"], "selected" if mode == "auto" else "unavailable"
-                )
+                self.assertEqual(record["status"], "selected" if mode == "auto" else "unavailable")
 
     def test_evidence_write_failure_prevents_launch(self):
         with tempfile.TemporaryDirectory() as tmp:
