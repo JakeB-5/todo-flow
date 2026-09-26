@@ -96,7 +96,9 @@ class OrcaTerminalAdapter:
         if (
             resource.get("backend") != "orca"
             or resource.get("terminal") != self.recorded
-            or not all(isinstance(self.recorded.get(k), str) and self.recorded[k] for k in IDENTITY_KEYS)
+            or not all(
+                isinstance(self.recorded.get(k), str) and self.recorded[k] for k in IDENTITY_KEYS
+            )
             or self.recorded["executionHostId"] != "local"
             or self.launch.get("worktree") != "id:" + self.recorded["worktreeId"]
             or not self.creation.get("runtimeId")
@@ -177,16 +179,15 @@ class OrcaTerminalAdapter:
             or current["lastOutputAt"] > (finished + 2) * 1000
             or (
                 last_input is not None
-                and (
-                    not number(last_input)
-                    or last_input > self.creation["started_at"] * 1000
-                )
+                and (not number(last_input) or last_input > self.creation["started_at"] * 1000)
             )
             or not isinstance(preview, str)
             or marker not in preview
             or preview.rsplit(marker, 1)[-1].strip()
         ):
-            return observed("busy", "Activity or terminal state does not identify an exited bridge", current)
+            return observed(
+                "busy", "Activity or terminal state does not identify an exited bridge", current
+            )
         return observed("idle", "Owned exec bridge and PTY exited; no subsequent activity", current)
 
     def close(self, observation):
@@ -200,7 +201,9 @@ class OrcaTerminalAdapter:
             raise TerminalCapacityError("Close lacks an attributed exit observation")
         previous = json.loads(self.journal.read_text())
         if any(event.get("close_intent") for event in previous):
-            raise TerminalCapacityError("Close was already dispatched or interrupted; reobserve only")
+            raise TerminalCapacityError(
+                "Close was already dispatched or interrupted; reobserve only"
+            )
         self.record({"close_intent": True, "observation": proof})
         # The ledger's closing state and this intent precede dispatch. Recovery
         # never repeats it, including when the CLI response or journal write fails.
