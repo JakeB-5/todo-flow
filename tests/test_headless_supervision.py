@@ -1,6 +1,8 @@
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -58,7 +60,7 @@ class HeadlessSupervisionTests(unittest.TestCase):
     def test_prepare_failure_prevents_spawn(self):
         with (
             patch.object(LaunchGate, "prepare", side_effect=ProcessBarrierError("disk failure")),
-            patch("todo_flow.headless_supervision.subprocess.Popen") as spawn,
+            patch("todo_flow.owned_process_group.subprocess.Popen") as spawn,
         ):
             with self.assertRaises(ProcessBarrierError):
                 with self.launch():
@@ -79,9 +81,7 @@ class HeadlessSupervisionTests(unittest.TestCase):
                     return advance(gate, event, state, reason, evidence)
 
                 with (
-                    patch(
-                        "todo_flow.headless_supervision.subprocess.Popen", side_effect=self.spawn
-                    ),
+                    patch("todo_flow.owned_process_group.subprocess.Popen", side_effect=self.spawn),
                     patch.object(LaunchGate, "_advance", fail_stage),
                 ):
                     with self.assertRaises((OSError, ProcessBarrierError)):
@@ -91,24 +91,24 @@ class HeadlessSupervisionTests(unittest.TestCase):
                 self.assert_stopped_and_held()
 
     def test_interruption_stops_process_and_preserves_exception(self):
-        with patch("todo_flow.headless_supervision.subprocess.Popen", side_effect=self.spawn):
+        with patch("todo_flow.owned_process_group.subprocess.Popen", side_effect=self.spawn):
             with self.assertRaises(KeyboardInterrupt):
                 with self.launch():
                     raise KeyboardInterrupt
         self.assert_stopped_and_held()
 
     def test_successful_body_cannot_clear_unconfirmed_ownership(self):
-        with patch("todo_flow.headless_supervision.subprocess.Popen", side_effect=self.spawn):
+        with patch("todo_flow.owned_process_group.subprocess.Popen", side_effect=self.spawn):
             with self.assertRaisesRegex(VerificationCleanupError, "ownership remains unconfirmed"):
                 with self.launch() as proc:
-                    self.assertIsNone(proc.poll())
+                    self.assertFalse(proc.leader_exited())
         self.assert_stopped_and_held()
 
     def test_cleanup_failure_leaves_durable_hold(self):
         with (
-            patch("todo_flow.headless_supervision.subprocess.Popen", side_effect=self.spawn),
+            patch("todo_flow.owned_process_group.subprocess.Popen", side_effect=self.spawn),
             patch(
-                "todo_flow.headless_supervision.stop_group",
+                "todo_flow.headless_supervision.OwnedProcessGroup.stop",
                 side_effect=VerificationCleanupError("inspection failed"),
             ),
         ):
@@ -121,3 +121,41 @@ class HeadlessSupervisionTests(unittest.TestCase):
             gate.barrier.require_clear()
         # The fixture owns this still-live direct child and reaps it in cleanup.
         self.assertIsNone(self.processes[0].poll())
+
+    def test_exited_leader_is_retained_until_term_ignoring_child_stops(self):
+        ready = Path(self.identity["directory"]) / "ready"
+        output = ready.with_name("output")
+        child = (
+            "import pathlib,signal,sys,time; "
+            "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+            "p=pathlib.Path(sys.argv[2]); p.write_text('started'); "
+            "pathlib.Path(sys.argv[1]).touch(); "
+            "\nwhile True:\n with p.open('a') as f: f.write('x')\n time.sleep(.02)"
+        )
+        parent = (
+            "import pathlib,subprocess,sys,time; "
+            "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2],sys.argv[3]]); "
+            "p=pathlib.Path(sys.argv[2]); "
+            "\nwhile not p.exists(): time.sleep(.01)"
+        )
+        with patch("todo_flow.owned_process_group.subprocess.Popen", side_effect=self.spawn):
+            with self.assertRaisesRegex(VerificationCleanupError, "ownership remains unconfirmed"):
+                with headless_process(
+                    [sys.executable, "-c", parent, child, str(ready), str(output)],
+                    identity=self.identity,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                ) as group:
+                    deadline = time.monotonic() + 5
+                    while not group.leader_exited():
+                        if time.monotonic() >= deadline:
+                            self.fail("Leader did not exit")
+                        time.sleep(0.01)
+                    self.assertTrue(ready.exists())
+                    # Do not poll: the unreaped leader reserves the group ID.
+                    self.assertIsNone(self.processes[0].returncode)
+        self.assert_stopped_and_held()
+        final_output = output.read_bytes()
+        time.sleep(0.15)
+        self.assertEqual(output.read_bytes(), final_output)
