@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 
+from .process_launch import LaunchGate
 from .verification import VerificationCleanupError
 
 
@@ -148,7 +149,9 @@ class TerminalProcess:
         (self.folder / "terminal-cancelled").touch()
         deadline = time.monotonic() + timeout
         while True:
-            if self.poll() is not None:
+            # Missing receipts may be delayed beyond the normal start deadline.
+            # Still attempt durable cancellation under the bridge lock.
+            if self.receipt() and self.poll() is not None:
                 return
             with (self.folder / "terminal-run.lock").open("a") as lock:
                 try:
@@ -161,6 +164,11 @@ class TerminalProcess:
                     # A running receipt without its lock means the owner died;
                     # descendants may still exist and must not be guessed at.
                     if not self.receipt():
+                        spec_path = self.folder / "terminal-spec.json"
+                        if spec_path.exists():
+                            identity = json.loads(spec_path.read_text()).get("launch_identity")
+                            if identity is not None:
+                                LaunchGate(**identity).cancel_pending()
                         return
                     if self.poll() is not None:
                         return
@@ -176,9 +184,15 @@ class TerminalProcess:
             time.sleep(0.1)
 
 
-def spawn_terminal(launcher, argv, workspace, folder, title):
+def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=None):
     argv = [shutil.which(argv[0]) or argv[0], *argv[1:]]
     spec = {"argv": argv, "cwd": workspace, "title": title}
+    if launch_identity is not None:
+        # The caller supplies the canonical store/track/attempt and a fresh
+        # execution ID. Persist intent before exposing the bridge command.
+        identity = {**launch_identity, "directory": str(launch_identity["directory"])}
+        LaunchGate.prepare(**identity, backend=launcher["backend"])
+        spec["launch_identity"] = identity
     (folder / "terminal-spec.json").write_text(json.dumps(spec))
     bridge = str(Path(__file__).with_name("terminal_worker.py"))
     command = shlex.join([sys.executable, bridge, str(folder / "terminal-spec.json")])
@@ -229,7 +243,7 @@ def spawn_terminal(launcher, argv, workspace, folder, title):
             result = subprocess.run(args, capture_output=True, text=True, timeout=10, check=True)
             record["handle"] = result.stdout.strip()
         record["status"] = "accepted"
-    except Exception:
+    except BaseException:
         record["status"] = "unconfirmed"
         process.stop()
         raise
