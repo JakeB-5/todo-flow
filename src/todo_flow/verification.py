@@ -31,6 +31,35 @@ def group_running(pgid):
     return running
 
 
+def check_leader(proc):
+    """Reject observable identity mismatches before inspecting or signalling.
+
+    The caller must retain the original Popen object for a dedicated session.
+    A PID that exists after that object has reaped its child belongs to another
+    execution. This check is deliberately not a recovery ownership proof: an
+    absent leader cannot distinguish orphaned descendants from a reused group
+    whose replacement leader has also exited.
+    """
+    try:
+        pgid = os.getpgid(proc.pid)
+        sid = os.getsid(proc.pid)
+    except ProcessLookupError:
+        # The original leader may have exited, leaving live descendants.
+        return
+    except OSError as error:
+        raise VerificationCleanupError(
+            f"Cannot inspect process identity for group {proc.pid}"
+        ) from error
+    if proc.returncode is not None:
+        raise VerificationCleanupError(
+            f"Process identity mismatch: reaped PID {proc.pid} exists again"
+        )
+    if pgid != proc.pid or sid != proc.pid:
+        raise VerificationCleanupError(
+            f"Process identity mismatch: PID {proc.pid} is not its own session/group leader"
+        )
+
+
 def stop_group(proc, *, collect_output=True):
     """Reap before inspecting and signal only while live group members remain.
 
@@ -44,11 +73,15 @@ def stop_group(proc, *, collect_output=True):
         # Reap a terminated direct child before querying or signalling the group.
         # In particular, macOS can reject signals to a zombie-only group.
         proc.poll()
+        check_leader(proc)
         return group_running(proc.pid)
 
     def send(sig):
         if not running():
             return
+        # Group inspection invokes ps. Check again after that inspection so a
+        # mismatch discovered during escalation cannot authorize another signal.
+        check_leader(proc)
         try:
             os.killpg(proc.pid, sig)
         except ProcessLookupError:
@@ -113,6 +146,7 @@ def run(argv, workspace, timeout):
         stop_group(proc)
         raise
     try:
+        check_leader(proc)
         remaining = group_running(proc.pid)
     except VerificationCleanupError:
         stop_group(proc)
