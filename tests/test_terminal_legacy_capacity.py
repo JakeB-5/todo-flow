@@ -49,9 +49,7 @@ class TerminalLegacyCapacityTests(unittest.TestCase):
 
     def legacy(self, name, status="accepted"):
         path = self.folder(name) / "launch.json"
-        path.write_text(
-            json.dumps({"backend": "terminal", "status": status, "handle": name})
-        )
+        path.write_text(json.dumps({"backend": "terminal", "status": status, "handle": name}))
         return path
 
     def assert_blocked(self, name, evidence):
@@ -257,7 +255,7 @@ class TerminalLegacyCapacityTests(unittest.TestCase):
         config = {
             "worker": {
                 "type": "command",
-                "argv": [sys.executable, "-c", "print('{\"summary\": \"synthetic\"}')"],
+                "argv": [sys.executable, "-c", 'print(\'{"summary": "synthetic"}\')'],
             },
             "worker_protocol": 2,
             "worker_launcher": "headless",
