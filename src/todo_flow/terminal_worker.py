@@ -12,16 +12,17 @@ import threading
 import time
 
 if __package__:
+    from .owned_process_group import OwnedProcessGroup
     from .process_launch import LaunchGate
-    from .verification import VerificationCleanupError, stop_group
+    from .verification import VerificationCleanupError
 else:
     # Launchers invoke this file directly, including outside an installed package.
-    from verification import VerificationCleanupError, stop_group
-
     # process_launch has package-relative imports. Make the adjacent package
     # available even when this file is executed from an unrelated workspace.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from todo_flow.owned_process_group import OwnedProcessGroup
     from todo_flow.process_launch import LaunchGate
+    from todo_flow.verification import VerificationCleanupError
 
 
 def save(path, value):
@@ -76,6 +77,7 @@ def main(spec_path):
                 reader_errors.append(str(error))
 
         code = 1
+        leader_completed = False
         try:
             env = dict(os.environ)
             env.pop("CLAUDECODE", None)
@@ -84,14 +86,13 @@ def main(spec_path):
                 (folder / "input.json").open("rb") as inp,
                 gate.launching() if gate is not None else nullcontext(),
             ):
-                proc = subprocess.Popen(
+                proc = OwnedProcessGroup(
                     spec["argv"],
                     cwd=spec["cwd"],
                     env=env,
                     stdin=inp,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    start_new_session=True,
                 )
             state.update(pid=proc.pid, status="running")
             save(receipt, state)
@@ -102,11 +103,10 @@ def main(spec_path):
             while True:
                 if cancelled.exists():
                     raise KeyboardInterrupt
-                try:
-                    code = proc.wait(timeout=0.1)
+                if proc.leader_exited():
+                    leader_completed = True
                     break
-                except subprocess.TimeoutExpired:
-                    continue
+                time.sleep(0.1)
         except KeyboardInterrupt:
             code = 130
         except Exception as error:
@@ -128,7 +128,10 @@ def main(spec_path):
                     if proc is not None:
                         # Parent exit says nothing about inherited pipes or descendants.
                         # Readers own the pipes, so communicate must not consume them.
-                        stop_group(proc, collect_output=False)
+                        child_code = proc.stop()
+                        if leader_completed:
+                            code = child_code
+                            state["worker_returncode"] = code
                     deadline = time.monotonic() + 5
                     for thread in readers:
                         thread.join(timeout=max(0, deadline - time.monotonic()))
@@ -139,9 +142,9 @@ def main(spec_path):
                             "Cannot preserve terminal output: " + "; ".join(reader_errors)
                         )
                     if gate is not None:
-                        # stop_group still cannot exclude reuse after the original
-                        # leader disappears. Do not promote that observation to
-                        # attributed group-exited proof or a successful receipt.
+                        # The live pin protects physical cleanup, but driver-death
+                        # recovery still lacks a surviving supervisor and durable
+                        # ownership proof. Keep the recovery barrier closed.
                         event = gate._event()
                         if proc is not None and event["state"] in ("intent", "running", "cleaning"):
                             gate._advance(

@@ -37,7 +37,7 @@ class TerminalCleanupTests(unittest.TestCase):
             bridge.kill()
         bridge.wait(timeout=5)
 
-    def start(self, folder, parent, *, fail_inspection=False):
+    def start(self, folder, parent, *, fail_inspection=False, assert_pin=False):
         (folder / "input.json").write_text("{}")
         spec = folder / "terminal-spec.json"
         spec.write_text(
@@ -49,21 +49,40 @@ class TerminalCleanupTests(unittest.TestCase):
                 }
             )
         )
-        if fail_inspection:
+        if fail_inspection or assert_pin:
             bootstrap = (
-                "import sys\n"
-                f"sys.path.insert(0, {str(Path(terminal_worker.__file__).parent)!r})\n"
-                "import terminal_worker, verification\n"
-                "def unavailable(pgid):\n"
-                "    raise verification.VerificationCleanupError('inspection unavailable')\n"
-                "verification.group_running = unavailable\n"
-                "raise SystemExit(terminal_worker.main(sys.argv[1]))\n"
+                "import runpy,sys\n"
+                "from pathlib import Path\n"
+                f"sys.path.insert(0, {str(Path(terminal_worker.__file__).parent.parent)!r})\n"
+                "from todo_flow.owned_process_group import OwnedProcessGroup\n"
+                "from todo_flow.verification import VerificationCleanupError\n"
             )
-            argv = [sys.executable, "-c", bootstrap, str(spec)]
+            if fail_inspection:
+                bootstrap += (
+                    "def unavailable(self):\n"
+                    "    raise VerificationCleanupError('inspection unavailable')\n"
+                    "OwnedProcessGroup._snapshot = unavailable\n"
+                )
+            else:
+                bootstrap += (
+                    "original_stop = OwnedProcessGroup.stop\n"
+                    "def checked_stop(self):\n"
+                    "    assert self._proc.returncode is None, 'leader reaped early'\n"
+                    "    assert self._snapshot()[0], 'leader was not retained as zombie'\n"
+                    "    Path('pin-checked').touch()\n"
+                    "    return original_stop(self)\n"
+                    "OwnedProcessGroup.stop = checked_stop\n"
+                )
+            bootstrap += (
+                "sys.argv = sys.argv[1:]\n"
+                "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+            )
+            argv = [sys.executable, "-c", bootstrap, terminal_worker.__file__, str(spec)]
         else:
             argv = [sys.executable, terminal_worker.__file__, str(spec)]
         return subprocess.Popen(
             argv,
+            cwd=folder,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -114,7 +133,9 @@ class TerminalCleanupTests(unittest.TestCase):
                                     f"subprocess.Popen([sys.executable,'-c',{child!r}]{redirect})\n"
                                     "while not Path('ready').exists(): time.sleep(.01)\n" + ending
                                 )
-                                bridge = self.start(folder, parent)
+                                bridge = self.start(
+                                    folder, parent, assert_pin=outcome != "interrupt"
+                                )
                                 try:
                                     if outcome == "interrupt":
                                         self.wait_until(
@@ -126,6 +147,8 @@ class TerminalCleanupTests(unittest.TestCase):
                                         bridge.send_signal(signal.SIGTERM)
                                     expected = {"success": 0, "error": 7, "interrupt": 130}
                                     self.assertEqual(bridge.wait(timeout=15), expected[outcome])
+                                    if outcome != "interrupt":
+                                        self.assertTrue((folder / "pin-checked").exists())
                                     receipt = self.receipt(folder)
                                     self.assertEqual(receipt["status"], "exited")
                                     self.assertEqual(receipt["returncode"], expected[outcome])
