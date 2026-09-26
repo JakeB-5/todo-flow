@@ -233,7 +233,7 @@ class IntegrationTests(unittest.TestCase):
         Engine(self.s).run(jobs=2, max_tasks=20)
         snap = self.s.snapshot()
         self.assertTrue(
-            all(t["status"] == "done" for t in snap["tracks"]), encode(snap["decisions"]))
+            all(t["status"] == "done" for t in snap["tracks"]), encode(snap["decisions"])
         )
         self.assertEqual(len({t["workspace"] for t in snap["tracks"]}), 2)
         for t in snap["tracks"]:
