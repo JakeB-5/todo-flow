@@ -12,6 +12,7 @@ from todo_flow.engine import Engine
 from todo_flow.process_barrier import ProcessBarrierError
 from todo_flow.process_launch import LaunchGate
 from todo_flow.store import Conflict, Store, encode
+from todo_flow.terminal_retirement import TerminalObservation
 
 DOC = {
     "id": "addition",
@@ -239,12 +240,20 @@ class IntegrationTests(unittest.TestCase):
         for t in snap["tracks"]:
             self.assertIn("Ran 1 test", json.loads(t["verification"])["output"])
 
-    def test_terminal_driver_completes_parallel_tracks_through_triage(self):
+    def terminal_fixture(self):
+        # Each marker models a tab that outlives its worker process. Only the
+        # synthetic host adapter can remove it; process exit leaves it intact.
+        inventory = self.root / "physical-terminals"
+        inventory.mkdir()
         launcher = self.root / "terminal.py"
         launcher.write_text(
-            "import subprocess,shlex,sys\n"
+            "import pathlib,subprocess,shlex,sys,uuid\n"
+            "token=uuid.uuid4().hex\n"
+            "tab=pathlib.Path(sys.argv[2])/token\n"
+            "tab.write_text(token)\n"
             "subprocess.Popen(shlex.split(sys.argv[1]),stdout=subprocess.DEVNULL,"
             "stderr=subprocess.DEVNULL,start_new_session=True)\n"
+            "print(tab)\n"
         )
         self.s.register({**DOC, "id": "second"})
         for track in ("addition", "second"):
@@ -252,9 +261,40 @@ class IntegrationTests(unittest.TestCase):
         engine = Engine(self.s)
         engine.config.update(
             worker_launcher="terminal",
-            terminal_command=[sys.executable, str(launcher), "{command}"],
+            terminal_command=[sys.executable, str(launcher), "{command}", str(inventory)],
         )
-        engine.run(jobs=2, max_tasks=20)
+        return engine, inventory
+
+    def test_terminal_driver_completes_parallel_tracks_through_triage(self):
+        engine, inventory = self.terminal_fixture()
+        closed = set()
+        test = self
+
+        class SyntheticTerminalAdapter:
+            def inspect(self, resource):
+                tab = Path(resource["handle"])
+                test.assertEqual(tab.parent.resolve(), inventory.resolve())
+                present = tab.exists()
+                return TerminalObservation(
+                    "idle" if present else "absent",
+                    resource,
+                    "Complete synthetic tab inventory; no interactive input source",
+                    tab.read_text() if present else "",
+                )
+
+            def close(self, observation):
+                tab = Path(observation.resource["handle"])
+                # Synthetic tabs have unique incarnations and no concurrent
+                # input producer. Refuse a changed activity snapshot anyway.
+                if tab.exists() and tab.read_text() == observation.activity_token:
+                    test.assertNotIn(str(tab), closed)
+                    tab.unlink()
+                    closed.add(str(tab))
+
+        with patch(
+            "todo_flow.terminal_release.terminal_adapter", return_value=SyntheticTerminalAdapter()
+        ):
+            engine.run(jobs=2, max_tasks=20)
         snapshot = self.s.snapshot()
         self.assertTrue(
             all(t["status"] == "done" for t in snapshot["tracks"]), encode(snapshot["decisions"])
@@ -264,6 +304,40 @@ class IntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(len(receipts), 6)
         self.assertTrue(all(json.loads(p.read_text())["returncode"] == 0 for p in receipts))
         self.assertEqual(len(snapshot["triages"]), 2)
+        self.assertEqual(list(inventory.iterdir()), [])
+        self.assertEqual(len(closed), len(receipts))
+        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
+        self.assertLessEqual(ledger["max_owned"], 3)
+        self.assertEqual(len(ledger["slots"]), len(receipts))
+        for slot in ledger["slots"].values():
+            self.assertEqual(slot["history"][-1]["state"], "closed")
+        for receipt in receipts:
+            folder = receipt.parent
+            retirement = json.loads((folder / "terminal-retirement.json").read_text())
+            self.assertEqual(retirement["status"], "closed")
+            self.assertTrue((folder / "output.json").is_file())
+            self.assertTrue((folder / "launch.json").is_file())
+
+    def test_unsupported_terminal_driver_stops_without_losing_physical_capacity(self):
+        engine, inventory = self.terminal_fixture()
+        engine.run(jobs=2, max_tasks=20)
+        snapshot = self.s.snapshot()
+        self.assertTrue(all(t["status"] != "done" for t in snapshot["tracks"]))
+        decisions = [d for d in snapshot["decisions"] if d["status"] == "open"]
+        self.assertEqual(len(decisions), 2)
+        self.assertTrue(all("terminal-slots.json" in d["question"] for d in decisions))
+        receipts = list((self.s.path / "attempts").glob("*/terminal-process.json"))
+        self.assertEqual(len(receipts), 2)
+        self.assertTrue(all(json.loads(p.read_text())["cleanup_confirmed"] for p in receipts))
+        self.assertEqual(len(list(inventory.iterdir())), 2)
+        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
+        self.assertEqual(ledger["max_owned"], 2)
+        self.assertEqual(len(ledger["slots"]), 2)
+        for slot in ledger["slots"].values():
+            self.assertEqual(slot["history"][-1]["state"], "quarantined")
+        for receipt in receipts:
+            report = json.loads((receipt.parent / "terminal-retirement.json").read_text())
+            self.assertEqual(report["status"], "preserved")
 
     def test_reconcile_cannot_restart_work_between_task_and_track_completion(self):
         self.s.start("addition")
