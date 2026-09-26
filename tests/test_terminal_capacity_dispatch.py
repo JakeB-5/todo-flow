@@ -23,7 +23,12 @@ class TerminalCapacityDispatchTests(unittest.TestCase):
         return TerminalSlots(self.root, concurrency=2, idle_limit=1)
 
     def identity(self, number):
-        inventory = ProcessInventory(self.root, "fixture", f"attempt-{number}", "task", 7)
+        # Each request belongs to an independent track. A single track's process
+        # barrier intentionally rejects another execution while its first launch
+        # is unresolved; this fixture exercises the shared terminal limit instead.
+        inventory = ProcessInventory(
+            self.root, f"fixture-{number}", f"attempt-{number}", "task", 7
+        )
         inventory.start()
         return inventory.register()
 
@@ -59,13 +64,18 @@ class TerminalCapacityDispatchTests(unittest.TestCase):
                 else:
                     with self.assertRaises(TerminalCapacityError):
                         self.dispatch(number, launcher)
+                    self.assertFalse(
+                        (self.root / f"attempt-{number}/terminal-spec.json").exists()
+                    )
         self.assertEqual(len(accepted), 2)
         snapshot = self.slots().snapshot()
         self.assertEqual(snapshot["max_owned"], 2)
         self.assertEqual(self.slots().counts(snapshot)["active"], 2)
-        for row in snapshot["slots"].values():
-            self.assertEqual(row["history"][0]["owner"]["generation"], 7)
-            self.assertEqual(row["history"][0]["owner"]["task"], "task")
+        owners = [row["history"][0]["owner"] for row in snapshot["slots"].values()]
+        self.assertEqual({owner["track"] for owner in owners}, {"fixture-0", "fixture-1"})
+        for owner in owners:
+            self.assertEqual(owner["generation"], 7)
+            self.assertEqual(owner["task"], "task")
         for number in range(2):
             launch = json.loads((self.root / f"attempt-{number}/launch.json").read_text())
             self.assertEqual(launch["terminal_slot"]["state"], "active")
@@ -112,7 +122,7 @@ class TerminalCapacityDispatchTests(unittest.TestCase):
 
     def test_sealed_inventory_cannot_create_a_terminal(self):
         identity = self.identity(0)
-        ProcessInventory(self.root, "fixture", "attempt-0", "task", 7).seal()
+        ProcessInventory(self.root, "fixture-0", "attempt-0", "task", 7).seal()
         with patch("todo_flow.launchers.subprocess.run") as create:
             with self.assertRaises(TerminalCapacityError):
                 self.dispatch(0, {"backend": "terminal", "argv": ["{command}"]}, identity)
