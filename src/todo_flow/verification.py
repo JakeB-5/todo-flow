@@ -3,6 +3,7 @@
 import os
 import signal
 import subprocess
+import tempfile
 import time
 
 
@@ -131,51 +132,60 @@ def stop_group(proc, *, collect_output=True):
 
 def run_supervised(argv, workspace, timeout, identity):
     # Imported lazily because terminal_worker also imports this file directly.
+    from .owned_process_group import OwnedProcessGroup
     from .process_launch import LaunchGate
 
     gate = LaunchGate.prepare(**identity, backend="verification")
     proc = None
-    try:
-        # Assignment and durable acknowledgement both belong inside the finally.
-        with gate.launching():
-            proc = subprocess.Popen(
-                argv,
-                cwd=workspace,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-            )
-        stdout, stderr = proc.communicate(timeout=timeout)
-        if proc.returncode:
-            raise RuntimeError(
-                f"{argv[0]} failed ({proc.returncode}): {stderr[-3000:]} {stdout[-1000:]}"
-            )
-    finally:
-        if proc is not None:
-            try:
-                gate._advance(
-                    gate._event(),
-                    "cleaning",
-                    "Verification supervisor is attempting physical cleanup",
-                    {"pid": proc.pid},
+    # Files cannot hold a reader waiting for EOF after the leader exits. Keep
+    # both open through cleanup, including failed durable acknowledgement.
+    with tempfile.TemporaryFile(mode="w+t") as stdout, tempfile.TemporaryFile(mode="w+t") as stderr:
+        try:
+            with gate.launching():
+                proc = OwnedProcessGroup(
+                    argv,
+                    cwd=workspace,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout,
+                    stderr=stderr,
+                    text=True,
+                    env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
                 )
-            finally:
-                # A journal write failure must never bypass the live handle.
+            deadline = time.monotonic() + timeout
+            while not proc.leader_exited():
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                time.sleep(0.02)
+        finally:
+            if proc is not None:
                 try:
-                    stop_group(proc)
+                    gate._advance(
+                        gate._event(),
+                        "cleaning",
+                        "Verification supervisor is attempting physical cleanup",
+                        {"pid": proc.pid},
+                    )
                 finally:
-                    event = gate._event()
-                    if event["state"] in ("intent", "running", "cleaning"):
-                        gate._advance(
-                            event,
-                            "unknown",
-                            "Verification cleanup lacks durable group ownership proof",
-                            {"pid": proc.pid, "permit": str(gate.path)},
-                        )
-    # No attributed exit receipt until stop_group has a real ownership contract.
+                    # Never reap before group cleanup or bypass the live handle
+                    # when a journal write fails.
+                    try:
+                        code = proc.stop()
+                    finally:
+                        event = gate._event()
+                        if event["state"] in ("intent", "running", "cleaning"):
+                            gate._advance(
+                                event,
+                                "unknown",
+                                "Verification cleanup lacks durable group ownership proof",
+                                {"pid": proc.pid, "permit": str(gate.path)},
+                            )
+        if code:
+            stdout.seek(0)
+            stderr.seek(0)
+            raise RuntimeError(
+                f"{argv[0]} failed ({code}): {stderr.read()[-3000:]} {stdout.read()[-1000:]}"
+            )
+    # Live-driver ownership is not a durable driver-death recovery contract.
     raise VerificationCleanupError(
         f"Verification group ownership remains unconfirmed; reconcile {gate.barrier.path}"
     )
