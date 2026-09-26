@@ -1,5 +1,6 @@
 """Standalone terminal bridge: show worker output and keep durable exit evidence."""
 
+from contextlib import nullcontext
 import fcntl
 import json
 import os
@@ -11,10 +12,16 @@ import threading
 import time
 
 if __package__:
+    from .process_launch import LaunchGate
     from .verification import VerificationCleanupError, stop_group
 else:
     # Launchers invoke this file directly, including outside an installed package.
     from verification import VerificationCleanupError, stop_group
+
+    # process_launch has package-relative imports. Make the adjacent package
+    # available even when this file is executed from an unrelated workspace.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from todo_flow.process_launch import LaunchGate
 
 
 def save(path, value):
@@ -26,6 +33,8 @@ def save(path, value):
 def main(spec_path):
     folder = Path(spec_path).parent
     spec = json.loads(Path(spec_path).read_text())
+    identity = spec.get("launch_identity")
+    gate = LaunchGate(**identity) if identity is not None else None
     receipt = folder / "terminal-process.json"
     cancelled = folder / "terminal-cancelled"
     with (folder / "terminal-run.lock").open("w") as lock:
@@ -34,7 +43,11 @@ def main(spec_path):
         except BlockingIOError:
             return 1
         # A terminal launch may be delivered twice. Never repeat an attempt.
-        if receipt.exists() or cancelled.exists():
+        if receipt.exists():
+            return 1
+        if cancelled.exists():
+            if gate is not None:
+                gate.cancel_pending()
             return 1
         state = {"runner_pid": os.getpid(), "status": "starting"}
         save(receipt, state)
@@ -67,7 +80,10 @@ def main(spec_path):
             env = dict(os.environ)
             env.pop("CLAUDECODE", None)
             print(f"TODO Flow worker: {spec['title']}\nWorkspace: {spec['cwd']}", flush=True)
-            with (folder / "input.json").open("rb") as inp:
+            with (
+                (folder / "input.json").open("rb") as inp,
+                gate.launching() if gate is not None else nullcontext(),
+            ):
                 proc = subprocess.Popen(
                     spec["argv"],
                     cwd=spec["cwd"],
@@ -98,6 +114,13 @@ def main(spec_path):
         finally:
             state.update(status="cleaning", worker_returncode=code)
             try:
+                if gate is not None and proc is not None:
+                    gate._advance(
+                        gate._event(),
+                        "cleaning",
+                        "Terminal supervisor is attempting physical cleanup",
+                        {"pid": proc.pid, "runner_pid": os.getpid()},
+                    )
                 save(receipt, state)
             finally:
                 # Receipt failures must never bypass cleanup of the live handle.
@@ -114,6 +137,22 @@ def main(spec_path):
                     if reader_errors:
                         raise VerificationCleanupError(
                             "Cannot preserve terminal output: " + "; ".join(reader_errors)
+                        )
+                    if gate is not None:
+                        # stop_group still cannot exclude reuse after the original
+                        # leader disappears. Do not promote that observation to
+                        # attributed group-exited proof or a successful receipt.
+                        event = gate._event()
+                        if proc is not None and event["state"] in ("intent", "running", "cleaning"):
+                            gate._advance(
+                                event,
+                                "unknown",
+                                "Physical cleanup returned without durable ownership proof",
+                                {"pid": proc.pid, "permit": str(gate.path)},
+                            )
+                        raise VerificationCleanupError(
+                            "Terminal group ownership remains unconfirmed; "
+                            f"reconcile {gate.barrier.path}"
                         )
                 except BaseException as error:
                     save(
