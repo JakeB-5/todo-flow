@@ -10,6 +10,7 @@ from pathlib import Path
 from .store import encode
 from .language import output_instruction
 from .launchers import TerminalProcess, select_launcher, spawn_terminal
+from .verification import stop_group
 
 SCHEMA = {
     "type": "object",
@@ -431,15 +432,10 @@ def run_worker(config, context, task, state, heartbeat):
             if isinstance(proc, TerminalProcess):
                 if proc.returncode is None:
                     proc.stop()
-            elif proc.poll() is None:
-                import signal
-
-                os.killpg(proc.pid, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait()
+            else:
+                # A reaped parent can leave descendants writing to attempt files.
+                # Confirm group termination before returning or decoding a proposal.
+                stop_group(proc, collect_output=False)
     if adapter["type"] == "codex":
         result = json.loads((folder / "final.json").read_text())
         return validate({k: v for k, v in result.items() if v is not None}, task["kind"])
