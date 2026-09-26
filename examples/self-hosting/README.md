@@ -74,11 +74,33 @@ link.rename(backup)
 link.symlink_to("../.todo-flow/skills", target_is_directory=True)
 PY
 
-todo-flow --state "$PWD/todo" compatibility --target "$PWD/.agents/skills"
+todo-flow --state "$PWD/todo" compatibility --target "$PWD/.todo-flow/skills"
 todo-flow --state "$PWD/todo" serve --port 8766
 ```
 
 Keep the dashboard in a persistent terminal. Choose a free port; our usual port was already occupied. A newly opened agent session discovers the installed project skills. Preserve the repository's tracked development symlink in published commits; the operational link is a local checkout customization.
+
+## Declare verification inputs with a supporting engine
+
+The setup above records the published `0.0.4` installation. The source implementation adds `init --verify-identity`; do not assume the published wheel supports it. Check the installed engine's `init --help` before using this option. The following is an optional declaration for **new state**, not a claim that the historical setup used it or an instruction to reinitialize existing state.
+
+When initializing new state with a supporting engine, add this option to the existing `init` command, keeping its verification command and review endpoint:
+
+```sh
+--verify-identity "$(python3 -c 'import json, pathlib, sys; print(json.dumps({"version": 1, "files": [str(pathlib.Path(".todo-flow/verify.py").resolve()), str(pathlib.Path(sys.executable).resolve()), "uv.lock"], "environment": ["PATH", "UV_INDEX_URL"], "nonce": "runner-baseline-1"}))')"
+```
+
+This is a command continuation argument, not a standalone shell command. Choose environment names for the actual runner; the example list is not an exhaustive dependency inventory.
+
+`version` must be `1`. `files` lists individual regular files, not globs or directories. Relative names such as `uv.lock` resolve against the candidate verification workspace. Absolute names identify external files such as the protected runner and interpreter. Missing or unreadable declared inputs prevent accepting cached success. Declare additional external configuration and input files that affect your checks.
+
+Keep the external runner outside candidate write permissions and pin the interpreter, tool versions and dependencies used by it. A stable pathname alone does not pin content. Declaring the runner detects its replacement; it does not automatically identify imported modules, subprocess executables or the contents of a virtual environment. A lockfile records intended dependencies, not proof that the installed environment matches it. Use your normal locked installation process and controlled tool environment as well.
+
+`environment` contains variable **names**, never assignments or secret values. The verifier receives a captured environment, and identity evidence records selected names and digests; unset and empty values differ. The host forces `GIT_TERMINAL_PROMPT=0`. The identity mechanism does not store selected environment values in plaintext. Digests are not password protection: low-entropy values may be guessed. Verification output is stored separately and can expose values printed by a runner. Keep secrets out of command arguments, nonce text and output.
+
+`nonce` is an operator-selected invalidation label. A changed nonce makes prior identity evidence unusable even when the command and files match. It is stored in configuration as text and hashed in identity evidence, so use a non-secret label. **Existing project configuration is currently immutable through `Store.configure`, and there is no configuration-update CLI.** Repeating `init` cannot rotate the nonce or add declarations to existing state. Choose declarations and the nonce during new-state initialization; do not edit canonical state or delete it to bypass this restriction. An existing installation needs a separately supported configuration migration before it can adopt a different declaration. For an already declared external input, an intentional content change also invalidates its previous identity without changing the declaration.
+
+Reuse additionally requires the same HEAD, tree, command, timeout and a clean checkout. Identity-free legacy success must be verified again; unknown identity versions are rejected. Before and after execution, declared files are observed using content digests, resolved paths and filesystem metadata. Ordinary replacement, modification and removal are detected, including ordinary change-and-restore writes whose metadata changes. This is not execution from an immutable snapshot or protection against privileged metadata manipulation. Undeclared files, transitive dependencies, undeclared environment variables and remote services are not inferred. Pin those dependencies or explicitly declare the inputs that can represent them; an unchanged declared identity cannot prove an unchanged remote service.
 
 ## Use it for the next real requirement
 
