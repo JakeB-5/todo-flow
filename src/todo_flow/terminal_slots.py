@@ -224,9 +224,7 @@ class TerminalSlots:
                 raise TerminalCapacityError("Only confirmed idle terminals can be reused")
             self.check_execution(value, owner)
             self.check_active_capacity(value)
-            return self.append(
-                value, lease["slot"], "reserved", owner, event["resource"], evidence
-            )
+            return self.append(value, lease["slot"], "reserved", owner, event["resource"], evidence)
 
     def snapshot(self):
         with self.locked():
