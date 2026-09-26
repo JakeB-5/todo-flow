@@ -51,7 +51,11 @@ class FetchRetryTests(unittest.TestCase):
                     "todo_flow.adapters.subprocess.run",
                     return_value=result(1, stderr=stderr),
                 ) as run:
-                    with self.assertRaisesRegex(RuntimeError, "incorrect old value provided") if stderr == RACE else self.assertRaises(RuntimeError):
+                    with (
+                        self.assertRaisesRegex(RuntimeError, "incorrect old value provided")
+                        if stderr == RACE
+                        else self.assertRaises(RuntimeError)
+                    ):
                         command(argv)
                 self.assertEqual(run.call_count, 1)
 
