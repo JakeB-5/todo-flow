@@ -1,9 +1,9 @@
 """Read Orca's public command schema without creating a workspace or session.
 
-Command advertisement is not a runtime capability guarantee. In particular, the
-observed schema does not establish a read-only native agent policy or a complete
-structured proposal transport. Keep native execution disabled until those
-contracts have a reviewed binding; never infer them from command names.
+Command advertisement is not a runtime capability guarantee. Public guides
+support custom Codex sandbox/approval argv, but that alone does not establish
+an integrated read-only session, complete proposal transport or safe recovery.
+Keep native execution disabled until those contracts have a reviewed binding.
 """
 
 import hashlib
@@ -15,6 +15,8 @@ import subprocess
 # 2026-09-26. These are CLI advertisements, not invented runtime capability keys.
 ADVERTISEMENTS = {
     "managed_agent_worktree": ("worktree create", {"agent", "setup", "base-branch"}),
+    "custom_terminal_command": ("terminal create", {"worktree", "command"}),
+    "existing_terminal_worker": ("orchestration worker-start", {"worktree", "terminal"}),
     "worker_start_retry": ("orchestration worker-start", {"retry-request"}),
     "worker_lookup": ("orchestration worker-show", {"dispatch"}),
     "worker_output_pages": ("orchestration worker-read", {"dispatch", "cursor", "source"}),
@@ -64,6 +66,8 @@ def probe_native_contract(cli, workspace):
     This function never selects a fallback or performs a launch. Call it only
     before launch intent exists; creation uncertainty belongs to recovery, not
     to discovery. The caller must persist this evidence with its route decision.
+    Documented argv is evidence about the public custom-command route, not a
+    claim that the installed Codex or a running session has been verified.
     """
     report = {
         "cli": cli,
@@ -71,6 +75,14 @@ def probe_native_contract(cli, workspace):
         "native_ready": False,
         "status": "discovery_failed",
         "advertised": {},
+        "documented_custom_argv": {
+            "source": "orca-cli custom argv guide; custom-topology; codex --help",
+            "policy_args": ["--sandbox", "read-only", "--ask-for-approval", "never"],
+            "agent_first_exception": "sandbox_approval_argv_unavailable",
+            "runtime_verified": False,
+        },
+        # This means the integrated session policy is unverified, not that
+        # Codex lacks read-only command-line options.
         "unverified_contracts": [
             "read_only_agent_policy",
             "complete_structured_proposal",
