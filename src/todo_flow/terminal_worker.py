@@ -10,6 +10,12 @@ import sys
 import threading
 import time
 
+if __package__:
+    from .verification import VerificationCleanupError, stop_group
+else:
+    # Launchers invoke this file directly, including outside an installed package.
+    from verification import VerificationCleanupError, stop_group
+
 
 def save(path, value):
     temporary = path.with_suffix(".tmp")
@@ -34,6 +40,7 @@ def main(spec_path):
         save(receipt, state)
         proc = None
         readers = []
+        reader_errors = []
 
         def stop(signum, frame):
             raise KeyboardInterrupt
@@ -42,15 +49,18 @@ def main(spec_path):
             signal.signal(sig, stop)
 
         def relay(stream, path):
-            with path.open("wb") as output:
-                for chunk in iter(stream.readline, b""):
-                    output.write(chunk)
-                    output.flush()
-                    try:
-                        sys.stdout.buffer.write(chunk)
-                        sys.stdout.buffer.flush()
-                    except (BrokenPipeError, OSError):
-                        pass
+            try:
+                with path.open("wb") as output:
+                    for chunk in iter(stream.readline, b""):
+                        output.write(chunk)
+                        output.flush()
+                        try:
+                            sys.stdout.buffer.write(chunk)
+                            sys.stdout.buffer.flush()
+                        except (BrokenPipeError, OSError):
+                            pass
+            except Exception as error:
+                reader_errors.append(str(error))
 
         code = 1
         try:
@@ -79,17 +89,35 @@ def main(spec_path):
         except KeyboardInterrupt:
             code = 130
         except Exception as error:
-            (folder / "stderr.log").write_text(str(error))
+            state["error"] = str(error)
         finally:
-            if proc is not None and proc.poll() is None:
-                os.killpg(proc.pid, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait()
-            for thread in readers:
-                thread.join()
+            state.update(status="cleaning", worker_returncode=code)
+            save(receipt, state)
+            try:
+                if proc is not None:
+                    # Parent exit says nothing about inherited pipes or descendants.
+                    # Readers own the pipes, so communicate must not consume them.
+                    stop_group(proc, collect_output=False)
+                deadline = time.monotonic() + 5
+                for thread in readers:
+                    thread.join(timeout=max(0, deadline - time.monotonic()))
+                if any(thread.is_alive() for thread in readers):
+                    raise VerificationCleanupError("Terminal output readers did not stop")
+                if reader_errors:
+                    raise VerificationCleanupError(
+                        "Cannot preserve terminal output: " + "; ".join(reader_errors)
+                    )
+            except BaseException as error:
+                save(
+                    receipt,
+                    {
+                        **state,
+                        "status": "cleanup_failed",
+                        "cleanup_error": f"{type(error).__name__}: {error}",
+                        "cleanup_checked_at": time.time(),
+                    },
+                )
+                raise
             save(
                 receipt,
                 {**state, "status": "exited", "returncode": code, "finished_at": time.time()},

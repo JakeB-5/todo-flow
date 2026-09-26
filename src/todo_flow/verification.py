@@ -31,11 +31,13 @@ def group_running(pgid):
     return running
 
 
-def stop_group(proc):
+def stop_group(proc, *, collect_output=True):
     """Reap before inspecting and signal only while live group members remain.
 
     This helper accepts the current driver's Popen object. It must not be used
     with a PID reconstructed from an old receipt as proof of ownership.
+    Callers with dedicated pipe readers must disable output collection and
+    separately bound and check their readers after this function returns.
     """
 
     def running():
@@ -78,10 +80,14 @@ def stop_group(proc):
         if not wait_for_exit(2):
             raise VerificationCleanupError("Verification process group did not stop")
     try:
-        output = proc.communicate(timeout=5)
+        if collect_output:
+            output = proc.communicate(timeout=5)
+        else:
+            proc.wait(timeout=5)
+            output = None
     except subprocess.TimeoutExpired as error:
         raise VerificationCleanupError(
-            "Verification pipes remain live after group termination"
+            "Verification process or pipes remain live after group termination"
         ) from error
     except OSError as error:
         raise VerificationCleanupError("Cannot collect verification process output") from error
