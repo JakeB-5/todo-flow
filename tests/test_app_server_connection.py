@@ -45,6 +45,7 @@ class AppServerConnectionTests(unittest.TestCase):
                 "params": {
                     "threadId": "thread-one",
                     "turnId": "turn-one",
+                    "completedAtMs": 123,
                     "item": item,
                 },
             },
@@ -108,6 +109,31 @@ class AppServerConnectionTests(unittest.TestCase):
                 self.assertEqual(result["summary"], "합성 제안")
                 with self.assertRaises(ValueError):
                     self.connection.proposal(current=self.binding)
+
+    def test_missing_or_invalid_timestamp_blocks_buffered_and_direct_proposals(self):
+        for buffered in (False, True):
+            for value in ("missing", None, True, "123", 123.0):
+                with self.subTest(buffered=buffered, value=value):
+                    self.setUp()
+                    params = self.events[1]["params"]
+                    if value == "missing":
+                        del params["completedAtMs"]
+                    else:
+                        params["completedAtMs"] = value
+                    request = self.start()
+                    if buffered:
+                        for event in self.events:
+                            self.connection.receive(event)
+                    self.respond(request)
+                    self.connection.bind(self.binding)
+                    if not buffered:
+                        for event in self.events:
+                            self.connection.receive(event)
+                    with self.assertRaisesRegex(ValueError, "completion timestamp"):
+                        self.connection.proposal(current=self.binding)
+                    self.assertEqual(self.connection.state, "failed")
+                    with self.assertRaises(ValueError):
+                        self.connection.proposal(current=self.binding)
 
     def test_buffer_is_snapshot_and_waits_for_host_binding(self):
         request = self.start()
