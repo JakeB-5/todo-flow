@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 
+from .orca_capabilities import probe_native_contract
 from .process_launch import LaunchGate
 from .process_inventory import note_prepared
 from .verification import VerificationCleanupError
@@ -35,49 +36,91 @@ def orca_result(cli, args, cwd):
         check=True,
     )
     payload = json.loads(completed.stdout)
-    if not payload.get("ok"):
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise RuntimeError("Orca could not resolve this project terminal context")
-    return payload["result"]
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise ValueError("Orca returned an invalid result object")
+    return result
+
+
+class LauncherUnavailable(RuntimeError):
+    """Preserve discovery evidence when an explicitly requested route fails."""
+
+    def __init__(self, message, selection):
+        super().__init__(message)
+        self.selection = dict(selection)
 
 
 def select_launcher(config, workspace):
     mode = config.get("worker_launcher", "auto")
-    if mode == "headless":
-        return {"backend": "headless"}
-    if mode not in ("auto", "orca", "tmux", "terminal"):
+    if mode not in ("auto", "headless", "orca", "tmux", "terminal"):
         raise ValueError("Unknown worker_launcher: " + str(mode))
+    selection = {
+        "requested": mode,
+        "backend": None,
+        "reason": "explicit_launcher",
+        "native_ready": False,
+        "orca": {"status": "not_probed", "native_ready": False},
+    }
+
+    def selected(backend, **values):
+        return {
+            "backend": backend,
+            **values,
+            "selection": {**selection, "backend": backend},
+        }
+
+    if mode == "headless":
+        selection["reason"] = "explicit_headless"
+        return selected("headless")
     repo = str(Path(config.get("repo", workspace)).resolve())
     if mode in ("auto", "orca"):
         cli = orca_command()
+        selection["orca"] = {"cli": cli, "status": "cli_missing", "native_ready": False}
+        selection["reason"] = "cli_missing"
         if shutil.which(cli):
+            selection["orca"] = probe_native_contract(cli, repo)
+            selection["reason"] = "orca_unavailable"
             try:
                 status = orca_result(cli, ["status"], repo)
-                if status["app"]["running"] and status["runtime"]["reachable"]:
+                if status["app"]["running"] is True and status["runtime"]["reachable"] is True:
                     result = orca_result(
                         cli, ["worktree", "show", "--worktree", "path:" + repo], repo
                     )
                     worktree = result["worktree"]
-                    # The bridge and its files must live on the same host as the PTY.
-                    if worktree.get("hostId", "local") != "local":
-                        raise RuntimeError("Remote Orca terminals require a host-local driver")
-                    return {
-                        "backend": "orca",
-                        "cli": cli,
-                        "worktree": "id:" + worktree["id"],
-                        "repo": repo,
-                    }
+                    if not isinstance(worktree, dict):
+                        raise ValueError("Orca returned an invalid worktree object")
+                    host = worktree.get("hostId")
+                    selection["host"] = host
+                    # Missing host evidence is not proof that the PTY is local.
+                    if host != "local":
+                        selection["reason"] = "remote_host_mismatch" if host else "host_unverified"
+                        raise RuntimeError("Orca terminals require a confirmed host-local driver")
+                    worktree_id = worktree.get("id")
+                    if not isinstance(worktree_id, str) or "::" not in worktree_id:
+                        raise ValueError("Orca returned an invalid full worktree ID")
+                    selection["reason"] = selection["orca"]["status"]
+                    # This remains the existing terminal bridge. Schema discovery
+                    # alone must never silently promote it to a native session.
+                    return selected("orca", cli=cli, worktree="id:" + worktree_id, repo=repo)
             except (
                 OSError,
                 subprocess.SubprocessError,
                 ValueError,
                 KeyError,
+                TypeError,
                 RuntimeError,
             ) as error:
+                selection["error_type"] = type(error).__name__
                 if mode == "orca":
-                    raise RuntimeError(f"Orca terminal unavailable: {error}") from error
+                    raise LauncherUnavailable(
+                        f"Orca terminal unavailable: {error}", selection
+                    ) from error
         if mode == "orca":
-            raise RuntimeError(
-                "Orca terminal unavailable; start Orca or select headless explicitly"
+            raise LauncherUnavailable(
+                "Orca terminal unavailable; start Orca or select headless explicitly",
+                selection,
             )
     if mode in ("auto", "terminal") and config.get("terminal_command"):
         argv = config["terminal_command"]
@@ -87,12 +130,14 @@ def select_launcher(config, workspace):
             or not any("{command}" in x for x in argv)
         ):
             raise ValueError("terminal_command must be an argv array containing {command}")
-        return {"backend": "terminal", "argv": argv}
+        return selected("terminal", argv=argv)
     if mode in ("auto", "tmux") and os.environ.get("TMUX") and shutil.which("tmux"):
-        return {"backend": "tmux", "socket": os.environ["TMUX"].rsplit(",", 2)[0]}
+        return selected("tmux", socket=os.environ["TMUX"].rsplit(",", 2)[0])
     if mode != "auto":
-        raise RuntimeError(f"{mode} terminal unavailable; configure a launcher or select headless")
-    return {"backend": "headless"}
+        raise LauncherUnavailable(
+            f"{mode} terminal unavailable; configure a launcher or select headless", selection
+        )
+    return selected("headless")
 
 
 class TerminalProcess:
