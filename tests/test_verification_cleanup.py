@@ -81,7 +81,9 @@ class VerificationCleanupTests(unittest.TestCase):
                             + "    time.sleep(.01)\n"
                         )
                         redirection = (
-                            "" if open_pipes else ",stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL"
+                            ""
+                            if open_pipes
+                            else ",stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL"
                         )
                         parent = (
                             "import subprocess,sys,time\n"
