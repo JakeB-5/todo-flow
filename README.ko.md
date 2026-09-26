@@ -107,6 +107,22 @@ Claude 세션에는 `.claude/skills`를 사용합니다. 스킬은 프로젝트 
 
 **http://127.0.0.1:8765**에서 대시보드를 확인하세요. 문서가 등록·렌더되고 첫 실행이 설정된 종료점에 도달했는지까지 확인합니다.
 
+### 검증 입력 선언
+
+소스 구현은 `init --verify-identity`를 지원합니다. 공개 `0.0.4` wheel에도 있다고 가정하지 말고 설치된 엔진의 `todo-flow init --help`를 먼저 확인하세요. **새 상태를 초기화할 때** 실제 `init` 명령에 아래와 같은 인자를 추가합니다. 예시 경로는 검증기가 실제 사용하는 기존 파일 경로로 바꾸세요.
+
+```sh
+--verify-identity '{"version":1,"files":["/absolute/verification/verify.py","/absolute/python/bin/python3","uv.lock"],"environment":["PATH","VERIFY_MODE"],"nonce":"baseline-1"}'
+```
+
+위 코드는 독립 명령이 아닌 인자입니다. `version`은 `1`이며, `files`에는 디렉터리나 glob 대신 개별 일반 파일을 넣습니다. 절대 경로는 외부 입력을 가리키고 `uv.lock` 같은 상대 경로는 검증 대상 후보 작업 공간을 기준으로 해석합니다. 외부 runner와 검증에 영향을 주는 입력·설정 파일을 명시적으로 선언하세요. 선언 파일이 없거나 읽을 수 없으면 이전 성공을 채택하지 않습니다. runner를 후보 쓰기 권한 밖에 두고 인터프리터·도구 버전을 고정하며 잠금 파일에 따른 의존성 설치를 유지하세요. 경로가 같거나 잠금 파일이 있다는 사실만으로 실제 설치 환경이 같다고 보장되지는 않습니다.
+
+`environment`에는 `NAME=value`가 아닌 변수 이름을 넣습니다. 식별 근거에는 선택한 이름과 digest를 기록하고 값의 원문은 저장하지 않으며, 미설정과 빈 문자열을 구분합니다. 검증기는 캡처한 환경을 사용하고 호스트는 `GIT_TERMINAL_PROMPT=0`을 적용합니다. digest는 비밀번호 보호 수단이 아니며, 별도로 저장되는 runner 출력에 값이 노출될 수 있습니다. argv·출력·nonce에는 비밀을 넣지 마세요.
+
+`nonce`가 달라지면 이전 식별 근거를 재사용하지 않습니다. 설정에는 원문, 식별 근거에는 digest가 저장되므로 비밀이 아닌 표식을 사용하세요. **현재 `Store.configure`는 기존 설정 변경을 거부하며 설정 갱신 CLI도 없습니다.** 새 상태 초기화 시 선언과 nonce를 정하세요. `init`을 다시 실행해 기존 nonce를 바꿀 수 없으며, 이를 우회하려고 정본 상태를 직접 수정하거나 삭제하면 안 됩니다. 기존 상태의 선언 변경에는 별도로 지원되는 설정 마이그레이션이 필요합니다. 이미 선언된 외부 입력의 내용을 의도적으로 변경하는 방법으로도 이전 식별을 무효화할 수 있습니다.
+
+캐시 재사용에는 HEAD·tree·명령·제한 시간이 같고 작업 공간이 깨끗해야 한다는 조건도 적용됩니다. 식별 없는 기존 성공은 다시 검증하며 알 수 없는 식별 버전은 거부합니다. 실행 전후 파일 내용·해석된 경로·메타데이터를 관측해 일반적인 변경과 메타데이터가 달라지는 변경 후 원복을 탐지합니다. 불변 스냅샷 실행이나 권한 있는 주체의 메타데이터 조작 방어를 제공하는 것은 아닙니다. 미선언 파일·전이 의존성·환경 변수·원격 서비스는 추론하지 않습니다. 외부 runner의 구체적인 예시는 [자체 운영 선언과 한계](examples/self-hosting/README.md#declare-verification-inputs-with-a-supporting-engine)를 참고하세요.
+
 ## 첫 TODO에서 결과까지
 
 에이전트 세션에서 요구를 등록하고 후보를 선정합니다.
@@ -143,7 +159,7 @@ todo-flow --version
 todo-flow --state /absolute/project/todo compatibility --target /absolute/project/.agents/skills
 ```
 
-uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl --dry-run`으로 엔진 업데이트를 확인합니다. 모든 실행기·대시보드를 종료한 뒤 `--dry-run`을 빼고 적용합니다. 알려진 프로젝트의 형식을 검사하고 설치본을 백업하며, 설치·검증 실패 시 이전 엔진을 복구합니다. 신뢰할 수 있는 새 버전 wheel을 직접 지정하는 방식이며 최신 버전 자동 검색은 아직 없습니다.
+uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl --dry-run`으로 엔진 업데이트를 확인합니다. 모든 실행기·대시보드를 종료한 뒤 `--dry-run`을 빼고 적용합니다. 알려진 프로젝트의 형식을 검사하고 설치본을 백업하며, 설치·검증 실패 시 이전 엔진을 복구합니다. 신뢰할 수 있는 새 버전 wheel을 직접 지정하는 방식이며 최신 버전 자동 검색은 아직 제공하지 않습니다.
 
 프로젝트마다 `todo-flow --state STATE update-skills --target PATH --dry-run`으로 스킬 변경을 확인하고 적용합니다. 사용자 수정과 언어·상태 경로를 보존하며, 양쪽에서 바뀐 파일은 덮어쓰기 전에 충돌을 알립니다. 엔진과 스킬은 각각 백업 ID로 롤백할 수 있습니다.
 

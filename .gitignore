@@ -8,6 +8,9 @@ dist/
 /todo/
 /.agents/skills.source-link
 
+# Local oh-my-claudecode session state and project memory
+/.omc/
+
 .venv/
 __pycache__/
 *.pyc

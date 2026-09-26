@@ -131,7 +131,7 @@ def stop_group(proc, *, collect_output=True):
     return output
 
 
-def run_supervised(argv, workspace, timeout, identity):
+def run_supervised(argv, workspace, timeout, identity, env=None):
     from .supervised_process import SupervisedProcess
 
     # Persist output beside the execution evidence. No inherited output pipe can
@@ -147,7 +147,7 @@ def run_supervised(argv, workspace, timeout, identity):
             stdout=stdout,
             stderr=stderr,
             timeout=timeout,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"} if env is None else env,
         )
         try:
             code = proc.wait(timeout + 15)
@@ -166,9 +166,9 @@ def run_supervised(argv, workspace, timeout, identity):
         return (out + err).strip()
 
 
-def run(argv, workspace, timeout, *, launch_identity=None):
+def run(argv, workspace, timeout, env=None, *, launch_identity=None):
     if launch_identity is not None:
-        return run_supervised(argv, workspace, timeout, launch_identity)
+        return run_supervised(argv, workspace, timeout, launch_identity, env=env)
     # Standalone callers receive the same ownership contract. Preserve evidence
     # on failure; only a successfully confirmed run removes its temporary state.
     import shutil
@@ -181,6 +181,6 @@ def run(argv, workspace, timeout, *, launch_identity=None):
         "attempt": "standalone",
         "execution": uuid.uuid4().hex,
     }
-    result = run_supervised(argv, workspace, timeout, identity)
+    result = run_supervised(argv, workspace, timeout, identity, env=env)
     shutil.rmtree(folder)
     return result

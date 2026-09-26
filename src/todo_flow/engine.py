@@ -13,7 +13,9 @@ from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
 from .maintenance import guarded
 from . import integration as integration_repair
+from . import verification_identity
 from .checkout import require_clean
+from .verification_evidence import require_current
 from .claim_recovery import recover_expired_claim
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
@@ -122,29 +124,58 @@ class Engine:
             raise Conflict("Verification requires a committed, resolved merge")
         head = require_clean(workspace)
         tree = command(["git", "rev-parse", "HEAD^{tree}"], workspace)
+        environment = verification_identity.execution_environment()
+        identity = verification_identity.capture(self.config, workspace, environment)
         key = fingerprint([tree, self.config["verify"]])
         prior = self.store.track(task["track"])["verification"]
         if prior:
             prior = json.loads(prior)
-            if prior["key"] == key and prior["ok"] and prior["head"] == head:
+            same_identity = verification_identity.matches(prior.get("identity"), identity)
+            if (
+                prior.get("key") == key
+                and prior.get("ok")
+                and prior.get("head") == head
+                and prior.get("tree") == tree
+                and prior.get("command") == self.config["verify"]
+                and same_identity
+            ):
+                require_clean(workspace, head)
                 return prior
         log = self.store.path / "attempts" / task["attempt"]
         log.mkdir(parents=True, exist_ok=True)
         started = time.time()
         try:
+            before = verification_identity.capture(self.config, workspace, environment)
+            if not verification_identity.matches(identity, before):
+                raise verification_identity.VerificationIdentityError(
+                    "Verification inputs changed before execution"
+                )
             output = run_verification(
                 self.config["verify"],
                 workspace,
                 timeout=self.config.get("verify_timeout", 180),
+                env=environment,
                 launch_identity=launch_identity(self.store.path, task),
             )
             ok, error = True, None
         except ProcessBarrierError:
-            # Uncertain launch/cleanup evidence is an execution attention wait,
-            # never a failed test that may schedule ordinary implementation.
+            # Uncertain launch/cleanup evidence blocks further work.
             raise
-        except (RuntimeError, subprocess.TimeoutExpired) as e:
+        except (
+            RuntimeError,
+            subprocess.TimeoutExpired,
+            verification_identity.VerificationIdentityError,
+        ) as e:
             output, ok, error = str(e), False, type(e).__name__
+        try:
+            after = verification_identity.capture(self.config, workspace, environment)
+            if not verification_identity.matches(identity, after):
+                raise verification_identity.VerificationIdentityError(
+                    "Verification inputs changed during execution"
+                )
+        except verification_identity.VerificationIdentityError as e:
+            output = (output + "\n" + str(e)).strip()
+            ok, error = False, type(e).__name__
         try:
             require_clean(workspace, head)
         except Conflict as e:
@@ -154,6 +185,7 @@ class Engine:
             "tree": tree,
             "key": key,
             "command": self.config["verify"],
+            "identity": identity,
             "ok": ok,
             "output": output[-12000:],
             "error": error,
@@ -230,13 +262,12 @@ class Engine:
     def publish(self, task, workspace, doc):
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
-        require_clean(workspace, t["head"])
-        v = json.loads(t["verification"]) if t["verification"] else {}
-        if not v.get("ok") or v.get("head") != t["head"]:
-            raise Conflict("Publish requires verification of current head")
+        require_current(self.config, workspace, t["head"], t["verification"])
         with file_lock(self.store.path / "locks" / "publish.lock", blocking=True):
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
+            t = self.store.track(task["track"])
+            require_current(self.config, workspace, t["head"], t["verification"])
             command(["git", "push", "origin", t["branch"]], workspace)
             if self.remote:
                 pr = self.remote.pr(task, t, doc)
@@ -325,16 +356,13 @@ class Engine:
         if integration_repair.pending(t):
             raise Conflict("Integration repair requires new verification and independent review")
         review = json.loads(t["review"]) if t["review"] else {}
-        verify = json.loads(t["verification"]) if t["verification"] else {}
         if (
             review.get("verdict") != "met"
             or review.get("head") != t["head"]
             or review.get("documentRevision") != t["revision"]
         ):
             raise Conflict("Current independent review is missing or not met")
-        if not verify.get("ok") or verify.get("head") != t["head"]:
-            raise Conflict("Current verification missing")
-        require_clean(t["workspace"], t["head"])
+        require_current(self.config, t["workspace"], t["head"], t["verification"])
         return t
 
     def land(self, task):
@@ -408,7 +436,7 @@ class Engine:
                     (effect, t["id"], "landing", encode(intent), time.time()),
                 )
             # --force-with-lease is used ONLY as a compare-and-swap. Both ancestry checks forbid
-            # history rewriting: the candidate's exact tested merge includes base and PR head.
+            # history rewriting: the exact tested merge includes base and PR head.
             command(["git", "merge-base", "--is-ancestor", base, merged], integration)
             command(["git", "merge-base", "--is-ancestor", t["head"], merged], integration)
             command(

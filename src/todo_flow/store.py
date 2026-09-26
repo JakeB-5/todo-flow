@@ -56,6 +56,9 @@ class Store:
         return config
 
     def configure(self, value):
+        from .release import check_config
+
+        check_config(value)
         with self.transaction() as c:
             if c.execute("SELECT 1 FROM config").fetchone():
                 raise Conflict(
