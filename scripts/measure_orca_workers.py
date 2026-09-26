@@ -191,10 +191,20 @@ def main():
     def sample(label):
         response = call(
             [
-                launcher["cli"], "terminal", "list", "--worktree",
-                launcher["worktree"], "--limit", "100000", "--json",
+                launcher["cli"],
+                "terminal",
+                "list",
+                "--worktree",
+                launcher["worktree"],
+                "--limit",
+                "100000",
+                "--json",
             ],
-            cwd=launcher["repo"], capture_output=True, text=True, timeout=10, check=True,
+            cwd=launcher["repo"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
         )
         payload = json.loads(response.stdout)
         present = inventory(payload, runtime, launcher["worktree"].removeprefix("id:"))
@@ -224,8 +234,12 @@ def main():
             if launcher["backend"] != "orca":
                 raise ValueError("Explicit Orca selection did not select Orca")
             status = call(
-                [launcher["cli"], "status", "--json"], cwd=str(workspace),
-                capture_output=True, text=True, check=True, timeout=10,
+                [launcher["cli"], "status", "--json"],
+                cwd=str(workspace),
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
             )
             payload = json.loads(status.stdout)
             runtime = payload.get("_meta", {}).get("runtimeId")
@@ -235,20 +249,31 @@ def main():
             for number in range(50):
                 current_task = f"local-{number:03d}"
                 task = {
-                    "id": current_task, "track": "local-orca-measurement",
-                    "attempt": current_task, "generation": 1,
+                    "id": current_task,
+                    "track": "local-orca-measurement",
+                    "attempt": current_task,
+                    "generation": 1,
                     "kind": "work" if number % 2 == 0 else "review",
                 }
                 started = time.time()
                 save(output / "current.json", {"task": task, "started_at": started})
                 result = worker.run_worker(
-                    config, {"workspace": str(workspace), "task": task},
-                    task, state, lambda _: None,
+                    config,
+                    {"workspace": str(workspace), "task": task},
+                    task,
+                    state,
+                    lambda _: None,
                 )
                 if result["summary"] != current_task:
                     raise ValueError("Worker output is not attributable to this task")
                 folder = state / "attempts" / current_task
-                for name in ("input.json", "output.json", "stderr.log", "launch.json", "terminal-process.json"):
+                for name in (
+                    "input.json",
+                    "output.json",
+                    "stderr.log",
+                    "launch.json",
+                    "terminal-process.json",
+                ):
                     if not (folder / name).is_file():
                         raise ValueError("Missing execution evidence: " + str(folder / name))
                 completed.append({"task": task, "started_at": started, "finished_at": time.time()})
@@ -262,7 +287,9 @@ def main():
         hashes = {}
         for path in state.rglob("*"):
             if path.is_file() and not path.is_symlink():
-                hashes[str(path.relative_to(output))] = hashlib.sha256(path.read_bytes()).hexdigest()
+                hashes[str(path.relative_to(output))] = hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest()
         save(output / "manifest.json", hashes)
         ledger_path = state / "terminal-slots.json"
         ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
