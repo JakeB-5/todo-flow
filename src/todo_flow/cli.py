@@ -7,7 +7,7 @@ from pathlib import Path
 from .adapters import command
 from .engine import Engine
 from .language import select_language
-from .release import VERSION, CONTRACTS, project_compatibility
+from .release import VERSION, CONTRACTS, check_config, project_compatibility
 from .maintenance import runtime_guard
 from .store import Conflict, Store, encode, fingerprint
 
@@ -45,6 +45,9 @@ def initialize(args):
         "created_by": VERSION,
         "min_engine_version": "0.0.2",
     }
+    if args.verify_identity is not None:
+        config["verify_identity"] = json.loads(args.verify_identity)
+    check_config(config)
     store = Store(args.state or repo / "todo")
     store.configure(config)
     print(encode({"state": str(store.path), "config": config}))
@@ -60,6 +63,10 @@ def parser():
     i.add_argument("--github")
     i.add_argument("--base", default="main")
     i.add_argument("--verify", required=True, help="JSON command argv, never a shell string")
+    i.add_argument(
+        "--verify-identity",
+        help="JSON declaration with version=1, files, environment variable names, and nonce",
+    )
     i.add_argument("--write", action="append")
     i.add_argument(
         "--context", action="append", help="Suggested file patterns for worker exploration"
