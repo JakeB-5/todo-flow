@@ -102,16 +102,66 @@ class WorkspaceCreationTests(unittest.TestCase):
         transport.assert_not_called()
         self.assertTrue(self.gate.intent.exists())
 
-    def test_receipt_failure_cannot_authorize_retry(self):
-        # A conflicting response file must be retained for reconciliation.
+    def test_orphan_response_blocks_before_transport_and_intent_write(self):
         self.gate.response.write_text("prior evidence")
         transport = Mock(return_value={"synthetic": "response"})
         with self.assertRaises(WorkspaceCreationBlocked):
             self.invoke(transport)
         self.assertEqual(self.gate.response.read_text(), "prior evidence")
+        self.assertFalse(self.gate.intent.exists())
+        self.task.update(id="work-2", attempt="attempt-2", owner="driver-2", generation=2)
+        replacement = WorkspaceCreationGate(self.directory.name, "example")
+        with self.assertRaises(WorkspaceCreationBlocked):
+            self.invoke(transport, gate=replacement, request="request-2")
+        transport.assert_not_called()
+
+    def test_response_write_failure_cannot_authorize_retry(self):
+        def create(argv):
+            # A conflicting receipt appears after transport started.
+            self.gate.response.write_text("conflicting evidence")
+            return {"synthetic": "response"}
+
+        transport = Mock(side_effect=create)
+        with self.assertRaises(WorkspaceCreationBlocked):
+            self.invoke(transport)
+        self.assertTrue(self.gate.intent.exists())
+        self.assertEqual(self.gate.response.read_text(), "conflicting evidence")
         with self.assertRaises(WorkspaceCreationBlocked):
             self.invoke(transport)
         self.assertEqual(transport.call_count, 1)
+
+    def test_clear_check_does_not_create_evidence(self):
+        self.gate.require_clear()
+        self.assertEqual(list(Path(self.directory.name).iterdir()), [])
+
+    def test_clear_check_rejects_evidence_without_parsing(self):
+        for path in (self.gate.intent, self.gate.response):
+            for content in ("", "{", '{"version":999}'):
+                with self.subTest(path=path.name, content=content):
+                    path.write_text(content)
+                    with self.assertRaises(WorkspaceCreationBlocked):
+                        self.gate.require_clear()
+                    self.assertEqual(path.read_text(), content)
+                    path.unlink()
+
+    def test_dangling_evidence_symlink_blocks_transport(self):
+        for path in (self.gate.intent, self.gate.response):
+            with self.subTest(path=path.name):
+                path.symlink_to(Path(self.directory.name) / "missing")
+                transport = Mock()
+                with self.assertRaises(WorkspaceCreationBlocked):
+                    self.invoke(transport)
+                transport.assert_not_called()
+                self.assertTrue(path.is_symlink())
+                path.unlink()
+
+    def test_inspection_error_blocks_transport(self):
+        transport = Mock()
+        with patch.object(Path, "lstat", side_effect=PermissionError("unreadable")):
+            with self.assertRaises(WorkspaceCreationBlocked):
+                self.invoke(transport)
+        transport.assert_not_called()
+        self.assertFalse(self.gate.intent.exists())
 
     def test_tracks_have_separate_intents(self):
         other = WorkspaceCreationGate(self.directory.name, "other")

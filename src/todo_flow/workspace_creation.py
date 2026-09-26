@@ -2,9 +2,10 @@
 
 This is not a route selector or a workspace validator. The host must retain its
 metadata lock and claim fencing, validate the returned checkout before registering
-it, and propagate WorkspaceCreationBlocked without Git fallback. An existing
-intent always requires reconciliation, even when a response was saved. Neither
-a new worker claim nor a new selection request authorizes another create.
+it, and propagate WorkspaceCreationBlocked without Git fallback. Call require_clear
+before route selection when no independently validated ownership permits recovery.
+Existing intent or response evidence always requires reconciliation. Neither a new
+worker claim nor a new selection request authorizes another create.
 """
 
 import hashlib
@@ -41,6 +42,25 @@ class WorkspaceCreationGate:
         self.intent = Path(directory) / ("workspace-create-" + key + ".json")
         self.response = self.intent.with_suffix(".response.json")
 
+    def require_clear(self):
+        """Reject all existing evidence without parsing or changing it.
+
+        The host must hold the metadata lock across this check and route selection.
+        This check is not an ownership receipt or an atomic creation reservation;
+        create_once still acquires its intent exclusively before transport.
+        """
+        for path in (self.intent, self.response):
+            try:
+                # lstat also detects dangling symlinks and non-file evidence.
+                path.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise WorkspaceCreationBlocked(
+                    f"Creation evidence cannot be inspected; reconcile {path}"
+                ) from error
+            raise WorkspaceCreationBlocked(f"Creation evidence requires reconciliation: {path}")
+
     def create_once(self, task, *, request, repo, base, argv, assert_claim, create):
         """Persist exact host intent before invoking create(argv).
 
@@ -76,6 +96,7 @@ class WorkspaceCreationGate:
             "argv": list(argv),
         }
         assert_claim()
+        self.require_clear()
         try:
             _write_exclusive(self.intent, intent)
         except OSError as error:
