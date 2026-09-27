@@ -74,9 +74,7 @@ class EngineVerificationArtifactTests(unittest.TestCase):
         self.assertEqual(engine.verify(task, workspace), verification)
         self.assertEqual(self.count(), 1)
         self.assertEqual(self.receipt_path(workspace).read_bytes(), before)
-        self.assertEqual(
-            artifacts.reclaim(self.s.path, "addition", workspace), sorted(GENERATED)
-        )
+        self.assertEqual(artifacts.reclaim(self.s.path, "addition", workspace), sorted(GENERATED))
         self.assertTrue(all(not (workspace / name).exists() for name in GENERATED))
         self.assertTrue(self.receipt_path(workspace).exists())
         engine.process_barrier(task["track"]).require_clear()
