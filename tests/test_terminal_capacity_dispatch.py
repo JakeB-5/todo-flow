@@ -128,10 +128,23 @@ class TerminalCapacityDispatchTests(unittest.TestCase):
         self.assertFalse(self.slots().path.exists())
 
     def test_headless_has_no_capacity_configuration_or_backend_probe(self):
-        with patch("todo_flow.launchers.orca_result") as probe:
+        with (
+            patch("todo_flow.launchers.orca_result") as probe,
+            patch("todo_flow.launchers.probe_native_contract") as native_probe,
+        ):
+            launcher = select_launcher({"worker_launcher": "headless"}, str(self.root))
+            self.assertEqual(launcher["backend"], "headless")
+            self.assertNotIn("terminal_limits", launcher)
             self.assertEqual(
-                select_launcher({"worker_launcher": "headless"}, str(self.root)),
-                {"backend": "headless"},
+                launcher["selection"],
+                {
+                    "requested": "headless",
+                    "backend": "headless",
+                    "reason": "explicit_headless",
+                    "native_ready": False,
+                    "orca": {"status": "not_probed", "native_ready": False},
+                },
             )
             probe.assert_not_called()
+            native_probe.assert_not_called()
         self.assertFalse(self.slots().path.exists())

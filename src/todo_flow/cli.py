@@ -141,6 +141,9 @@ def parser():
         "--launcher", choices=launcher_modes, help="Override this driver's worker launcher"
     )
     sub.add_parser("status")
+    launch = sub.add_parser("launch-status", help="Read the latest task launcher selection")
+    launch.add_argument("task")
+    launch.add_argument("--language", choices=["en", "ko"], help="Default: project language")
     sub.add_parser("picks")
     sub.add_parser("doctor")
     sub.add_parser("reconcile")
@@ -276,6 +279,10 @@ def dispatch(args):
             result = {"tasks": engine.run(args.jobs, args.max_tasks, args.daemon)}
         elif args.command == "status":
             result = store.snapshot()
+        elif args.command == "launch-status":
+            from .launch_display import task_launch
+
+            result = task_launch(store, args.task, args.language)
         elif args.command == "picks":
             result = [
                 {

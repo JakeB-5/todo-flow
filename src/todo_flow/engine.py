@@ -20,6 +20,7 @@ from .claim_recovery import recover_expired_claim
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
 from .process_inventory import ProcessInventory, launch_identity
+from . import managed_workspace
 
 
 class Engine:
@@ -86,7 +87,8 @@ class Engine:
         with file_lock(self.store.path / "locks" / "git-metadata.lock", blocking=True):
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
-            return self._ensure_workspace(task)
+            managed = managed_workspace.ensure(self, task)
+            return managed if managed is not None else self._ensure_workspace(task)
 
     def _ensure_workspace(self, task):
         t = self.store.track(task["track"])
@@ -170,15 +172,15 @@ class Engine:
         try:
             after = verification_identity.capture(self.config, workspace, environment)
             if not verification_identity.matches(identity, after):
-                raise verification_identity.VerificationIdentityError(
-                    "Verification inputs changed during execution"
-                )
+                output = (output + "\nVerification inputs changed during execution").strip()
+                ok, error = False, "VerificationIdentityError"
         except verification_identity.VerificationIdentityError as e:
             output = (output + "\n" + str(e)).strip()
             ok, error = False, type(e).__name__
         try:
             require_clean(workspace, head)
         except Conflict as e:
+            output = (output + "\n" + str(e)).strip()
             ok, error = False, str(e)
         record = {
             "head": head,

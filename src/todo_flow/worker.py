@@ -7,11 +7,12 @@ import time
 from pathlib import Path
 
 from .store import encode
+from .maintenance import write_json
 from .terminal_release import retire_launch
 from .process_inventory import launch_identity
 from .supervised_process import SupervisedProcess
 from .language import output_instruction
-from .launchers import TerminalProcess, select_launcher, spawn_terminal
+from .launchers import LauncherUnavailable, TerminalProcess, select_launcher, spawn_terminal
 
 SCHEMA = {
     "type": "object",
@@ -304,6 +305,11 @@ def worker_input(context, folder):
 
 
 def run_worker(config, context, task, state, heartbeat):
+    # Delivery uncertainty belongs to the task, regardless of the replacement
+    # attempt's adapter, launcher or current native capability. Do not parse an
+    # existing intent: even a malformed file or dangling symlink must block replay.
+    if task.get("id") and os.path.lexists(Path(state) / ("native-task-" + task["id"] + ".json")):
+        raise FileExistsError("Native task intent already exists; reconcile before retrying")
     adapter = config["worker"]
     if adapter["type"] == "command" and config.get("worker_protocol", 1) != 2:
         raise ValueError(
@@ -396,7 +402,28 @@ def run_worker(config, context, task, state, heartbeat):
         args = adapter["argv"]
     else:
         raise ValueError("Unknown worker adapter")
-    launcher = select_launcher(config, context["workspace"])
+    try:
+        launcher = select_launcher(config, context["workspace"])
+    except LauncherUnavailable as error:
+        write_json(
+            folder / "launch.json",
+            {
+                "backend": None,
+                "status": "unavailable",
+                "selection": error.selection,
+                "error_type": type(error).__name__,
+            },
+        )
+        raise
+    # Record selection before any launch. Selection is not proof of process start;
+    # process ownership and cleanup remain the supervisor/bridge's responsibility.
+    write_json(folder / "launch.json", {**launcher, "status": "selected"})
+    if adapter["type"] == "codex" and launcher["backend"] == "orca":
+        from .native_worker import run_native
+
+        native = run_native(config, context, task, state, folder, launcher, heartbeat)
+        if native is not None:
+            return native
     env = dict(os.environ)
     env.pop("CLAUDECODE", None)
     started = time.monotonic()
@@ -408,7 +435,6 @@ def run_worker(config, context, task, state, heartbeat):
         (folder / "stderr.log").open("w") as err,
     ):
         if launcher["backend"] == "headless":
-            (folder / "launch.json").write_text(encode({"backend": "headless"}))
             proc = SupervisedProcess(
                 args,
                 identity=launch_identity(state, task),

@@ -4,6 +4,8 @@ import json
 import time
 import hashlib
 
+from .launch_display import describe_launch, read_launch
+
 
 SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
  json_extract(t.document,'$.title') AS title,
@@ -268,15 +270,37 @@ class Dashboard:
             if not w:
                 raise ValueError("Unknown task")
             a = c.execute(
-                "SELECT * FROM attempts WHERE task=? ORDER BY started DESC LIMIT 1", (id_,)
+                "SELECT * FROM attempts WHERE task=? ORDER BY started DESC,id DESC LIMIT 1", (id_,)
             ).fetchone()
             r = c.execute(
                 "SELECT * FROM results WHERE task=? ORDER BY created DESC LIMIT 1", (id_,)
             ).fetchone()
+        # Reuse the response attempt; a second lookup could select a newer attempt.
+        launch = read_launch(self.store.path, a["id"] if a else None)
+        record = launch["record"] or {}
+        public = {}
+        if record.get("execution_mode") == "orca-native":
+            public["execution_mode"] = "orca-native"
+            for key in ("worktree", "session", "turn"):
+                if isinstance(record.get(key), str):
+                    public[key] = record[key]
+            terminal = record.get("terminal")
+            if isinstance(terminal, dict) and isinstance(terminal.get("handle"), str):
+                public["terminal"] = {"handle": terminal["handle"]}
         return {
             "task": dict(w),
             "attempt": dict(a) if a else None,
             "result": json.loads(r["body"]) if r else None,
+            # Expose runtime labels and explicitly selected resource identifiers only.
+            "launch": {
+                **({"record": public} if public else {}),
+                "attempt": launch["attempt"],
+                "evidence": launch["evidence"],
+                "summaries": {
+                    language: describe_launch(launch["record"] or {}, language)
+                    for language in ("en", "ko")
+                },
+            },
         }
 
     def watches(self, status="open", limit=25, offset=0):

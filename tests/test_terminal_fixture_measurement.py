@@ -91,7 +91,7 @@ class TerminalFixtureMeasurementTests(unittest.TestCase):
                 "terminal",
                 "create",
                 "--worktree",
-                "id:fixture",
+                "id:" + fixture.worktree_id,
                 "--title",
                 "TODO fixture",
                 "--command",
