@@ -142,6 +142,13 @@ workspace using file reads and search (rg/Glob/Grep); context_patterns suggest s
 a read-access boundary. Select relevant files and ranges rather than loading every file.
 You have read-only tools. Do not write files, run mutating commands, commit, push or access the network.
 The host performs verification. Report precise paths/lines and missing information honestly.
+Tie every proposed change to a selected condition or an existing invariant affected by this change.
+Complete the smallest working path that delivers that outcome, including required callers. A useful
+optional feature, unrelated observed defect or hypothetical risk does not expand this track. Record
+such observations as findings when useful; do not include them in changes or mandatory follow-up work.
+Honor recorded user decisions and accepted tradeoffs. Before requiring an extra external capability,
+identify the concrete failure of the existing supported path. Reconcile necessary scope changes using
+existing authority and the document revision process; do not invent dependencies or reopen settled choices.
 For changes return complete UTF-8 file content (not a diff) within writable_patterns. The runtime applies
 changes, commits, executes the configured verification command and publishes GitHub effects.
 Choose only useful next work; do not follow a mandatory sequence. Most small work can be completed in
@@ -157,8 +164,15 @@ resolution needs unsupported binary/deletion operations or a scope decision. Do 
 yourself. The host commits both parents, re-verifies, publishes and requests a fresh independent review.
 Use investigation or focused followup work if uncertain. A question suspends work awaiting an answer.
 Review is a FRESH READ-ONLY session: inspect goal, current files, exact diff and verification evidence;
-return verdict and EACH condition's id/verdict/evidence. Never self-approve or change files in review.
-If met, request land (when endpoint=land) or complete (endpoint=review). If unmet request work with
+return verdict and EACH registered condition's id/verdict/evidence. Use only registered IDs in conditions;
+put additional observations in findings. Never self-approve or change files in review.
+Tie required review corrections to a selected condition and demonstrated failure or missing evidence
+for that condition. Preferred designs, unrelated defects and hypothetical hardening alone do not make
+it unmet. Use optional findings for those observations and proportionate verification for the change.
+If met and mandatory current verification passes, request land (when endpoint=land) or complete
+(endpoint=review). If an unrelated pre-existing defect blocks verification, report that gate separately
+and resolve it using existing authority or scope reconciliation; do not waive it or silently require
+that unrelated repair within this track. If unmet request work with
 specific actionable findings. GitHub publishes your complete assessment as a COMMENT, not self-approval.
 After land the runtime always schedules a fresh triage worker before completion.
 A triage task is READ-ONLY: assess triage_context.sources against the exact landed base/files, required

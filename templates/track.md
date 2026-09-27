@@ -6,8 +6,8 @@
   "conditions": [
     {
       "id": "condition-1",
-      "text": "A verifiable result",
-      "method": "How to confirm it"
+      "text": "Smallest observable result required by the request",
+      "method": "Basis: selected requirement or affected invariant; verify: observable check"
     }
   ],
   "group": "product",
@@ -23,15 +23,6 @@
   "links": [],
   "derivedFrom": [],
   "dependencies": [],
-  "decisionRequests": [
-    {
-      "id": "decision-if-needed",
-      "question": "Include only when a meaningful decision is needed",
-      "owner": "user",
-      "unlocks": "Specific scope unlocked by this decision",
-      "beforeDecision": "Work that can proceed before the decision"
-    }
-  ],
   "duplicateCheck": {
     "queries": [
       "symptom",
@@ -73,5 +64,5 @@ Request, observation or source that establishes the problem
 
 ## Approach and decisions
 <!-- todo-flow:design -->
-Optional decisions, hypotheses and rationale; do not copy runtime status here
+Optional approach and improvements, separate from required outcomes; omit unused fields
 <!-- /todo-flow:design -->
