@@ -313,9 +313,7 @@ def cleanup_track(store, track_id, dry_run=False):
                 with store.connect() as connection:
                     landing = confirmed_landing(store, track, connection)
                 command(["git", "fetch", "origin", config["base"]], config["repo"])
-                remote_head = command(
-                    ["git", "rev-parse", "FETCH_HEAD^{commit}"], config["repo"]
-                )
+                remote_head = command(["git", "rev-parse", "FETCH_HEAD^{commit}"], config["repo"])
                 command(
                     ["git", "merge-base", "--is-ancestor", track["head"], landing["merged"]],
                     config["repo"],
