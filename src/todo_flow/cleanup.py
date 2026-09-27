@@ -10,6 +10,7 @@ from .adapters import command, file_lock
 from .launchers import orca_result
 from .maintenance import guarded, write_json
 from .store import Conflict, fingerprint
+from .terminal_release import retire_launch
 
 
 def receipt_path(store, track):
@@ -83,6 +84,8 @@ def check_finished(store, original, connection):
 
 def terminal_cleanup(folder, dry_run):
     launch = read_json(folder / "launch.json")
+    if "terminal_slot" in launch or "terminal_ledger" in launch:
+        return retire_launch(folder, dry_run=dry_run)
     backend = launch.get("backend")
     if not backend or backend == "headless":
         return None

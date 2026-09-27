@@ -213,6 +213,11 @@ class NativeExecutionTests(unittest.TestCase):
         folder = self.s.path / "attempts" / self.task["attempt"]
         record = json.loads((folder / "native-session.json").read_text())
         self.assertEqual(record["status"], "complete")
+        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
+        self.assertEqual(ledger["max_owned"], 1)
+        self.assertEqual(
+            [row["history"][-1]["state"] for row in ledger["slots"].values()], ["closed"]
+        )
         self.assertFalse((folder / "native-home/auth.json").exists())
         self.assertFalse(Path(record["socket"]).exists())
         ProcessBarrier(self.s.path, "addition").require_clear()
@@ -334,8 +339,34 @@ class NativeExecutionTests(unittest.TestCase):
         (self.fixture / "kill-unconfirmed").touch()
         with self.assertRaises(RuntimeError):
             self.execute()
+        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
+        self.assertTrue(
+            all(row["history"][-1]["state"] != "closed" for row in ledger["slots"].values())
+        )
         folder = self.s.path / "attempts" / self.task["attempt"]
         self.assertFalse((folder / "native-proposal.json").exists())
+
+    def test_native_dispatch_obeys_existing_terminal_capacity(self):
+        from todo_flow.terminal_slots import TerminalSlots, TerminalCapacityError
+
+        self.prepare()
+        self.launcher["terminal_limits"] = {"concurrency": 1, "idle": 0}
+        slots = TerminalSlots(self.s.path, concurrency=1, idle_limit=0)
+        slots.reserve(
+            {
+                "track": "other",
+                "attempt": "other",
+                "execution": "uncertain",
+                "task": "other",
+                "generation": 1,
+            },
+            "orca",
+            evidence={"reason": "Unconfirmed existing terminal creation"},
+        )
+        with self.assertRaises(TerminalCapacityError):
+            self.execute()
+        self.assertFalse((self.fixture / "server-launches").exists())
+        self.assertEqual(len(slots.snapshot()["slots"]), 1)
 
     def test_missing_owned_workspace_is_prelaunch_compatibility_reason(self):
         self.prepare()

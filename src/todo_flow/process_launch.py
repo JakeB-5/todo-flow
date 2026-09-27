@@ -5,7 +5,7 @@ process ownership or exit. Once consumed, cancellation cannot confirm cleanup;
 the owning supervisor must establish group exit through a separate contract.
 """
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import fcntl
 import hashlib
 import os
@@ -63,29 +63,41 @@ class LaunchGate:
     def _locked(self):
         # The inode is never replaced or unlinked. Independent drivers and late
         # terminal deliveries must contend on this same lock.
-        try:
-            with self.path.open("a+b", buffering=0) as stream:
+        with ExitStack() as resources:
+            try:
+                stream = resources.enter_context(self.path.open("a+b", buffering=0))
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 stream.seek(0)
                 marker = stream.read()
-                if marker not in (b"", b"launch\n", b"cancel\n"):
-                    raise ProcessBarrierError(f"Interrupted launch permit: {self.path}")
-                yield stream, marker
-        except OSError as error:
-            raise ProcessBarrierError(f"Cannot acquire/update launch permit {self.path}") from error
+            except OSError as error:
+                raise ProcessBarrierError(
+                    f"Cannot acquire/read launch permit {self.path}"
+                ) from error
+            if marker not in (b"", b"launch\n", b"cancel\n"):
+                raise ProcessBarrierError(f"Interrupted launch permit: {self.path}")
+            # Backend callbacks run under this lock, but their failures are not
+            # permit I/O failures. Preserve the original exception for recovery.
+            yield stream, marker
 
     def _mark(self, stream, marker):
-        if stream.write(marker) != len(marker):
+        try:
+            written = stream.write(marker)
+        except OSError as error:
+            raise ProcessBarrierError(f"Cannot write launch permit {self.path}") from error
+        if written != len(marker):
             raise ProcessBarrierError(f"Incomplete launch permit write: {self.path}")
         self._sync(stream)
 
     def _sync(self, stream):
-        os.fsync(stream.fileno())
-        directory_fd = os.open(self.barrier.directory, os.O_RDONLY)
         try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+            os.fsync(stream.fileno())
+            directory_fd = os.open(self.barrier.directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError as error:
+            raise ProcessBarrierError(f"Cannot sync launch permit {self.path}") from error
 
     @contextmanager
     def launching(self):

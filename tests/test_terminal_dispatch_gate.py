@@ -10,6 +10,7 @@ from todo_flow import terminal_worker
 from todo_flow.launchers import TerminalProcess, spawn_terminal
 from todo_flow.process_barrier import ProcessBarrierError
 from todo_flow.process_launch import LaunchGate
+from todo_flow.terminal_slots import TerminalCapacityError, TerminalSlots
 
 
 class TerminalDispatchGateTests(unittest.TestCase):
@@ -114,12 +115,35 @@ class TerminalDispatchGateTests(unittest.TestCase):
         self.assertEqual(gate._event()["state"], "running")
 
     def test_prepare_failure_prevents_dispatch(self):
-        LaunchGate.prepare(**self.identity, backend="terminal")
-        with patch("todo_flow.launchers.subprocess.run") as dispatch:
-            with self.assertRaises(ProcessBarrierError):
+        # Inject failure at prepare itself; an unattributed existing intent is
+        # rejected earlier by capacity admission and cannot exercise this path.
+        with (
+            patch(
+                "todo_flow.launchers.LaunchGate.prepare",
+                side_effect=ProcessBarrierError("Synthetic prepare failure"),
+            ) as prepare,
+            patch("todo_flow.launchers.subprocess.run") as dispatch,
+        ):
+            with self.assertRaisesRegex(ProcessBarrierError, "Synthetic prepare failure"):
                 self.dispatch()
+            prepare.assert_called_once_with(**self.identity, backend="terminal")
             dispatch.assert_not_called()
         self.assertFalse((self.folder / "terminal-spec.json").exists())
+        self.assertFalse((self.root / "delivery").exists())
+        slots = TerminalSlots(self.root, concurrency=2, idle_limit=1)
+        self.assertEqual(slots.counts(slots.snapshot())["reserved"], 1)
+
+    def test_existing_unattributed_intent_prevents_reservation_and_dispatch(self):
+        gate = LaunchGate.prepare(**self.identity, backend="terminal")
+        original = gate.barrier.path.read_bytes()
+        with patch("todo_flow.launchers.subprocess.run") as dispatch:
+            with self.assertRaisesRegex(TerminalCapacityError, "no capacity lease"):
+                self.dispatch()
+            dispatch.assert_not_called()
+        self.assertEqual(gate.barrier.path.read_bytes(), original)
+        self.assertFalse((self.root / "terminal-slots.json").exists())
+        self.assertFalse((self.folder / "terminal-spec.json").exists())
+        self.assertFalse((self.root / "delivery").exists())
 
     def test_dispatch_interruption_also_cancels_unconsumed_permit(self):
         with patch("todo_flow.launchers.subprocess.run", side_effect=KeyboardInterrupt):

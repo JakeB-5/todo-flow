@@ -22,6 +22,8 @@ from .maintenance import write_json
 from .native_proposal import NativeProposalBinding
 from .native_recovery import recover
 from .store import Store
+from .terminal_capacity import accept_terminal
+from .terminal_slots import TerminalSlots
 from .unix_websocket import UnixWebSocket
 from .workspace_creation import _write_exclusive
 
@@ -145,6 +147,23 @@ def retire_viewer(spec, record, viewer, folder):
         raise RuntimeError("Native viewer process state is unknown")
     # The user permits input racing this checked close. The exec command cannot
     # return to a user shell; a live client must have a confirmed PTY kill.
+    launch_path = folder / "launch.json"
+    launch = json.loads(launch_path.read_text()) if launch_path.exists() else None
+    if "terminal_limits" in spec:
+        limits = spec["terminal_limits"]
+        slots = TerminalSlots(
+            spec["state"], concurrency=limits["concurrency"], idle_limit=limits["idle"]
+        )
+        closing = slots.transition(
+            launch["terminal_slot"],
+            "closing",
+            evidence={
+                "launch_record": str(launch_path),
+                "server_exit": record["server_exit"],
+                "ownership_checked": viewer["handle"],
+            },
+        )
+        write_json(launch_path, {**launch, "terminal_slot": closing})
     closed = _orca(spec, ["terminal", "close", "--terminal", viewer["handle"]])
     _write_exclusive(folder / "native-viewer-close.json", closed)
     receipt = closed["result"]["close"]
@@ -156,6 +175,15 @@ def retire_viewer(spec, record, viewer, folder):
         or any(row.get("tabId") == viewer["tabId"] for row in inventory())
     ):
         raise RuntimeError("Native viewer removal was not confirmed")
+    _write_exclusive(
+        folder / "native-viewer-retired.json",
+        {
+            "handle": viewer["handle"],
+            "runtime_id": record["runtime_id"],
+            "close_receipt": str(folder / "native-viewer-close.json"),
+            "complete_inventory_absent": True,
+        },
+    )
 
 
 def _current(spec, binding):
@@ -346,6 +374,17 @@ def run(spec):
             ):
                 raise ValueError("Native viewer ownership was not confirmed")
             viewer = candidate
+            limits = spec["terminal_limits"]
+            slots = TerminalSlots(
+                spec["state"], concurrency=limits["concurrency"], idle_limit=limits["idle"]
+            )
+            launch_path = folder / "launch.json"
+            launch = json.loads(launch_path.read_text())
+            launch["terminal"] = viewer
+            launch["terminal_slot"] = accept_terminal(
+                (slots, launch["terminal_slot"]), launch, folder
+            )
+            write_json(launch_path, launch)
             save(
                 "viewer-accepted",
                 terminal=viewer,

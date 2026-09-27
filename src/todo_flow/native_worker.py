@@ -14,6 +14,7 @@ from .managed_workspace import receipt_path
 from .process_inventory import launch_identity
 from .store import Store
 from .supervised_process import SupervisedProcess
+from .terminal_capacity import reserve_terminal
 from .workspace_creation import WorkspaceCreationGate, _write_exclusive
 
 
@@ -102,6 +103,20 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
     write_json(folder / "launch.json", {**launcher, "status": "selected"})
     if supported is None:
         return None
+    identity = launch_identity(state, task)
+    # Charge the same capacity ledger used by command terminals before the
+    # native adapter can create a visible client. Uncertainty retains this lease.
+    reservation = reserve_terminal(launcher, identity, folder)
+    slots, lease = reservation
+    write_json(
+        folder / "launch.json",
+        {
+            **launcher,
+            "status": "selected",
+            "terminal_slot": lease,
+            "terminal_ledger": str(slots.path),
+        },
+    )
     # Per-task intent spans replacement attempts: uncertain delivery is never
     # hidden by creating a second server/thread or switching to codex exec.
     intent = Path(state) / ("native-task-" + task["id"] + ".json")
@@ -115,9 +130,9 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
             "worktree": supported["worktree"],
         },
     )
-    identity = launch_identity(state, task)
     spec = {
         **supported,
+        "terminal_limits": slots.limits,
         "folder": str(folder),
         "state": str(state),
         "task": task,
@@ -153,6 +168,22 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
         finally:
             if process.poll() is None:
                 process.stop()
+            proof = folder / "native-viewer-retired.json"
+            if proof.is_file():
+                launch = json.loads((folder / "launch.json").read_text())
+                current = launch["terminal_slot"]
+                if current["owner"] != lease["owner"] or current["state"] != "closing":
+                    raise RuntimeError("Native capacity ownership changed")
+                closed = slots.transition(
+                    current,
+                    "closed",
+                    evidence={
+                        "launch_record": str(folder / "launch.json"),
+                        "physical_retirement": str(proof),
+                        "process_confirmation": str(process.gate.barrier.path),
+                    },
+                )
+                write_json(folder / "launch.json", {**launch, "terminal_slot": closed})
         if process.returncode:
             raise RuntimeError(
                 "Native worker failed; inspect its durable session and stderr evidence"
@@ -176,7 +207,7 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
     write_json(
         folder / "launch.json",
         {
-            **launcher,
+            **json.loads((folder / "launch.json").read_text()),
             "status": "completed",
             "execution_mode": "orca-native",
             "session": record["session"],
