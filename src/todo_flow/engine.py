@@ -358,7 +358,8 @@ class Engine:
         }
         if self.remote and t["pr"]:
             review["receipt"] = self.remote.post_review(task, t, result)
-        self.update(task, review=encode(review))n
+        self.update(task, review=encode(review))
+
     def gate(self, task):
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
