@@ -79,6 +79,85 @@ def _orca(spec, args):
     return result
 
 
+def retire_viewer(spec, record, viewer, folder):
+    """Retire the dedicated exec client after its owned server has stopped.
+
+    Codex reconnects when the server exits and can change its own title. Neither
+    behavior transfers ownership of this exact client to a reusable shell.
+    """
+    if type(record.get("server_exit")) is not int:
+        raise RuntimeError("Native server termination was not confirmed")
+    keys = ("handle", "tabId", "incarnationId", "worktreeId", "executionHostId")
+
+    def inventory():
+        response = _orca(spec, ["terminal", "list"])
+        rows = response["result"]["terminals"]
+        if (
+            response.get("_meta", {}).get("runtimeId") != record["runtime_id"]
+            or response["result"].get("truncated") is not False
+            or response["result"].get("totalCount") != len(rows)
+        ):
+            raise RuntimeError("Native viewer inventory is not complete")
+        return rows
+
+    same_tab = [row for row in inventory() if row.get("tabId") == viewer["tabId"]]
+    if len(same_tab) != 1 or any(same_tab[0].get(key) != viewer[key] for key in keys):
+        raise RuntimeError("Native viewer tab ownership changed; preserve it")
+    shown = _orca(spec, ["terminal", "show", "--terminal", viewer["handle"]])
+    current = shown["result"]["terminal"]
+    if shown.get("_meta", {}).get("runtimeId") != record["runtime_id"] or any(
+        current.get(key) != viewer[key] for key in keys
+    ):
+        raise RuntimeError("Native viewer identity changed; preserve it")
+    last_input = current.get("lastInputAt")
+    if current.get("orphaned") is not False or (
+        last_input is not None
+        and (
+            type(last_input) not in (int, float)
+            or not math.isfinite(last_input)
+            or last_input > record["viewer_started_at"] * 1000
+        )
+    ):
+        raise RuntimeError("Native viewer activity changed; preserve it")
+    exited = False
+    if current.get("connected") is False and current.get("writable") is False:
+        waited = _orca(
+            spec,
+            [
+                "terminal",
+                "wait",
+                "--terminal",
+                viewer["handle"],
+                "--for",
+                "exit",
+                "--timeout-ms",
+                "5000",
+            ],
+        )
+        exited = (
+            waited.get("_meta", {}).get("runtimeId") == record["runtime_id"]
+            and waited["result"]["wait"].get("satisfied") is True
+            and waited["result"]["wait"].get("status") == "exited"
+        )
+        if not exited:
+            raise RuntimeError("Native viewer exit was not confirmed")
+    elif current.get("connected") is not True or current.get("writable") is not True:
+        raise RuntimeError("Native viewer process state is unknown")
+    # The user permits input racing this checked close. The exec command cannot
+    # return to a user shell; a live client must have a confirmed PTY kill.
+    closed = _orca(spec, ["terminal", "close", "--terminal", viewer["handle"]])
+    _write_exclusive(folder / "native-viewer-close.json", closed)
+    receipt = closed["result"]["close"]
+    if (
+        closed.get("_meta", {}).get("runtimeId") != record["runtime_id"]
+        or receipt.get("handle") != viewer["handle"]
+        or receipt.get("tabId") != viewer["tabId"]
+        or (not exited and receipt.get("ptyKilled") is not True)
+        or any(row.get("tabId") == viewer["tabId"] for row in inventory())
+    ):
+        raise RuntimeError("Native viewer removal was not confirmed")
+
+
 def _current(spec, binding):
     store = Store(spec["state"])
     with store.transaction() as connection:
@@ -318,56 +397,7 @@ def run(spec):
             record["server_exit"] = server.returncode
         if viewer is not None:
             try:
-                waited = _orca(
-                    spec,
-                    [
-                        "terminal",
-                        "wait",
-                        "--terminal",
-                        viewer["handle"],
-                        "--for",
-                        "exit",
-                        "--timeout-ms",
-                        "5000",
-                    ],
-                )["result"]["wait"]
-                if waited.get("satisfied") is not True or waited.get("status") != "exited":
-                    raise RuntimeError("Native viewer has not exited; preserve it")
-                shown = _orca(spec, ["terminal", "show", "--terminal", viewer["handle"]])
-                current = shown["result"]["terminal"]
-                if shown.get("_meta", {}).get("runtimeId") != record.get("runtime_id") or any(
-                    current.get(key) != viewer.get(key)
-                    for key in ("tabId", "incarnationId", "worktreeId", "title")
-                ):
-                    raise RuntimeError("Native viewer identity changed; preserve it")
-                last_input = current.get("lastInputAt")
-                if (
-                    current.get("connected") is not False
-                    or current.get("writable") is not False
-                    or current.get("orphaned") is not False
-                    or (
-                        last_input is not None
-                        and (
-                            type(last_input) not in (int, float)
-                            or not math.isfinite(last_input)
-                            or last_input > record["viewer_started_at"] * 1000
-                        )
-                    )
-                ):
-                    raise RuntimeError("Native viewer activity changed; preserve it")
-                closed = _orca(spec, ["terminal", "close", "--terminal", viewer["handle"]])
-                _write_exclusive(folder / "native-viewer-close.json", closed)
-                inventory = _orca(
-                    spec, ["terminal", "list", "--worktree", "id:" + spec["worktree"]]
-                )
-                rows = inventory["result"]["terminals"]
-                if (
-                    inventory.get("_meta", {}).get("runtimeId") != record["runtime_id"]
-                    or inventory["result"].get("truncated") is not False
-                    or inventory["result"].get("totalCount") != len(rows)
-                    or any(row.get("tabId") == viewer["tabId"] for row in rows)
-                ):
-                    raise RuntimeError("Native viewer removal was not confirmed")
+                retire_viewer(spec, record, viewer, folder)
             except BaseException as error:
                 cleanup_error = error
         # The outer live supervisor proves group cleanup, including tool descendants.

@@ -21,7 +21,7 @@ import base64,hashlib,json,os,socket,struct,sys,time,uuid
 from pathlib import Path
 root=Path(ROOT)
 if sys.argv[1:] == ['--version']:
- print('codex-cli 0.157.1');sys.exit()
+ print('codex-cli unsupported' if (root/'changed-version').exists() else 'codex-cli 0.157.1');sys.exit()
 assert sys.argv[1]=='app-server'
 home=Path(os.environ['CODEX_HOME'])
 config=(home/'config.toml').read_text()
@@ -106,16 +106,23 @@ elif args[:2]==['terminal','create']:
  command=args[args.index('--command')+1]
  assert command.startswith('exec env CODEX_HOME=') and ' resume thread-' in command and '--remote unix://' in command
  assert '--sandbox' not in command and '--ask-for-approval' not in command
+ (root/'viewer-closed').unlink(missing_ok=True)
  result={'terminal':terminal}
 elif args[:2]==['terminal','show']:
- result={'terminal':{**terminal,'connected':False,'writable':False,'orphaned':False}}
+ alive=not (root/'exited-viewer').exists()
+ result={'terminal':{**terminal,'title':'workspace','connected':alive,'writable':alive,'orphaned':False}}
+ if (root/'input-viewer').exists():result['terminal']['lastInputAt']=9999999999999
  if (root/'reuse-viewer').exists():result['terminal']['incarnationId']='foreign-incarnation'
 elif args[:2]==['terminal','wait']:
  result={'wait':{'satisfied':True,'status':'exited'}}
 elif args[:2]==['terminal','close']:
- result={'close':{'handle':'term-fixture','ptyKilled':False}}
+ (root/'viewer-closed').touch()
+ result={'close':{'handle':'term-fixture','tabId':'tab-fixture','ptyKilled':not (root/'exited-viewer').exists()}}
+ if (root/'kill-unconfirmed').exists():result['close']['ptyKilled']=False
 elif args[:2]==['terminal','list']:
- result={'terminals':[],'truncated':False,'totalCount':0}
+ rows=[] if (root/'viewer-closed').exists() else [terminal]
+ if (root/'shared-viewer').exists():rows.append({**terminal,'handle':'foreign-pane','incarnationId':'foreign-incarnation'})
+ result={'terminals':rows,'truncated':False,'totalCount':len(rows)}
 else:raise AssertionError(args)
 print(json.dumps({'ok':True,'result':result,'_meta':meta}))
 """
@@ -229,32 +236,106 @@ class NativeExecutionTests(unittest.TestCase):
         before = (self.fixture / "server-launches").read_text()
         import time
 
-        self.task = {
-            **self.task,
-            "attempt": "replacement-attempt",
-            "generation": self.task["generation"] + 1,
-        }
-        with self.s.transaction() as connection:
-            connection.execute(
-                "UPDATE tasks SET generation=? WHERE id=?",
-                (self.task["generation"], self.task["id"]),
-            )
-            connection.execute(
-                "INSERT INTO attempts(id,task,generation,status,started) VALUES(?,?,?,?,?)",
-                (
-                    self.task["attempt"],
-                    self.task["id"],
-                    self.task["generation"],
-                    "running",
-                    time.time(),
-                ),
-            )
-        self.context = self.engine.context(self.task, self.workspace)
-        with self.assertRaises(FileExistsError):
-            self.execute()
+        # The same uncertain task must remain blocked even when a replacement
+        # would otherwise choose another native capability or compatibility path.
+        for mode in ("changed-version", "missing-auth", "headless", "command", "claude"):
+            with self.subTest(mode=mode):
+                self.task = {
+                    **self.task,
+                    "attempt": "replacement-" + mode,
+                    "generation": self.task["generation"] + 1,
+                }
+                with self.s.transaction() as connection:
+                    connection.execute(
+                        "UPDATE tasks SET generation=? WHERE id=?",
+                        (self.task["generation"], self.task["id"]),
+                    )
+                    connection.execute(
+                        "INSERT INTO attempts(id,task,generation,status,started) VALUES(?,?,?,?,?)",
+                        (
+                            self.task["attempt"],
+                            self.task["id"],
+                            self.task["generation"],
+                            "running",
+                            time.time(),
+                        ),
+                    )
+                if mode == "changed-version":
+                    (self.fixture / mode).touch()
+                if mode == "missing-auth":
+                    (self.auth / "auth.json").unlink()
+                if mode in ("command", "claude"):
+                    self.config["worker"] = {"type": mode, "argv": ["must-not-run"]}
+                self.context = self.engine.context(self.task, self.workspace)
+                with (
+                    self.engine.process_attempt(self.task),
+                    patch(
+                        "todo_flow.worker.select_launcher", return_value={"backend": "headless"}
+                    ) as select,
+                    patch("todo_flow.native_worker.preflight") as probe,
+                    patch("todo_flow.worker.SupervisedProcess") as process,
+                    self.assertRaises(FileExistsError),
+                ):
+                    run_worker(self.config, self.context, self.task, self.s.path, None)
+                select.assert_not_called()
+                probe.assert_not_called()
+                process.assert_not_called()
         self.assertEqual((self.fixture / "server-launches").read_text(), before)
         calls = (self.fixture / "orca-calls.jsonl").read_text()
         self.assertNotIn('"terminal", "create"', calls)
+
+    def test_unreadable_intent_shapes_block_before_launcher_selection(self):
+        self.prepare()
+        intent = self.s.path / ("native-task-" + self.task["id"] + ".json")
+        for shape in ("malformed", "unknown-version", "directory", "dangling-symlink"):
+            with self.subTest(shape=shape):
+                if shape == "directory":
+                    intent.mkdir()
+                elif shape == "dangling-symlink":
+                    intent.symlink_to(self.fixture / "absent")
+                else:
+                    intent.write_text("invalid" if shape == "malformed" else '{"version":999}')
+                with (
+                    patch("todo_flow.worker.select_launcher") as select,
+                    self.assertRaises(FileExistsError),
+                ):
+                    run_worker(self.config, self.context, self.task, self.s.path, None)
+                select.assert_not_called()
+                if shape == "directory":
+                    intent.rmdir()
+                else:
+                    intent.unlink()
+        self.assertFalse((self.fixture / "server-launches").exists())
+
+    def test_already_exited_viewer_can_be_retired_without_pty_kill(self):
+        self.prepare()
+        (self.fixture / "exited-viewer").touch()
+        self.assertEqual(self.execute()["summary"], "합성 native worker")
+
+    def test_prior_input_and_shared_tab_preserve_viewer(self):
+        # Each case owns an isolated attempt; no real Orca/model calls.
+        for marker in ("input-viewer", "shared-viewer"):
+            with self.subTest(marker=marker):
+                case = NativeExecutionTests()
+                case.setUp()
+                try:
+                    case.prepare()
+                    (case.fixture / marker).touch()
+                    with self.assertRaises(RuntimeError):
+                        case.execute()
+                    calls = (case.fixture / "orca-calls.jsonl").read_text()
+                    self.assertNotIn('"terminal", "close"', calls)
+                finally:
+                    case.doCleanups()
+                    case.tearDown()
+
+    def test_unconfirmed_viewer_kill_cannot_release_proposal(self):
+        self.prepare()
+        (self.fixture / "kill-unconfirmed").touch()
+        with self.assertRaises(RuntimeError):
+            self.execute()
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        self.assertFalse((folder / "native-proposal.json").exists())
 
     def test_missing_owned_workspace_is_prelaunch_compatibility_reason(self):
         self.prepare()

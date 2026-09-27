@@ -303,6 +303,11 @@ def worker_input(context, folder):
 
 
 def run_worker(config, context, task, state, heartbeat):
+    # Delivery uncertainty belongs to the task, regardless of the replacement
+    # attempt's adapter, launcher or current native capability. Do not parse an
+    # existing intent: even a malformed file or dangling symlink must block replay.
+    if task.get("id") and os.path.lexists(Path(state) / ("native-task-" + task["id"] + ".json")):
+        raise FileExistsError("Native task intent already exists; reconcile before retrying")
     adapter = config["worker"]
     if adapter["type"] == "command" and config.get("worker_protocol", 1) != 2:
         raise ValueError(
