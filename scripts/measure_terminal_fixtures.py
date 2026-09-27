@@ -72,6 +72,7 @@ class Fixture:
         self.source = Path(source).resolve()
         self.output = Path(output).resolve()
         self.backend = backend
+        self.worktree_id = "fixture::" + str(self.source)
         self.state = self.output / "state"
         self.state.mkdir()
         self.release = self.output / "release-barrier"
@@ -212,7 +213,7 @@ class Fixture:
                 "tabId": f"tab-{number}",
                 "incarnationId": f"incarnation-{number}",
                 "executionHostId": "local",
-                "worktreeId": "fixture",
+                "worktreeId": self.worktree_id,
                 "title": spec["title"],
                 "connected": True,
                 "writable": True,
@@ -251,6 +252,8 @@ class Fixture:
             return handle
 
     def dispatch(self, argv):
+        if argv == ["fixture-orca", "agent-context", "--json"]:
+            return json.dumps({"schemaVersion": 1, "commands": []})
         if argv == ["fixture-orca", "status", "--json"]:
             return {"app": {"running": True}, "runtime": {"reachable": True}}
         if argv == [
@@ -261,11 +264,11 @@ class Fixture:
             "path:" + str(self.source),
             "--json",
         ]:
-            return {"worktree": {"id": "fixture", "hostId": "local"}}
+            return {"worktree": {"id": self.worktree_id, "hostId": "local"}}
         if argv[:3] == ["fixture-orca", "terminal", "create"]:
             if (
                 len(argv) != 10
-                or argv[3:6] != ["--worktree", "id:fixture", "--title"]
+                or argv[3:6] != ["--worktree", "id:" + self.worktree_id, "--title"]
                 or argv[7] != "--command"
                 or argv[9] != "--json"
             ):
@@ -277,7 +280,7 @@ class Fixture:
             "terminal",
             "list",
             "--worktree",
-            "id:fixture",
+            "id:" + self.worktree_id,
             "--limit",
             "100000",
             "--json",
@@ -288,7 +291,7 @@ class Fixture:
                     "ptyId": name,
                     "tabId": name,
                     "executionHostId": "local",
-                    "worktreeId": "fixture",
+                    "worktreeId": self.worktree_id,
                 }
                 for name in ("user", "dashboard")
             ]

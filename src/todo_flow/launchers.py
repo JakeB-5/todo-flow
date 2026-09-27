@@ -11,6 +11,7 @@ import sys
 import time
 
 from .orca_capabilities import probe_native_contract
+from .maintenance import write_json
 from .process_launch import LaunchGate
 from .process_inventory import note_prepared
 from .terminal_capacity import accept_terminal, reserve_terminal
@@ -308,7 +309,7 @@ def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=
     if reservation is not None:
         record["terminal_slot"] = reservation[1]
         record["terminal_ledger"] = str(reservation[0].path)
-    (folder / "launch.json").write_text(json.dumps(record))
+    write_json(folder / "launch.json", record)
     try:
         if launcher["backend"] == "orca":
             result = orca_result(
@@ -361,5 +362,5 @@ def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=
         process.stop()
         raise
     finally:
-        (folder / "launch.json").write_text(json.dumps(record))
+        write_json(folder / "launch.json", record)
     return process

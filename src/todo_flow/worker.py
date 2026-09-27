@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from .store import encode
+from .maintenance import write_json
 from .terminal_release import retire_launch
 from .process_inventory import launch_identity
 from .supervised_process import SupervisedProcess
@@ -404,23 +405,19 @@ def run_worker(config, context, task, state, heartbeat):
     try:
         launcher = select_launcher(config, context["workspace"])
     except LauncherUnavailable as error:
-        (folder / "launch.json").write_text(
-            encode(
-                {
-                    "backend": None,
-                    "status": "unavailable",
-                    "selection": error.selection,
-                    "error_type": type(error).__name__,
-                }
-            ),
-            encoding="utf-8",
+        write_json(
+            folder / "launch.json",
+            {
+                "backend": None,
+                "status": "unavailable",
+                "selection": error.selection,
+                "error_type": type(error).__name__,
+            },
         )
         raise
     # Record selection before any launch. Selection is not proof of process start;
     # process ownership and cleanup remain the supervisor/bridge's responsibility.
-    (folder / "launch.json").write_text(
-        encode({**launcher, "status": "selected"}), encoding="utf-8"
-    )
+    write_json(folder / "launch.json", {**launcher, "status": "selected"})
     if adapter["type"] == "codex" and launcher["backend"] == "orca":
         from .native_worker import run_native
 

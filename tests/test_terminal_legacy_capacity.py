@@ -126,6 +126,29 @@ class TerminalLegacyCapacityTests(unittest.TestCase):
         (selected.parent / "native-viewer-intent.json").write_text("{}")
         self.assert_blocked("uncertain", selected)
 
+    def test_reserved_selection_can_coexist_with_second_dispatch(self):
+        from todo_flow.terminal_capacity import reserve_terminal
+
+        folder = self.folder("pending")
+        identity = self.identity("pending")
+        (folder / "launch.json").write_text(json.dumps({**self.launcher, "status": "selected"}))
+        reserve_terminal(self.launcher, identity, folder)
+        # Freeze the real publication gap: the first lease is charged while
+        # launch.json still records selection, with its spec just persisted.
+        (folder / "terminal-spec.json").write_text(json.dumps({"launch_identity": identity}))
+        with patch(
+            "todo_flow.launchers.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="two", stderr=""),
+        ) as create:
+            process = self.dispatch("second")
+            process.close_lease()
+            create.assert_called_once()
+        self.assertEqual(len(self.slots().snapshot()["slots"]), 2)
+        with patch("todo_flow.launchers.subprocess.run") as create:
+            with self.assertRaises(TerminalCapacityError):
+                self.dispatch("third")
+            create.assert_not_called()
+
     def test_process_exit_and_cleanup_reports_do_not_excuse_legacy_tabs(self):
         path = self.legacy("legacy")
         (path.parent / "terminal-process.json").write_text(

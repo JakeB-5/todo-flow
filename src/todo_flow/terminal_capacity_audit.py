@@ -86,29 +86,41 @@ def audit_terminal_evidence(slots, value):
                     if terminal_files or candidates:
                         raise ValueError("Headless record conflicts with terminal evidence")
                     continue
-                if (
+                selection_only = (
                     launch.get("status") in ("selected", "unavailable")
-                    and not terminal_files
-                    and not candidates
+                    and "terminal-process.json" not in names
                     and not any(
                         key in launch
                         for key in ("terminal", "handle", "terminal_slot", "terminal_ledger")
                     )
                     and not any(name.startswith("native-") for name in names)
-                ):
-                    # Discovery happens before reservation; it is not a dispatch.
+                )
+                if selection_only and not candidates and not terminal_files:
                     continue
-                lease = launch.get("terminal_slot")
-                ledger = launch.get("terminal_ledger")
                 if (
-                    not isinstance(ledger, str)
-                    or Path(ledger).resolve() != slots.path.resolve()
-                    or not any(
-                        backend == launch.get("backend") and event == lease
+                    selection_only
+                    and candidates
+                    and all(
+                        event["state"] == "reserved" and backend == launch.get("backend")
                         for backend, event in candidates
                     )
                 ):
-                    raise ValueError("Visible launch has no matching attributed lease history")
+                    # The reservation is already charged. Its launch publication
+                    # may lag while another attempt reserves; validate any spec
+                    # below rather than treating that window as an orphan tab.
+                    pass
+                else:
+                    lease = launch.get("terminal_slot")
+                    ledger = launch.get("terminal_ledger")
+                    if (
+                        not isinstance(ledger, str)
+                        or Path(ledger).resolve() != slots.path.resolve()
+                        or not any(
+                            backend == launch.get("backend") and event == lease
+                            for backend, event in candidates
+                        )
+                    ):
+                        raise ValueError("Visible launch has no matching attributed lease history")
             elif not candidates:
                 path = folder / sorted(terminal_files)[0]
                 raise ValueError("Orphan terminal execution evidence has no capacity lease")
