@@ -7,9 +7,9 @@ terminal previews or worker-read output. The caller must establish their ordered
 receipt for its submitted turn. This module does not establish that connection,
 Orca visibility, tool isolation, replay safety or process exit.
 
-NativeProposalBinding.session must be the exact App Server thread ID. The
-binding still needs a reviewed runtime mapping to Orca resource identities.
-No execution route is enabled here. The fenced host must recheck ownership and
+NativeProposalBinding.session must be the exact App Server thread ID. The native adapter maps
+this binding to the owned Orca resource and supervision evidence.
+The fenced host must recheck ownership and
 HEAD and enforce its process exit barrier before applying the returned proposal.
 """
 
@@ -45,9 +45,10 @@ def decode_app_server_proposal(
 ):
     """Require matching full completion records, then apply the proposal schema.
 
-    This deliberately rejects summary/notLoaded turn payloads. Missing itemsView
-    uses the documented schema default, full. It never reconstructs text from
-    deltas or treats a completed turn as evidence of process termination.
+    Summary payloads are completion markers only; their items never supply proposal
+    text. notLoaded remains unsupported. Missing itemsView defaults to full. The
+    caller must use the ordered collector, which rejects duplicate final items.
+    No completion notification establishes process termination.
     """
     check_binding(launch, current, implementation_sessions)
     event = _object(item_completed, "item completion")
@@ -64,8 +65,20 @@ def decode_app_server_proposal(
         raise ValueError("App Server item completion timestamp is missing or invalid")
     if turn.get("status") != "completed" or turn.get("error") is not None:
         raise ValueError("App Server turn did not complete successfully")
-    if turn.get("itemsView", "full") != "full":
+    if turn.get("itemsView", "full") not in {"full", "summary"}:
         raise ValueError("App Server turn items are incomplete")
+    # Live App Server sends a display summary here. The authoritative body is
+    # the complete final item already received on this ordered host connection;
+    # the matching successful completion establishes the end of this exact turn.
+    # The connection collector rejects a second final item before this point.
+    if turn.get("itemsView") == "summary":
+        final = _final_message(event.get("item"))
+        return decode_native_proposal(
+            final["text"],
+            launch=launch,
+            current=current,
+            implementation_sessions=implementation_sessions,
+        )
     items = turn.get("items")
     if not isinstance(items, list):
         raise ValueError("App Server turn items must be an array")

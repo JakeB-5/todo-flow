@@ -12,6 +12,28 @@ BACKENDS = {
     "terminal": ("Configured terminal", "설정된 터미널"),
 }
 REASONS = {
+    "native_supported": ("Supported native route selected", "지원되는 Native 세션 경로 선택"),
+    "native_managed_workspace_required": (
+        "Existing checkout has no managed ownership receipt",
+        "기존 작업공간의 Orca 관리 소유권 기록 없음",
+    ),
+    "native_codex_missing": ("Codex executable not found", "Codex 실행 파일 없음"),
+    "native_codex_version_unverified": (
+        "Codex native protocol version unverified",
+        "Codex Native 프로토콜 버전 미검증",
+    ),
+    "native_contract_probe_failed": (
+        "Native workspace contract check failed",
+        "Native 작업공간 계약 확인 실패",
+    ),
+    "native_auth_storage_unsupported": (
+        "Authentication storage unsupported by native adapter",
+        "Native 어댑터에서 지원하지 않는 인증 저장 방식",
+    ),
+    "native_review_provenance_unavailable": (
+        "Native implementation session provenance unavailable",
+        "Native 구현 세션의 출처 기록 없음",
+    ),
     "explicit_headless": ("Headless explicitly requested", "Headless 명시적 요청"),
     "explicit_launcher": ("Launcher explicitly requested", "실행 방식 명시적 요청"),
     "cli_missing": ("Orca CLI not found", "Orca CLI를 찾을 수 없음"),
@@ -30,6 +52,26 @@ REASONS = {
     ),
 }
 STATUSES = {
+    "reconciling": (
+        "Reading the same session history; input is not resent",
+        "같은 세션 기록 확인 중; 입력 재전송 안 함",
+    ),
+    "server-intent": ("Server launch recorded; start pending", "서버 실행 기록됨; 시작 대기"),
+    "server-started": ("Server process started", "서버 프로세스 시작됨"),
+    "thread-created": ("Read-only session created", "읽기 전용 세션 생성됨"),
+    "turn-accepted": ("Work turn accepted", "작업 요청 수락됨"),
+    "viewer-accepted": ("Visible session client requested", "표시용 세션 클라이언트 요청됨"),
+    "proposal-received": ("Complete proposal received", "전체 제안 수신됨"),
+    "server-stopped": (
+        "Server stopped; group confirmation pending",
+        "서버 종료됨; 프로세스 그룹 확인 대기",
+    ),
+    "cleanup-failed": ("Cleanup requires reconciliation", "정리 상태 재확인 필요"),
+    "complete": (
+        "Proposal saved; supervisor confirmation pending",
+        "제안 저장됨; 감독 프로세스 확인 대기",
+    ),
+    "completed": ("Proposal and process cleanup confirmed", "제안 및 프로세스 정리 확인됨"),
     "selected": ("Selected; process start not established", "선택됨; 프로세스 시작 근거 아님"),
     "unavailable": ("Selection failed before launch", "실행 전 선택 실패"),
     "launching": ("Launch requested; outcome pending", "실행 요청 중; 결과 미확인"),
@@ -56,14 +98,20 @@ def describe_launch(record, language="en"):
     unknown = ("Not recorded", "기록 없음")[index]
     return {
         "requested": selection.get("requested") or unknown,
-        "backend": label(BACKENDS, backend)
+        "backend": ("Orca Codex session", "Orca Codex 세션")[index]
+        if record.get("execution_mode") == "orca-native"
+        else label(BACKENDS, backend)
         if backend
         else ("No backend selected", "선택된 backend 없음")[index],
         "reason": label(REASONS, selection["reason"]) if selection.get("reason") else unknown,
         "status": label(STATUSES, record["status"]) if record.get("status") else unknown,
         "native": (
-            "Native session adapter is not implemented.",
-            "Native 세션 어댑터는 미구현 상태입니다.",
+            "Native session adapter selected."
+            if selection.get("native_ready")
+            else "Compatibility worker route selected.",
+            "Native 세션 어댑터 선택됨."
+            if selection.get("native_ready")
+            else "호환 워커 경로 선택됨.",
         )[index],
         "validation": (
             "Real-model and external live tests for this integration have not been performed.",
@@ -92,7 +140,7 @@ def read_launch(state, attempt, language="en"):
         record = json.loads(text)
         if not isinstance(record, dict):
             raise ValueError("Invalid launch evidence")
-        for key in ("backend", "status"):
+        for key in ("backend", "status", "session", "turn", "execution_mode"):
             if record.get(key) is not None and not isinstance(record[key], str):
                 raise ValueError("Invalid launch label")
         selection = record.get("selection")
@@ -105,7 +153,17 @@ def read_launch(state, attempt, language="en"):
         # Do not expose configured argv, socket paths or arbitrary extra fields.
         visible = {
             key: record[key]
-            for key in ("backend", "status", "selection", "worktree", "terminal", "handle")
+            for key in (
+                "backend",
+                "status",
+                "selection",
+                "worktree",
+                "terminal",
+                "handle",
+                "session",
+                "turn",
+                "execution_mode",
+            )
             if key in record
         }
         result.update(

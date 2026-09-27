@@ -173,6 +173,12 @@ function launchPanel(launch) {
   const state=evidence==='available'?tr("Recorded"):evidence==='unreadable'?tr("Unreadable launch evidence"):tr("No launch evidence");
   const rows=[[tr("Evidence status"),state]];
   if(summary)rows.push([tr("Requested launcher"),summary.requested],[tr("Selected backend"),summary.backend],[tr("Selection reason"),summary.reason],[tr("Launch status"),summary.status]);
+  const record=launch?.record;
+  if(evidence==='available'&&record?.execution_mode==='orca-native') {
+    for(const [label,value] of [["Orca workspace",record.worktree],["Codex session",record.session],["Codex turn",record.turn],["Terminal handle",record.terminal?.handle]]) {
+      if(typeof value==='string'&&value)rows.push([tr(label),value]);
+    }
+  }
   return `<section class="evidence-block"><h3>${esc(tr("Execution evidence"))}</h3><dl>${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></section>`;
 }
 async function inspectTask(id) {

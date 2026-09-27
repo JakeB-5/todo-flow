@@ -202,3 +202,5 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 [영문 운영·복구 안내](OPERATIONS.md) · [에이전트 설치](AGENT_INSTALL.md) · [데모](DEMO.md) · [기여](CONTRIBUTING.md) · [변경 기록](CHANGELOG.md) · [MIT 라이선스](LICENSE)
 
 버그·개선 제안은 저장소 Issues에 공개 가능한 최소 재현과 함께 남겨주세요. `docs/`는 로컬 기록용이며 사용·빌드에 필요하지 않습니다.
+
+Orca Native 실행은 소유권이 확인된 관리 작업공간과 격리된 Codex App Server 세션을 사용하며 Codex CLI 0.157.1 프로토콜을 지원합니다. 화면의 Codex 클라이언트는 작업 요청 수락 후 정확한 서버·세션에 연결되고, 읽기 전용 제안은 서버 프로토콜로 반환됩니다. 명시적 headless는 유지합니다. 기존 Git 작업공간, 미검증 Codex 버전, 지원하지 않는 인증 저장 방식, 리뷰 출처 기록이 없는 경우에는 이유를 표시한 호환 경로를 사용합니다. CLI와 대시보드는 기록된 작업공간·세션·작업·터미널 연결을 보여 줍니다. 합성 프로토콜·프로세스 테스트를 포함하며 외부 실제 모델 수용 시험을 수행했다고 주장하지 않습니다.

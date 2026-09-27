@@ -272,3 +272,18 @@ test('late success and failure from a previously selected task cannot overwrite 
     assert.ok(e.cards[1].classList.contains('active'));
   }
 });
+
+test('native session associations retain identifiers and escape authored-looking text',()=>{
+  const e=environment();
+  const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+  e.run(app.slice(0,app.indexOf('const date =')));
+  e.run(app.slice(app.indexOf('function launchPanel('),app.indexOf('async function inspectTask(')));
+  e.context.launch={evidence:'available',record:{execution_mode:'orca-native',worktree:'repo::/candidate',session:'thread-<script>',turn:'turn-one',terminal:{handle:'term-one'}}};
+  let html=e.run('launchPanel(launch)');
+  assert.ok(html.includes('Codex session'));
+  assert.ok(html.includes('thread-&lt;script&gt;'));
+  assert.ok(!html.includes('thread-<script>'));
+  e.run("applyLanguage('ko')");html=e.run('launchPanel(launch)');
+  assert.ok(html.includes('Codex 세션'));
+  assert.ok(html.includes('repo::/candidate'));
+});

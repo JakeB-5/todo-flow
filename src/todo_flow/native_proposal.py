@@ -1,7 +1,6 @@
-"""Strict proposal checks for a future native transcript adapter.
+"""Strict whole-proposal checks for host-owned native sessions.
 
-This is a host-internal contract, NOT an Orca response schema. No native route
-calls this module yet. The transport must first prove the exact final assistant
+This is a host-internal contract, NOT an Orca response schema. The native transport must first prove the exact final assistant
 message and its complete contents using a documented Orca contract. Parsing a
 complete JSON object cannot distinguish an intermediate message from a final one.
 
@@ -20,7 +19,7 @@ from .worker import codex_schema, validate
 
 @dataclass(frozen=True)
 class NativeProposalBinding:
-    """Host-owned attribution; external field mapping remains unimplemented."""
+    """Host-owned attribution, independently bound to server response identities."""
 
     attempt: str
     task: str

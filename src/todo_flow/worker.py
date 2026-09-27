@@ -415,6 +415,12 @@ def run_worker(config, context, task, state, heartbeat):
     (folder / "launch.json").write_text(
         encode({**launcher, "status": "selected"}), encoding="utf-8"
     )
+    if adapter["type"] == "codex" and launcher["backend"] == "orca":
+        from .native_worker import run_native
+
+        native = run_native(config, context, task, state, folder, launcher, heartbeat)
+        if native is not None:
+            return native
     env = dict(os.environ)
     env.pop("CLAUDECODE", None)
     started = time.monotonic()

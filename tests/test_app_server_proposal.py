@@ -88,7 +88,7 @@ class AppServerProposalTests(unittest.TestCase):
         for key, values in (
             ("status", ["failed", "interrupted", "inProgress", None]),
             ("error", [{"message": "failed"}, False]),
-            ("itemsView", ["summary", "notLoaded", None, "future"]),
+            ("itemsView", ["notLoaded", None, "future"]),
             ("items", [None, {}, []]),
         ):
             for value in values:
@@ -159,3 +159,11 @@ class AppServerProposalTests(unittest.TestCase):
                     decode_app_server_proposal(
                         item, turn, launch=self.binding, current=self.binding
                     )
+
+    def test_summary_is_only_a_marker_and_never_the_proposal_body(self):
+        self.turn["turn"].update(itemsView="summary", items=[{"text": "truncated display only"}])
+        result = self.decode()
+        self.assertEqual(result["changes"], [{"path": "a.py", "content": "값 = 1\n"}])
+        self.item["item"]["text"] = self.item["item"]["text"][:-1]
+        with self.assertRaises(ValueError):
+            self.decode()

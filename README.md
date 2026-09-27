@@ -245,3 +245,5 @@ Latest release: **0.0.4**. Small-project full cycles, recovery and two–three i
 Report bugs or propose improvements through repository Issues; include a minimal public-safe reproduction. Contribution and local validation commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Local design notes in `docs/` are ignored and are not required to use or build the project.
 
 **[MIT License](LICENSE)** · Copyright © 2026 TODO Flow contributors.
+
+Native Orca execution uses an owned managed checkout and an isolated Codex App Server session on the supported Codex CLI 0.157.1 protocol. The visible Codex client attaches to the exact server/thread after turn acceptance; read-only proposals return through the server protocol. Explicit headless remains headless. Existing Git checkouts, unverified Codex versions, unsupported authentication storage and missing review provenance retain an explicitly reported compatibility route. CLI launch evidence and the dashboard show recorded workspace, session, turn and terminal associations. Synthetic protocol/process tests are included; external model acceptance testing is not claimed.

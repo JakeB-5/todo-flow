@@ -144,7 +144,7 @@ class AppServerSessionTests(unittest.TestCase):
     def test_decoder_rechecks_failed_partial_and_stale_completion(self):
         for patch in (
             {"status": "failed"},
-            {"itemsView": "summary"},
+            {"itemsView": "notLoaded"},
             {"items": []},
         ):
             self.setUp()

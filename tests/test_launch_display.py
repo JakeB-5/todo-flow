@@ -95,7 +95,7 @@ class LaunchDisplayTests(unittest.TestCase):
         )
         self.assertEqual(orca["backend"], "Orca terminal (command worker)")
         self.assertIn("worker start not established", orca["status"])
-        self.assertIn("not implemented", orca["native"])
+        self.assertIn("Compatibility", orca["native"])
         self.assertIn("have not been performed", orca["validation"])
 
     def test_missing_and_partial_receipts_remain_unknown(self):

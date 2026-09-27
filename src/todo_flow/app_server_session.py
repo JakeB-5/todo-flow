@@ -1,8 +1,7 @@
 """Pure request builders and ordered notification collection for App Server v2.
 
-Based on the public schemas captured on 2026-09-27. No connection or execution
-route is enabled here. The host must isolate configuration/tools, initialize its
-owned proxy connection, correlate RPC responses, and bind the exact thread/turn
+Based on the public schemas captured on 2026-09-27. The native adapter must isolate configuration/tools, initialize its
+owned connection, correlate RPC responses, and bind the exact thread/turn
 before feeding notifications. Buffer early notifications in that transport;
 never infer a turn ID from model text or replay a lost start request.
 

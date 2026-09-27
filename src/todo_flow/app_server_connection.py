@@ -1,4 +1,4 @@
-"""In-memory protocol state for one dedicated App Server proxy connection.
+"""In-memory protocol state for one dedicated host-owned App Server connection.
 
 No transport, launch, retry, persistence, or effect authorization is implemented.
 The host must send returned messages exactly once, in order, and call disconnect

@@ -1,5 +1,9 @@
 // English messages are the source. Only product UI is translated, never authored content.
 const koreanMessages = {
+  "Orca workspace": "Orca 작업공간",
+  "Codex session": "Codex 세션",
+  "Codex turn": "Codex 작업",
+  "Terminal handle": "터미널 식별자",
   "Your next work": "다음 작업",
   "Work context": "작업 맥락",
   "Track context": "트랙 맥락",
