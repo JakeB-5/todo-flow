@@ -352,14 +352,22 @@ class NativeCancellationTests(unittest.TestCase):
             (fixture.fixture / "hang-after-accept").touch()
             fixture.config["worker_timeout"] = 20
             fixture.engine.config = fixture.config
+            # The adapter fixture supplies a real checkout and a preflight-only
+            # receipt. Managed workspace creation/recovery is a separate boundary.
             with (
+                patch("todo_flow.engine.managed_workspace.ensure", return_value=fixture.workspace),
                 patch("todo_flow.worker.select_launcher", return_value=fixture.launcher),
                 concurrent.futures.ThreadPoolExecutor() as pool,
             ):
                 future = pool.submit(fixture.engine.execute, fixture.task)
-                wait_until(self, writes.exists)
-                fixture.s.control("addition", "cancel")
-                future.result(timeout=15)
+                try:
+                    wait_until(self, lambda: writes.exists() or future.done())
+                    if future.done():
+                        future.result()
+                    self.assertTrue(writes.exists(), fixture.s.snapshot()["results"])
+                finally:
+                    fixture.s.control("addition", "cancel")
+                    future.result(timeout=15)
             ProcessBarrier(fixture.s.path, "addition").require_clear()
             before = writes.read_bytes()
             time.sleep(0.15)
