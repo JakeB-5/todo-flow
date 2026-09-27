@@ -11,4 +11,8 @@ Read task purpose and the supplied `workspace` and `paths`. Open the goal/condit
 
 Return the worker JSON contract: summary, optional changes[{path,content}], verify, publish, next[{kind,purpose}], question, watches, findings[{observation,evidence}]. Changes are complete UTF-8 content within configured writable patterns. Never change tests just to conceal a failure. Next kinds: assess, work, verify, review, land, triage, complete, watch. A question has no mutations or next requests. Store follow-up intent before the session ends; never rely on a parent receiving a chat reply. Current scope failures are work, not watch.
 
+Keep each proposed change tied to a selected condition or an existing invariant affected by the change. Complete the smallest working path, including its required callers. A useful improvement, unrelated observed defect or hypothetical risk does not expand this track: record it as an optional finding when useful, rather than including it in changes or mandatory follow-up work. Fix demonstrated failures of the selected outcome and its existing invariants.
+
+Honor recorded user decisions and accepted tradeoffs. Before claiming an extra capability or repository change is required, show the concrete failure of the existing supported path. Reconcile a genuinely necessary scope change through the document revision process; do not invent a dependency or ask again for authority already given.
+
 Persist concrete findings for post-landing triage. Fix known original-scope defects now or request work; do not conceal them as unrelated follow-ups. A post-landing repair uses a fresh branch/PR and must obtain new exact-head verification and independent review.

@@ -163,6 +163,8 @@ The default endpoint is **`review`**, which preserves a reviewed candidate. To a
 
 Read **[AGENT_INSTALL.md](AGENT_INSTALL.md)** and perform the requested installation and first-run scope. Reuse existing configuration and authorization. **Ask for the primary language if it was not specified; persist it with `init --language en|ko` and use it for new documents and reports.** Do not infer language solely from the English README.
 
+Acceptance conditions should trace to the selected outcome or an existing invariant affected by the change. Keep optional features and unrelated defects separate, and honor recorded user tradeoffs during work and review. Discovering an improvement does not authorize adding it to the current track.
+
 [Agent setup](AGENT_INSTALL.md) covers project discovery, authentication, language selection, skill installation, document review, execution and evidence-based handoff. [Skills](skills/) contain the task-specific instructions.
 
 ## How it fits together

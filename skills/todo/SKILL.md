@@ -25,6 +25,10 @@ Use SVG, images, CSS, JavaScript, Canvas or Three.js when they help the user jud
 
 Required fields: `id`, `title`, `goal`, `scope`, `evidence`, `conditions[{id,text,method}]`. Preserve condition IDs across revisions. Include priority, area, group, design alternatives, dependencies, triggers, links, overlap analysis and verification plans when useful. Scale detail to uncertainty and scope; do not fill a fixed number of phases or pages.
 
+Ground required conditions in the requested outcome. For each, briefly identify the user requirement it satisfies, an existing invariant affected by this change, or a demonstrated failure within that scope; the existing `method` or visible analysis is sufficient. Discovery alone does not authorize fixing an unrelated defect. Keep optional improvements and implementation alternatives outside required conditions unless the user selects them. A possible future risk is not itself a prerequisite.
+
+Choose the smallest complete change that delivers the outcome. Check an existing supported path before declaring a new external feature necessary. Carry recorded user tradeoffs into the plan; do not silently replace them with stronger guarantees. If a new dependency is genuinely necessary, explain the concrete failure and reconcile scope using existing authority and the revision process below. Do not add backends, dashboards or exhaustive failure matrices merely because they might help. Omit unused template fields and placeholder decisions.
+
 Separate work that can proceed now from work awaiting a product decision or external dependency. Shared filenames alone do not prohibit parallel tracks. Never move unmet acceptance conditions to Watch to declare success.
 
 ## Register and verify
