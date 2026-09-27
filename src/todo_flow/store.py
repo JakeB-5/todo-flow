@@ -237,6 +237,9 @@ class Store:
                 "UPDATE tracks SET control=?,updated=? WHERE id=?", (state, time.time(), track)
             )
             if action == "cancel":
+                from .cancel_execution import record_requests
+
+                record_requests(self, c, track)
                 c.execute(
                     "UPDATE tasks SET status='cancelled',generation=generation+1,updated=? "
                     "WHERE track=? AND status IN ('queued','waiting','running')",
