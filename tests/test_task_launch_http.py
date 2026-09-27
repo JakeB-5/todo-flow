@@ -60,7 +60,7 @@ class TaskLaunchHttpTests(unittest.TestCase):
         self.assertIn(
             "do not prove worker start or completion", launch["summaries"]["en"]["process"]
         )
-        self.assertIn("미구현", launch["summaries"]["ko"]["native"])
+        self.assertIn("호환 워커", launch["summaries"]["ko"]["native"])
         self.assertIn("미실시", launch["summaries"]["ko"]["validation"])
         self.assertNotIn("PRIVATE_", json.dumps(result))
         self.assertEqual(receipt.read_bytes(), before)
@@ -85,7 +85,7 @@ class TaskLaunchHttpTests(unittest.TestCase):
             self.assertEqual(result["launch"]["attempt"], "launch-new")
             self.assertEqual(result["launch"]["evidence"], evidence)
             self.assertNotIn("Orca terminal", json.dumps(result["launch"]))
-            self.assertIn("not implemented", result["launch"]["summaries"]["en"]["native"])
+            self.assertIn("not recorded", result["launch"]["summaries"]["en"]["native"])
             self.assertEqual(result["launch"]["summaries"]["en"]["status"], "Not recorded")
             self.assertEqual(receipt.read_bytes(), before)
             if content is None:
@@ -142,3 +142,53 @@ class TaskLaunchHttpTests(unittest.TestCase):
             self.assertEqual(result["launch"]["summaries"]["en"]["backend"], "Headless process")
         for path, before in receipts.items():
             self.assertEqual(path.read_bytes(), before)
+
+    def test_native_associations_reach_http_without_private_launch_data(self):
+        task_id = self.create_task()
+        with self.s.transaction() as connection:
+            connection.execute(
+                "INSERT INTO attempts(id,task,started,status) VALUES(?,?,?,?)",
+                ("native-attempt", task_id, 1, "running"),
+            )
+        folder = self.s.path / "attempts/native-attempt"
+        folder.mkdir(parents=True)
+        receipt = folder / "launch.json"
+        receipt.write_text(
+            json.dumps(
+                {
+                    "backend": "orca",
+                    "execution_mode": "orca-native",
+                    "status": "viewer-accepted",
+                    "worktree": "repo::/candidate",
+                    "session": "thread-<script>",
+                    "turn": "turn-one",
+                    "terminal": {
+                        "handle": "terminal-one",
+                        "argv": ["PRIVATE_ARG"],
+                        "socket": "PRIVATE_SOCKET",
+                    },
+                    "selection": {
+                        "native_ready": True,
+                        "reason": "native_supported",
+                        "private": "PRIVATE_SELECTION",
+                    },
+                    "argv": ["PRIVATE_COMMAND"],
+                }
+            )
+        )
+        before = receipt.read_bytes()
+        result = self.get("/api/tasks/" + task_id)["launch"]
+        self.assertEqual(
+            result["record"],
+            {
+                "execution_mode": "orca-native",
+                "worktree": "repo::/candidate",
+                "session": "thread-<script>",
+                "turn": "turn-one",
+                "terminal": {"handle": "terminal-one"},
+            },
+        )
+        self.assertEqual(result["summaries"]["en"]["backend"], "Orca Codex session")
+        self.assertEqual(result["summaries"]["ko"]["backend"], "Orca Codex 세션")
+        self.assertNotIn("PRIVATE_", json.dumps(result))
+        self.assertEqual(receipt.read_bytes(), before)

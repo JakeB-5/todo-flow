@@ -108,10 +108,14 @@ def describe_launch(record, language="en"):
         "native": (
             "Native session adapter selected."
             if selection.get("native_ready")
-            else "Compatibility worker route selected.",
+            else "Compatibility worker route selected."
+            if backend
+            else "Native session selection not recorded.",
             "Native 세션 어댑터 선택됨."
             if selection.get("native_ready")
-            else "호환 워커 경로 선택됨.",
+            else "호환 워커 경로 선택됨."
+            if backend
+            else "Native 세션 선택 기록 없음.",
         )[index],
         "validation": (
             "Real-model and external live tests for this integration have not been performed.",

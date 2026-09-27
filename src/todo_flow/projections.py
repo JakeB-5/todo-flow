@@ -277,12 +277,23 @@ class Dashboard:
             ).fetchone()
         # Reuse the response attempt; a second lookup could select a newer attempt.
         launch = read_launch(self.store.path, a["id"] if a else None)
+        record = launch["record"] or {}
+        public = {}
+        if record.get("execution_mode") == "orca-native":
+            public["execution_mode"] = "orca-native"
+            for key in ("worktree", "session", "turn"):
+                if isinstance(record.get(key), str):
+                    public[key] = record[key]
+            terminal = record.get("terminal")
+            if isinstance(terminal, dict) and isinstance(terminal.get("handle"), str):
+                public["terminal"] = {"handle": terminal["handle"]}
         return {
             "task": dict(w),
             "attempt": dict(a) if a else None,
             "result": json.loads(r["body"]) if r else None,
-            # Only runtime labels cross the HTTP boundary, never raw receipt fields.
+            # Expose runtime labels and explicitly selected resource identifiers only.
             "launch": {
+                **({"record": public} if public else {}),
                 "attempt": launch["attempt"],
                 "evidence": launch["evidence"],
                 "summaries": {
