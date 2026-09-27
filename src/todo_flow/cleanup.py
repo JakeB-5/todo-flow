@@ -355,7 +355,9 @@ def cleanup_track(store, track_id, dry_run=False):
                         if delivery_error:
                             raise Conflict(delivery_error)
                         confirmed_landing(store, track, connection)
-                        evidence = orca_owner(store, track, value, config["repo"])
+                        evidence = orca_owner(
+                            store, track, value, config["repo"], connection=connection
+                        )
                         if evidence is None and item.get("orca"):
                             raise Conflict("Orca cleanup ownership is missing or changed")
                         if evidence is None and not owned_path(store, value):
@@ -365,7 +367,15 @@ def cleanup_track(store, track_id, dry_run=False):
                                 "A terminal still needs inspection; preserve its checkout"
                             )
                         orca = (
-                            OrcaCleanup(store, track, config["repo"], value, item, evidence)
+                            OrcaCleanup(
+                                store,
+                                track,
+                                config["repo"],
+                                value,
+                                item,
+                                evidence,
+                                connection=connection,
+                            )
                             if evidence is not None
                             else None
                         )

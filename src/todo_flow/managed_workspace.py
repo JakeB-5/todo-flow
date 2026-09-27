@@ -1,5 +1,6 @@
 """Fenced Orca checkout creation and recovery, called under Engine's Git lock."""
 
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -87,7 +88,7 @@ def _register(engine, task, observation):
     return Path(observation["path"])
 
 
-def ownership(store, track, root):
+def ownership(store, track, root, *, connection=None):
     """Read and bind creation evidence without requiring a live checkout or claim."""
     gate = WorkspaceCreationGate(store.path, track["id"])
     try:
@@ -114,7 +115,7 @@ def ownership(store, track, root):
         ):
             raise ValueError("Ownership evidence binding mismatch")
         origin = intent["claim"]
-        with store.connect() as connection:
+        with nullcontext(connection) if connection is not None else store.connect() as connection:
             row = connection.execute(
                 "SELECT task,generation FROM attempts WHERE id=?", (origin["attempt"],)
             ).fetchone()

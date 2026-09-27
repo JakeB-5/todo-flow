@@ -11,7 +11,7 @@ from .store import Conflict, fingerprint
 from .workspace_creation import WorkspaceCreationGate
 
 
-def owner(store, track, value, repo):
+def owner(store, track, value, repo, *, connection=None):
     """Only a bound creation receipt can authorize an external candidate path."""
     if value != track["workspace"]:
         return None
@@ -19,7 +19,7 @@ def owner(store, track, value, repo):
     if not managed._exists(managed.receipt_path(gate)):
         gate.require_clear()
         return None
-    receipt, intent = managed.ownership(store, track, repo)
+    receipt, intent = managed.ownership(store, track, repo, connection=connection)
     observation = receipt["observation"]
     if (
         observation["path"] != value
@@ -50,8 +50,9 @@ def ref_value(repo, ref):
 class OrcaCleanup:
     """Caller holds track, landing and Git locks and has checked delivery authority."""
 
-    def __init__(self, store, track, repo, value, item, evidence):
+    def __init__(self, store, track, repo, value, item, evidence, *, connection=None):
         self.store, self.track, self.repo = store, track, repo
+        self.connection = connection
         self.value, self.item, self.evidence = value, item, evidence
         self.old = evidence["observation"]
         if item.get("orca", evidence) != evidence:
@@ -65,7 +66,10 @@ class OrcaCleanup:
         """Require complete local coverage; never infer absence from a failed show."""
         from .cleanup import local_target, registered_worktrees
 
-        if owner(self.store, self.track, self.value, self.repo) != self.evidence:
+        if (
+            owner(self.store, self.track, self.value, self.repo, connection=self.connection)
+            != self.evidence
+        ):
             raise Conflict("Orca cleanup ownership changed")
         status = self.call(["status"])
         runtime = status["result"]["runtime"]
