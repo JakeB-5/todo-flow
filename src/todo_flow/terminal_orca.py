@@ -3,8 +3,8 @@
 Decision decision-95af607c8a6244a8 permits input racing after inspection.
 It does not permit skipping ownership, activity or exit checks. No external
 atomic-close API is required. Every response and close intent is retained;
-ptyKilled alone never releases capacity. Only a complete, same-runtime local
-inventory proving physical absence does that.
+ptyKilled alone never proves tab removal. Confirm absence in a complete,
+same-runtime local inventory.
 """
 
 import json
@@ -13,8 +13,7 @@ from pathlib import Path
 import subprocess
 
 from .maintenance import write_json
-from .terminal_retirement import TerminalObservation
-from .terminal_slots import TerminalCapacityError
+from .terminal_retirement import TerminalObservation, TerminalRetirementError
 
 
 IDENTITY_KEYS = (
@@ -69,9 +68,9 @@ class OrcaTerminalAdapter:
         )
         payload = json.loads(completed.stdout)
         if payload.get("_meta", {}).get("runtimeId") != self.creation["runtimeId"]:
-            raise TerminalCapacityError("Orca runtime changed; preserve the original resource")
+            raise TerminalRetirementError("Orca runtime changed; preserve the original resource")
         if completed.returncode or payload.get("ok") is not True:
-            raise TerminalCapacityError("Orca observation failed; inspect retirement journal")
+            raise TerminalRetirementError("Orca observation failed; inspect retirement journal")
         return payload["result"]
 
     def inspect(self, resource):
@@ -150,7 +149,7 @@ class OrcaTerminalAdapter:
             return observed("busy", "Terminal identity or title changed", current)
         # The process receipt precedes the bridge's final print and PTY exit.
         # A short wait allows immediate retirement without killing that bridge.
-        # A negative/failed wait leaves capacity charged and is reobserved later.
+        # A negative/failed wait preserves this terminal for later cleanup.
         waited = self.request(
             ["wait", "--terminal", current["handle"], "--for", "exit", "--timeout-ms", "1000"]
         ).get("wait", {})
@@ -198,14 +197,14 @@ class OrcaTerminalAdapter:
             or proof["runtimeId"] != self.creation["runtimeId"]
             or any(current.get(k) != self.recorded[k] for k in IDENTITY_KEYS)
         ):
-            raise TerminalCapacityError("Close lacks an attributed exit observation")
+            raise TerminalRetirementError("Close lacks an attributed exit observation")
         previous = json.loads(self.journal.read_text())
         if any(event.get("close_intent") for event in previous):
-            raise TerminalCapacityError(
+            raise TerminalRetirementError(
                 "Close was already dispatched or interrupted; reobserve only"
             )
         self.record({"close_intent": True, "observation": proof})
-        # The ledger's closing state and this intent precede dispatch. Recovery
+        # The per-execution close intent precedes dispatch. Recovery
         # never repeats it, including when the CLI response or journal write fails.
         # Decision DECISION explicitly permits input racing after inspection.
         self.request(["close", "--terminal", current["handle"]])

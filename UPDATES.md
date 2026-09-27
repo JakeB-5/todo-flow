@@ -28,6 +28,8 @@ Version `0.0.4` adds commit, review and verification-process boundary checks wit
 
 Version `0.0.5` adds declared verification-input identity, durable process cleanup, bounded terminal lifecycle and supported native Orca/Codex sessions. State/configuration formats and worker/skill protocols remain unchanged. Legacy verification success without identity needs fresh verification. `init --verify-identity` applies to new state; existing configuration is not rewritten by an upgrade. Update project skills to receive the scope-grounded planning, work and review guidance. Native sessions currently support Codex CLI 0.157.1; compatibility routes and local-only validation limits are documented in [operations](OPERATIONS.md#native-orca-worker-sessions).
 
+Version `0.0.6` removes the exact Codex version gate, credential-file restrictions and terminal-count admission checks. Native workers reuse the existing Codex login; old terminal records and capacity ledgers remain historical evidence and require no migration before another worker starts. Completed proposals survive deferred viewer cleanup. State/configuration and worker/skill protocol versions are unchanged; update project skills for the revised execution guidance.
+
 ## 1. Inspect and stop relevant processes
 
 ```sh
@@ -47,11 +49,11 @@ All cooperating processes must use the same `TODO_FLOW_HOME`. Process locks are 
 
 This path requires an existing **`uv tool install` installation** and `uv` on PATH. Source checkouts, editable environments, ordinary virtualenv installations and uv tool installs with custom extra requirements/options or entrypoints are diagnosed rather than overwritten. Update those environments using their original workflow while idle, then run project compatibility and skill checks.
 
-Download the wheel and `SHA256SUMS` from the [v0.0.5 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.5), verify its checksum, then pass the local wheel path:
+Download the wheel and `SHA256SUMS` from the [v0.0.6 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.6), verify its checksum, then pass the local wheel path:
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.5-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.5-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.6-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.6-py3-none-any.whl
 ```
 
 The plan shows versions, artifact digest, compatibility contracts and known projects. Execution rechecks those facts under an exclusive runtime lock, snapshots the artifact, backs up the installed environment and two entrypoints, invokes uv, and checks the installed version, entrypoints and bundled skills. An ordinary install/validation failure restores the previous environment. Upgrades do not change project configuration, documents, claims or remote state.

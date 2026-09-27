@@ -306,11 +306,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(len(snapshot["triages"]), 2)
         self.assertEqual(list(inventory.iterdir()), [])
         self.assertEqual(len(closed), len(receipts))
-        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
-        self.assertLessEqual(ledger["max_owned"], 3)
-        self.assertEqual(len(ledger["slots"]), len(receipts))
-        for slot in ledger["slots"].values():
-            self.assertEqual(slot["history"][-1]["state"], "closed")
+        self.assertFalse((self.s.path / "terminal-slots.json").exists())
         for receipt in receipts:
             folder = receipt.parent
             retirement = json.loads((folder / "terminal-retirement.json").read_text())
@@ -318,23 +314,19 @@ class IntegrationTests(unittest.TestCase):
             self.assertTrue((folder / "output.json").is_file())
             self.assertTrue((folder / "launch.json").is_file())
 
-    def test_unsupported_terminal_driver_stops_without_losing_physical_capacity(self):
+    def test_unsupported_terminal_cleanup_does_not_block_parallel_tracks(self):
         engine, inventory = self.terminal_fixture()
         engine.run(jobs=2, max_tasks=20)
         snapshot = self.s.snapshot()
-        self.assertTrue(all(t["status"] != "done" for t in snapshot["tracks"]))
-        decisions = [d for d in snapshot["decisions"] if d["status"] == "open"]
-        self.assertEqual(len(decisions), 2)
-        self.assertTrue(all("terminal-slots.json" in d["question"] for d in decisions))
+        self.assertTrue(
+            all(t["status"] == "done" for t in snapshot["tracks"]), encode(snapshot["decisions"])
+        )
+        self.assertFalse([d for d in snapshot["decisions"] if d["status"] == "open"])
         receipts = list((self.s.path / "attempts").glob("*/terminal-process.json"))
-        self.assertEqual(len(receipts), 2)
+        self.assertGreaterEqual(len(receipts), 6)
         self.assertTrue(all(json.loads(p.read_text())["cleanup_confirmed"] for p in receipts))
-        self.assertEqual(len(list(inventory.iterdir())), 2)
-        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
-        self.assertEqual(ledger["max_owned"], 2)
-        self.assertEqual(len(ledger["slots"]), 2)
-        for slot in ledger["slots"].values():
-            self.assertEqual(slot["history"][-1]["state"], "quarantined")
+        self.assertEqual(len(list(inventory.iterdir())), len(receipts))
+        self.assertFalse((self.s.path / "terminal-slots.json").exists())
         for receipt in receipts:
             report = json.loads((receipt.parent / "terminal-retirement.json").read_text())
             self.assertEqual(report["status"], "preserved")

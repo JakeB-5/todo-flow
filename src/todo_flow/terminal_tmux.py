@@ -13,8 +13,7 @@ import re
 import stat
 import subprocess
 
-from .terminal_retirement import TerminalObservation
-from .terminal_slots import TerminalCapacityError
+from .terminal_retirement import TerminalObservation, TerminalRetirementError
 
 
 def socket_identity(socket):
@@ -78,4 +77,4 @@ class TmuxTerminalAdapter:
         return TerminalObservation("absent", resource, proof)
 
     def close(self, observation):
-        raise TerminalCapacityError("Tmux adapter only confirms automatic window removal")
+        raise TerminalRetirementError("Tmux adapter only confirms automatic window removal")

@@ -13,8 +13,8 @@ import time
 from .orca_capabilities import probe_native_contract
 from .maintenance import write_json
 from .process_launch import LaunchGate
-from .process_inventory import note_prepared
-from .terminal_capacity import accept_terminal, reserve_terminal
+from .process_inventory import ProcessInventory, note_prepared
+from .terminal_tmux import socket_identity
 from .verification import VerificationCleanupError
 
 
@@ -69,16 +69,6 @@ class LauncherUnavailable(RuntimeError):
 
 
 def select_launcher(config, workspace):
-    launcher = _select_launcher(config, workspace)
-    if launcher["backend"] != "headless":
-        launcher["terminal_limits"] = {
-            "concurrency": config.get("terminal_concurrency", 2),
-            "idle": config.get("terminal_idle_limit", 1),
-        }
-    return launcher
-
-
-def _select_launcher(config, workspace):
     mode = config.get("worker_launcher", "auto")
     if mode not in ("auto", "headless", "orca", "tmux", "terminal"):
         raise ValueError("Unknown worker_launcher: " + str(mode))
@@ -282,9 +272,6 @@ class TerminalProcess:
 def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=None):
     argv = [shutil.which(argv[0]) or argv[0], *argv[1:]]
     spec = {"argv": argv, "cwd": workspace, "title": title}
-    # Charge the shared ledger before any bridge command can reach the backend.
-    # An interruption from this point onward must not silently refund capacity.
-    reservation = reserve_terminal(launcher, launch_identity, folder)
     if launch_identity is not None:
         # The caller supplies the canonical store/track/attempt and a fresh
         # execution ID. Persist intent before exposing the bridge command.
@@ -306,9 +293,15 @@ def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=
     bridge = str(Path(__file__).with_name("terminal_worker.py"))
     command = shlex.join([sys.executable, bridge, str(folder / "terminal-spec.json")])
     record = {**launcher, "status": "launching", "title": title}
-    if reservation is not None:
-        record["terminal_slot"] = reservation[1]
-        record["terminal_ledger"] = str(reservation[0].path)
+    if launch_identity is not None:
+        inventory = ProcessInventory(identity["directory"], identity["track"], identity["attempt"])
+        claim = inventory.read()["claim"] if inventory.path.exists() else {}
+        record["owner"] = {
+            **{key: identity[key] for key in ("track", "attempt", "execution")},
+            **claim,
+        }
+    if launcher["backend"] == "tmux":
+        record["tmux_socket_identity"] = socket_identity(launcher.get("socket"))
     write_json(folder / "launch.json", record)
     try:
         if launcher["backend"] == "orca":
@@ -354,9 +347,6 @@ def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=
             result = subprocess.run(args, capture_output=True, text=True, timeout=10, check=True)
             record["handle"] = result.stdout.strip()
         record["status"] = "accepted"
-        accepted = accept_terminal(reservation, record, folder)
-        if accepted is not None:
-            record["terminal_slot"] = accepted
     except BaseException:
         record["status"] = "unconfirmed"
         process.stop()

@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -22,8 +21,6 @@ from .maintenance import write_json
 from .native_proposal import NativeProposalBinding
 from .native_recovery import recover
 from .store import Store
-from .terminal_capacity import accept_terminal
-from .terminal_slots import TerminalSlots
 from .unix_websocket import UnixWebSocket
 from .workspace_creation import _write_exclusive
 
@@ -41,29 +38,20 @@ DISABLED = (
 )
 
 
-def prepare_home(folder, workspace, auth_source):
-    home = folder / "native-home"
-    home.mkdir(mode=0o700)
-    config = (
-        'approval_policy = "never"\nsandbox_mode = "read-only"\n'
-        'cli_auth_credentials_store = "file"\nproject_doc_max_bytes = 0\n'
-        'web_search = "disabled"\n[analytics]\nenabled = false\n[features]\n'
-        + "\n".join(name + " = false" for name in DISABLED)
-        + "\n[projects."
-        + json.dumps(workspace)
-        + ']\ntrust_level = "untrusted"\n'
-    )
-    (home / "config.toml").write_text(config)
-    if auth_source:
-        fd = os.open(auth_source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as source:
-            info = os.fstat(source.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_size > 1_000_000:
-                raise ValueError("Unsupported native authentication file")
-            out = os.open(home / "auth.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(out, "wb") as destination:
-                shutil.copyfileobj(source, destination)
-    return home
+def server_overrides(workspace):
+    """Keep worker policy separate from Codex's existing login storage."""
+    settings = [
+        'approval_policy="never"',
+        'sandbox_mode="read-only"',
+        "project_doc_max_bytes=0",
+        'web_search="disabled"',
+        "analytics.enabled=false",
+        'developer_instructions=""',
+        "notify=[]",
+        "projects={" + json.dumps(workspace) + '={trust_level="untrusted"}}',
+        *(f"features.{name}=false" for name in DISABLED),
+    ]
+    return [part for setting in settings for part in ("-c", setting)]
 
 
 def _orca(spec, args):
@@ -147,23 +135,10 @@ def retire_viewer(spec, record, viewer, folder):
         raise RuntimeError("Native viewer process state is unknown")
     # The user permits input racing this checked close. The exec command cannot
     # return to a user shell; a live client must have a confirmed PTY kill.
-    launch_path = folder / "launch.json"
-    launch = json.loads(launch_path.read_text()) if launch_path.exists() else None
-    if "terminal_limits" in spec:
-        limits = spec["terminal_limits"]
-        slots = TerminalSlots(
-            spec["state"], concurrency=limits["concurrency"], idle_limit=limits["idle"]
-        )
-        closing = slots.transition(
-            launch["terminal_slot"],
-            "closing",
-            evidence={
-                "launch_record": str(launch_path),
-                "server_exit": record["server_exit"],
-                "ownership_checked": viewer["handle"],
-            },
-        )
-        write_json(launch_path, {**launch, "terminal_slot": closing})
+    _write_exclusive(
+        folder / "native-viewer-close-intent.json",
+        {"terminal": viewer, "runtime_id": record["runtime_id"]},
+    )
     closed = _orca(spec, ["terminal", "close", "--terminal", viewer["handle"]])
     _write_exclusive(folder / "native-viewer-close.json", closed)
     receipt = closed["result"]["close"]
@@ -214,7 +189,7 @@ def run(spec):
         "status": "prepared",
     }
     _write_exclusive(journal_path, record)
-    home = prepare_home(folder, spec["workspace"], spec.get("auth_source"))
+    home = Path(spec["codex_home"])
     socket_directory = Path(tempfile.mkdtemp(prefix="tf-native-", dir="/tmp"))
     socket_path = socket_directory / "server.sock"
     server = None
@@ -222,21 +197,7 @@ def run(spec):
     viewer = None
     result = None
     cleanup_error = None
-    env = {
-        key: os.environ[key]
-        for key in (
-            "PATH",
-            "HOME",
-            "LANG",
-            "TMPDIR",
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "NO_PROXY",
-            "OPENAI_API_KEY",
-        )
-        if key in os.environ
-    }
+    env = dict(os.environ)
     env.update(CODEX_HOME=str(home), TERM="xterm-256color")
 
     def save(status, **fields):
@@ -257,7 +218,13 @@ def run(spec):
         connection.send(message)
 
     try:
-        argv = [spec["codex"], "app-server", "--listen", "unix://" + str(socket_path)]
+        argv = [
+            spec["codex"],
+            "app-server",
+            "--listen",
+            "unix://" + str(socket_path),
+            *server_overrides(spec["workspace"]),
+        ]
         save("server-intent", socket=str(socket_path), argv=argv)
         with (folder / "native-server.log").open("wb") as log:
             # No new session/process group: the outer supervisor owns all children.
@@ -281,6 +248,9 @@ def run(spec):
             while connection.state != "initialized-response":
                 connection.receive(client.receive())
             send(client, connection.initialized())
+            send(client, connection.read_config(spec["workspace"]))
+            while connection.state != "ready":
+                connection.receive(client.receive())
             request = connection.start_thread(spec["workspace"])
             if spec.get("model"):
                 request["params"]["model"] = spec["model"]
@@ -374,17 +344,6 @@ def run(spec):
             ):
                 raise ValueError("Native viewer ownership was not confirmed")
             viewer = candidate
-            limits = spec["terminal_limits"]
-            slots = TerminalSlots(
-                spec["state"], concurrency=limits["concurrency"], idle_limit=limits["idle"]
-            )
-            launch_path = folder / "launch.json"
-            launch = json.loads(launch_path.read_text())
-            launch["terminal"] = viewer
-            launch["terminal_slot"] = accept_terminal(
-                (slots, launch["terminal_slot"]), launch, folder
-            )
-            write_json(launch_path, launch)
             save(
                 "viewer-accepted",
                 terminal=viewer,
@@ -437,14 +396,11 @@ def run(spec):
         if viewer is not None:
             try:
                 retire_viewer(spec, record, viewer, folder)
-            except BaseException as error:
-                cleanup_error = error
+            except Exception as error:
+                cleanup_error = str(error)
         # The outer live supervisor proves group cleanup, including tool descendants.
-        (home / "auth.json").unlink(missing_ok=True)
         shutil.rmtree(socket_directory)
-        save("cleanup-failed" if cleanup_error else "server-stopped")
-        if cleanup_error:
-            raise RuntimeError("Native viewer cleanup requires reconciliation") from cleanup_error
+        save("server-stopped", viewer_cleanup_error=cleanup_error)
     if result is None:
         raise RuntimeError("Native attempt has no complete proposal")
     if _current(spec, binding) != binding:

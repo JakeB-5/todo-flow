@@ -2,6 +2,20 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## 0.0.6 — 2026-09-28
+
+### Fixed
+
+- Remove the exact Codex CLI version gate and credential-file restrictions from native worker selection. Reuse the existing Codex login without copying credentials, while retaining read-only execution and disabling inherited MCP tools for the worker.
+- Remove terminal-count limits, capacity ledgers and project-wide historical terminal admission checks. Old launch records and ledger files no longer block new workers and remain preserved as historical evidence.
+- Preserve completed native proposals when terminal viewer cleanup is deferred. Keep process termination, exact session/HEAD checks and protection of user-owned terminals.
+
+### Changed
+
+- Remove the unused intermediate headless supervisor and tests for retired capacity restrictions. Continue cleaning each owned terminal after its worker exits.
+- Run one Linux/Python 3.11 job for normal code changes. Version-only releases run lint, package build and clean installation checks without repeating the runtime suite; dependency and updater changes retain relevant checks. The four-environment Linux/macOS × Python matrix remains available through manual dispatch.
+- Keep state/configuration formats and worker/skill protocols unchanged. Old terminal concurrency/idle settings no longer impose an additional admission limit; `--jobs` still controls driver task concurrency.
+
 ## 0.0.5 — 2026-09-27
 
 ### Added

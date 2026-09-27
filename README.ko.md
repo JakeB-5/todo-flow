@@ -84,11 +84,11 @@ https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md에 따라
 직접 설치할 때는 Python 3.11+, uv, Git과 인증된 Claude/Codex CLI가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.5/todo_flow-0.0.5-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.6/todo_flow-0.0.6-py3-none-any.whl
 todo-flow --version
 ```
 
-[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.5). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
+[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.6). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
 
 초기 커밋과 `origin`이 있는 대상 프로젝트로 이동합니다. 아래는 Python 프로젝트 예시이므로 검증 명령·기준 브랜치·파일 범위를 실제 프로젝트에 맞게 지정하세요.
 
@@ -175,7 +175,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 **DB 서버가 필요한가요?** 없습니다. 프로젝트의 `todo/` 또는 지정한 STATE가 정본이고 SQLite는 삭제 가능한 조회 캐시입니다.
 
-**복수 트랙은 얼마나 실행하나요?** 여러 ID를 전달할 수 있습니다. `--jobs`는 한 드라이버의 동시 작업 상한이며 기본 2입니다. 선정한 트랙 수를 뜻하지 않습니다.
+**복수 트랙은 얼마나 실행하나요?** 여러 ID를 전달할 수 있습니다. `--jobs`는 한 드라이버의 동시 작업 상한이며 기본 2입니다. 선정한 트랙 수를 뜻하지 않습니다. 별도의 터미널 개수 제한은 없으며, 과거 터미널 기록 때문에 새 워커를 차단하지 않습니다.
 
 **비용은요?** 프로그램은 MIT이며 모델·외부 서비스 비용은 연결한 계정의 요금에 따릅니다. 병렬 작업은 모델 사용량을 늘릴 수 있습니다.
 
@@ -185,7 +185,9 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 ## 현재 범위
 
-**0.0.5의 변경 사항:** 선언한 검증기 입력을 추적하고, 프로세스 소유권 증거를 보존하며 정리합니다. 작업자 터미널의 용량과 종료를 관리하고, 지원되는 Orca/Codex 환경에서는 네이티브 작업자 세션을 사용할 수 있습니다. [실행 경계](OPERATIONS.md#review-landing-and-completion)를 참고하세요.
+**0.0.6의 변경 사항:** native 워커가 버전 고정·인증 파일 제한 없이 기존 Codex 로그인을 사용합니다. 터미널 개수와 과거 실행 기록으로 새 워커를 차단하지 않으며, 뷰어 정리가 보류돼도 완료된 제안을 보존합니다. 버전만 변경하는 릴리즈 CI는 전체 실행 테스트를 반복하지 않습니다.
+
+**0.0.5에서 추가:** 선언한 검증기 입력의 식별, 프로세스 소유권·종료 근거 보존, Orca/Codex native 워커 세션. [실행 경계](OPERATIONS.md#review-landing-and-completion)를 참고하세요.
 
 **0.0.3의 변경 사항:** 충돌 복구 시 최신 기준 브랜치를 작업 브랜치에 병합하고, 충돌 증거를 경로로 제공합니다. 해결 후 새 검증과 독립 리뷰를 거쳐 랜딩하며, 중단이나 질문 후에도 기록된 병합을 이어갑니다. [복구 동작](OPERATIONS.md#review-landing-and-completion)을 참고하세요.
 
@@ -193,7 +195,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 완료된 트랙의 임시 체크아웃과 재사용되지 않은 워커 터미널은 자동 정리하며 문서·로그·결과·Git 브랜치는 보존합니다. 사용자 변경이나 소유권을 확인할 수 없는 항목은 이유를 기록하고 남깁니다. 점검을 위해 작업 공간을 유지하려면 `--no-auto-cleanup`을 사용하세요. [정리와 재시도](OPERATIONS.md#cleanup-migration-and-hooks)를 참고하세요.
 
-최신 릴리스는 **0.0.5**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
+최신 릴리스는 **0.0.6**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
 
 - 상태 하나당 저장소 하나. Forgejo·서브모듈·복수 저장소 결합 랜딩 미지원.
 - 개발 브랜치의 기본 워커는 읽기 전용 도구로 저장소를 탐색하고 JSON 변경안을 반환합니다. 엔진이 변경 적용·검증·반영을 담당하며 브라우저 작업은 미지원입니다.
@@ -205,4 +207,4 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 버그·개선 제안은 저장소 Issues에 공개 가능한 최소 재현과 함께 남겨주세요. `docs/`는 로컬 기록용이며 사용·빌드에 필요하지 않습니다.
 
-Orca Native 실행은 소유권이 확인된 관리 작업공간과 격리된 Codex App Server 세션을 사용하며 Codex CLI 0.157.1 프로토콜을 지원합니다. 화면의 Codex 클라이언트는 작업 요청 수락 후 정확한 서버·세션에 연결되고, 읽기 전용 제안은 서버 프로토콜로 반환됩니다. 명시적 headless는 유지합니다. 기존 Git 작업공간, 미검증 Codex 버전, 지원하지 않는 인증 저장 방식, 리뷰 출처 기록이 없는 경우에는 이유를 표시한 호환 경로를 사용합니다. CLI와 대시보드는 기록된 작업공간·세션·작업·터미널 연결을 보여 줍니다. 합성 프로토콜·프로세스 테스트를 포함하며 외부 실제 모델 수용 시험을 수행했다고 주장하지 않습니다.
+Orca Native 실행은 소유권이 확인된 관리 작업공간과 격리된 Codex App Server 세션을 사용하며 Codex App Server 프로토콜로 통신합니다. 화면의 Codex 클라이언트는 작업 요청 수락 후 정확한 서버·세션에 연결되고, 읽기 전용 제안은 서버 프로토콜로 반환됩니다. 명시적 headless는 유지합니다. Codex 버전이나 인증 저장 방식으로 실행 경로를 제한하지 않습니다. 기존 Codex 로그인을 사용하고 실제 프로토콜 응답을 검증합니다. 기존 Git 작업공간이나 리뷰 출처 기록이 없는 경우에는 이유를 표시한 호환 경로를 사용합니다. CLI와 대시보드는 기록된 작업공간·세션·작업·터미널 연결을 보여 줍니다. 합성 프로토콜·프로세스 테스트를 포함하며 외부 실제 모델 수용 시험을 수행했다고 주장하지 않습니다.

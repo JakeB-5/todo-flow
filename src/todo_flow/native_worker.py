@@ -14,11 +14,7 @@ from .managed_workspace import receipt_path
 from .process_inventory import launch_identity
 from .store import Store
 from .supervised_process import SupervisedProcess
-from .terminal_capacity import reserve_terminal
 from .workspace_creation import WorkspaceCreationGate, _write_exclusive
-
-
-SUPPORTED_CODEX = "codex-cli 0.157.1"
 
 
 def preflight(config, context, task, state, launcher):
@@ -40,11 +36,6 @@ def preflight(config, context, task, state, launcher):
     if not codex:
         return None, "native_codex_missing"
     try:
-        version = subprocess.run(
-            [codex, "--version"], capture_output=True, text=True, timeout=10, check=True
-        ).stdout.strip()
-        if version != SUPPORTED_CODEX:
-            return None, "native_codex_version_unverified"
         owned = json.loads(ownership.read_text())
         if type(owned.get("version")) is not int or owned["version"] != 1:
             raise ValueError("Unsupported managed ownership")
@@ -68,9 +59,6 @@ def preflight(config, context, task, state, launcher):
             raise ValueError("Native workspace identity changed")
     except (OSError, ValueError, KeyError, subprocess.SubprocessError):
         return None, "native_contract_probe_failed"
-    source = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "auth.json"
-    if source.is_symlink() or (not source.is_file() and not os.environ.get("OPENAI_API_KEY")):
-        return None, "native_auth_storage_unsupported"
     implementation_sessions = []
     if task["kind"] == "review":
         # Only host-produced native records supply session provenance. Older exec
@@ -91,7 +79,7 @@ def preflight(config, context, task, state, launcher):
         "codex": codex,
         "cli": launcher["cli"],
         "worktree": shown["id"],
-        "auth_source": str(source) if source.is_file() else None,
+        "codex_home": str(Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).absolute()),
         "implementation_sessions": implementation_sessions,
     }, "native_supported"
 
@@ -104,19 +92,6 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
     if supported is None:
         return None
     identity = launch_identity(state, task)
-    # Charge the same capacity ledger used by command terminals before the
-    # native adapter can create a visible client. Uncertainty retains this lease.
-    reservation = reserve_terminal(launcher, identity, folder)
-    slots, lease = reservation
-    write_json(
-        folder / "launch.json",
-        {
-            **launcher,
-            "status": "selected",
-            "terminal_slot": lease,
-            "terminal_ledger": str(slots.path),
-        },
-    )
     # Per-task intent spans replacement attempts: uncertain delivery is never
     # hidden by creating a second server/thread or switching to codex exec.
     intent = Path(state) / ("native-task-" + task["id"] + ".json")
@@ -132,7 +107,6 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
     )
     spec = {
         **supported,
-        "terminal_limits": slots.limits,
         "folder": str(folder),
         "state": str(state),
         "task": task,
@@ -168,22 +142,6 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
         finally:
             if process.poll() is None:
                 process.stop()
-            proof = folder / "native-viewer-retired.json"
-            if proof.is_file():
-                launch = json.loads((folder / "launch.json").read_text())
-                current = launch["terminal_slot"]
-                if current["owner"] != lease["owner"] or current["state"] != "closing":
-                    raise RuntimeError("Native capacity ownership changed")
-                closed = slots.transition(
-                    current,
-                    "closed",
-                    evidence={
-                        "launch_record": str(folder / "launch.json"),
-                        "physical_retirement": str(proof),
-                        "process_confirmation": str(process.gate.barrier.path),
-                    },
-                )
-                write_json(folder / "launch.json", {**launch, "terminal_slot": closed})
         if process.returncode:
             raise RuntimeError(
                 "Native worker failed; inspect its durable session and stderr evidence"

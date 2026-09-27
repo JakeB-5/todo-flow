@@ -84,7 +84,7 @@ def check_finished(store, original, connection):
 
 def terminal_cleanup(folder, dry_run):
     launch = read_json(folder / "launch.json")
-    if "terminal_slot" in launch or "terminal_ledger" in launch:
+    if "owner" in launch or "terminal_slot" in launch:
         return retire_launch(folder, dry_run=dry_run)
     backend = launch.get("backend")
     if not backend or backend == "headless":

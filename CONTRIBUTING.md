@@ -62,11 +62,11 @@ Test observable behavior and relevant recovery boundaries. Do not add tests that
 
 Packaging changes should work without ignored local files. Verify the source distribution includes shared guides, license and examples, and that wheels contain the dashboard, translations, skills and template assets. Installed skills must work outside this source checkout.
 
-GitHub Actions is configured for macOS and Linux with Python 3.11 and 3.13, using uv 0.10.11 and explicitly installed ripgrep. Configuration alone does not establish a successful hosted run; report local and hosted validation separately.
+Normal code changes run one Linux/Python 3.11 job, using uv 0.10.11 and explicitly installed ripgrep. **Actions → Checks → Run workflow → full** runs the Linux/macOS × Python 3.11/3.13 matrix when cross-platform validation is needed. Report local and hosted validation separately.
 
-Automatic checks run on pushes to `main` and on pull requests, except when all changed files are root-level Markdown guides, `assets/` presentation files or local `docs/`. Mixed documentation/code changes still run the full matrix. Skill Markdown under `skills/`, runtime/dashboard code, templates, tests, scripts, dependencies and workflow configuration remain covered. Feature-branch pushes are checked through their pull request; tag pushes do not repeat the matrix already run for the release commit.
+Automatic checks run on pushes to `main` and pull requests, except root-level Markdown guides, `assets/` presentation files and local `docs/` changes alone. `scripts/ci_changes.py` compares metadata contents: changing only the project version in `pyproject.toml`, the editable package version in `uv.lock`, and the fallback version in `release.py` runs lint, build and clean wheel installation checks without the runtime suite. Dependency, build configuration and real source changes still run tests. Bundled skill and updater changes also run the isolated update smoke, once on Python 3.11 per selected OS.
 
-Use **Actions → Checks → Run workflow** when a full matrix is needed regardless of changed paths, including release preparation after documentation-only changes. A newer run cancels an older run for the same event and branch or pull request. Before making these checks required in branch protection, add an always-reported gate: GitHub's workflow-level path skips leave required checks pending.
+Tag pushes do not repeat release-commit CI. Newer runs cancel older runs for the same event and branch or pull request. Before making these checks required in branch protection, add an always-reported gate: workflow-level path skips leave required checks pending.
 
 ## Demos and external acceptance
 
@@ -98,11 +98,11 @@ Record behavior, compatibility and important fixes under `Unreleased`. Prepare t
 
 The initial distribution is a Python package containing the `todo-flow` and `trackrun` CLIs, dashboard assets and installable project skills. It does not include a native agent-plugin manifest or marketplace package.
 
-For `0.0.5`, keep `pyproject.toml`, `uv.lock` and both README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
+For `0.0.6`, keep `pyproject.toml`, `uv.lock` and both README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
 
 ```sh
 uv lock
-uv build --out-dir dist/0.0.5
+uv build --out-dir dist/0.0.6
 ```
 
 Verify the wheel installs in a clean environment and includes skill templates, dashboard translations and the MIT license. Confirm the source distribution includes the public guides and excludes local `docs/`. Keep the changelog under `Unreleased` until publication. Tagging, GitHub Releases and package-index uploads are separate release actions.

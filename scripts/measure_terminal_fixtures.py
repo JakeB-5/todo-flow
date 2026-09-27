@@ -102,8 +102,6 @@ class Fixture:
             "worker_launcher": "terminal" if backend == "custom" else backend,
             "terminal_command": ["fixture-terminal", "{command}"],
             "worker_timeout": 40,
-            "terminal_concurrency": 2,
-            "terminal_idle_limit": 1,
         }
 
     def journal(self, name, event):
@@ -464,18 +462,8 @@ class Fixture:
                 evidence={name: digest(folder / name) for name in names},
             )
         except Exception as error:
-            if (
-                type(error).__name__ == "TerminalCapacityError"
-                and type(error).__module__ == "todo_flow.terminal_slots"
-            ):
-                with self.lock:
-                    dispatched = any(b["folder"] == folder for b in self.bridges.values())
-                if dispatched or (folder / "terminal-spec.json").exists():
-                    raise ValueError("Capacity rejection occurred after dispatch") from error
-                record.update(outcome="blocked", error=str(error))
-            else:
-                record.update(outcome="failed", error=repr(error))
-                raise
+            record.update(outcome="failed", error=repr(error))
+            raise
         finally:
             with self.lock:
                 self.executions.append(record)
@@ -519,16 +507,11 @@ class Fixture:
                         self.wait_pair(barrier_wait)
                         remaining = list(range(2, count))
                         if self.backend != "headless":
-                            before = len(self.bridges)
                             third = submit(2)
                             outcome = third.result(timeout=5)
                             self.admission = outcome
-                            if candidate and (outcome != "blocked" or len(self.bridges) != before):
-                                raise ValueError(
-                                    "Third visible request was not blocked before create"
-                                )
-                            if not candidate and outcome != "completed":
-                                raise ValueError("Baseline unexpectedly rejected admission")
+                            if outcome != "completed":
+                                raise ValueError("Terminal count unexpectedly rejected a worker")
                             self.sample("third-request-returned-with-barrier-held")
                         self.release.touch()
                         if first.result(timeout=60) != "completed":
@@ -537,9 +520,6 @@ class Fixture:
                             raise ValueError("Second worker did not complete")
                         if self.backend != "headless":
                             remaining.remove(2)
-                            if self.admission == "blocked" and self.backend != "custom":
-                                if submit(2, retry=1).result(timeout=60) != "completed":
-                                    raise ValueError("Released capacity did not admit the retry")
                     for number in remaining:
                         submit(number).result(timeout=60)
                 finally:
@@ -558,19 +538,11 @@ class Fixture:
                 raise ValueError("Incomplete collection: " + repr(self.errors))
             self.check_evidence()
             report = self.report()
-            expected_completed = 2 if candidate and self.backend == "custom" else count
+            expected_completed = count
             if report["completed"] != expected_completed:
                 raise ValueError("Unexpected completed request count")
-            if candidate:
-                if report["max_owned_tabs"] > 3 or report["max_active_worker_processes"] > 2:
-                    raise ValueError("Candidate resource bound exceeded")
-                if self.backend == "custom":
-                    if report["blocked_requests"] != count - 2 or report["preserved"] != 2:
-                        raise ValueError(
-                            "Custom backend did not retain two and block the remainder"
-                        )
-                elif report["preserved"] != 0:
-                    raise ValueError("Candidate retained an owned tab")
+            if candidate and self.backend != "custom" and report["preserved"] != 0:
+                raise ValueError("Candidate retained an owned tab")
             if self.backend == "headless" and report["created"] != 0:
                 raise ValueError("Headless unexpectedly created a terminal")
             if schedule == "saturation" and report["max_active_worker_processes"] < 2:
@@ -705,8 +677,8 @@ def main():
         "limitations": [
             "Terminal CLI responses are synthetic; this is not a live terminal measurement",
             "Active worker processes are sampled; the barrier separately proves overlap",
-            "Headless has no terminal admission limit",
-            "Baseline is measured without candidate capacity assertions",
+            "Terminal counts are measured, not used as worker admission limits",
+            "Custom terminal shells are preserved when no safe close adapter exists",
         ],
     }
     save(output / "method.json", method)

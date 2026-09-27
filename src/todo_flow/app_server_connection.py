@@ -38,6 +38,7 @@ class AppServerConnection:
         self._thread = None
         self._turn = None
         self._collector = None
+        self._mcp_servers = None
         self._buffer = []
         self._buffer_bytes = 0
         self._max_buffer_bytes = max_buffer_bytes
@@ -84,7 +85,23 @@ class AppServerConnection:
 
     def start_thread(self, workspace):
         self._require("ready")
-        return self._request("thread/start", thread_start_params(workspace), "thread-pending")
+        params = thread_start_params(workspace)
+        if self._mcp_servers is not None:
+            params["config"] = {
+                "mcp_servers": {name: {"enabled": False} for name in self._mcp_servers}
+            }
+        return self._request("thread/start", params, "thread-pending")
+
+    def read_config(self, workspace):
+        """Discover inherited MCP registrations before starting worker tools.
+
+        Authentication stays in Codex. Never persist configuration responses,
+        which may contain credentials; retain only the names to disable.
+        """
+        self._require("ready")
+        return self._request(
+            "config/read", {"cwd": workspace, "includeLayers": False}, "config-pending"
+        )
 
     def start_turn(self, workspace, prompt):
         self._require("thread-ready")
@@ -146,6 +163,16 @@ class AppServerConnection:
                 if not isinstance(result.get(key), str):
                     raise ValueError("Incomplete App Server initialize response")
             self._state = "initialized-response"
+        elif method == "config/read":
+            self._require("config-pending")
+            config = result.get("config")
+            if not isinstance(config, dict):
+                raise ValueError("Incomplete App Server configuration response")
+            servers = config.get("mcp_servers", {})
+            if not isinstance(servers, dict):
+                raise ValueError("Invalid App Server MCP configuration")
+            self._mcp_servers = tuple(servers)
+            self._state = "ready"
         elif method == "thread/start":
             self._require("thread-pending")
             self._thread = self._identity(result, "thread")

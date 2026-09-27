@@ -158,6 +158,46 @@ class AppServerConnectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.connection.start_turn("/workspace", "duplicate")
 
+    def test_inherited_mcp_tools_are_disabled_without_forwarding_credentials(self):
+        self.initialize()
+        request = self.connection.read_config("/workspace")
+        with self.assertRaises(ValueError):
+            self.connection.start_thread("/workspace")
+        self.connection.receive(
+            {
+                "id": request["id"],
+                "result": {
+                    "config": {
+                        "cli_auth_credentials_store": "keyring",
+                        "mcp_servers": {
+                            "tool.with.dots": {
+                                "command": "must-not-run",
+                                "env": {"TOKEN": "synthetic-secret"},
+                            }
+                        },
+                    }
+                },
+            }
+        )
+        thread = self.connection.start_thread("/workspace")
+        self.assertEqual(
+            thread["params"]["config"],
+            {"mcp_servers": {"tool.with.dots": {"enabled": False}}},
+        )
+        self.assertNotIn("synthetic-secret", json.dumps(thread))
+
+    def test_invalid_config_response_cannot_start_worker_tools(self):
+        for config in (None, [], {"mcp_servers": []}):
+            with self.subTest(config=config):
+                self.setUp()
+                self.initialize()
+                request = self.connection.read_config("/workspace")
+                with self.assertRaises(ValueError):
+                    self.connection.receive({"id": request["id"], "result": {"config": config}})
+                self.assertEqual(self.connection.state, "failed")
+                with self.assertRaises(ValueError):
+                    self.connection.start_thread("/workspace")
+
     def test_response_ids_are_exact_and_errors_fail_closed(self):
         for response in (
             {"id": 99, "result": {}},

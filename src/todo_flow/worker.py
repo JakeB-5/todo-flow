@@ -482,9 +482,7 @@ def run_worker(config, context, task, state, heartbeat):
                 if proc.returncode is None:
                     proc.stop()
                 if (folder / "launch.json").exists():
-                    launch = json.loads((folder / "launch.json").read_text())
-                    if "terminal_slot" in launch or "terminal_ledger" in launch:
-                        retire_launch(folder)
+                    retire_launch(folder)
             else:
                 proc.stop()
     if adapter["type"] == "codex":

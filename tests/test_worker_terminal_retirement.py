@@ -10,7 +10,6 @@ from todo_flow.cleanup import terminal_cleanup
 from todo_flow.launchers import TerminalProcess
 from todo_flow.process_inventory import note_prepared
 from todo_flow.process_launch import LaunchGate
-from todo_flow.terminal_capacity import accept_terminal, reserve_terminal
 from todo_flow.terminal_release import retire_launch
 from todo_flow.terminal_retirement import TerminalObservation
 from todo_flow.verification import VerificationCleanupError
@@ -55,8 +54,6 @@ class WorkerTerminalRetirementTests(unittest.TestCase):
 
     def spawn(self, launcher, argv, workspace, folder, title, *, launch_identity):
         self.identity = launch_identity
-        reservation = reserve_terminal(launcher, launch_identity, folder)
-        self.slots = reservation[0]
         self.gate = LaunchGate.prepare(**launch_identity, backend="synthetic")
         note_prepared(launch_identity)
         with self.gate.launching():
@@ -66,10 +63,12 @@ class WorkerTerminalRetirementTests(unittest.TestCase):
             "backend": "synthetic",
             "handle": "physical-1",
             "status": "accepted",
-            "terminal_ledger": str(self.slots.path),
+            "owner": {
+                **{k: launch_identity[k] for k in ("track", "attempt", "execution")},
+                "task": "task",
+                "generation": 1,
+            },
         }
-        self.lease = accept_terminal(reservation, record, folder)
-        record["terminal_slot"] = self.lease
         self.write("launch.json", record)
         self.write("output.json", {"summary": "Synthetic result"})
         self.write("terminal-process.json", {"status": "running", "pid": 0})
@@ -98,9 +97,7 @@ class WorkerTerminalRetirementTests(unittest.TestCase):
         )
 
     def close(self, observation):
-        current = self.slots.snapshot()["slots"][self.lease["slot"]]["history"][-1]
-        self.assertEqual(current["state"], "closing")
-        self.assertEqual(current["evidence"]["activity_token"], observation.activity_token)
+        self.assertTrue((self.folder / "terminal-close-intent.json").exists())
         if self.refuse:
             self.activity = "incarnation-1:user-input-2"
         if observation.activity_token != self.activity:
@@ -155,7 +152,7 @@ class WorkerTerminalRetirementTests(unittest.TestCase):
             )
 
     def state(self):
-        return self.slots.snapshot()["slots"][self.lease["slot"]]["history"][-1]["state"]
+        return json.loads((self.folder / "terminal-retirement.json").read_text())["status"]
 
     def assert_closed_once(self):
         self.assertEqual(self.state(), "closed")
@@ -197,12 +194,12 @@ class WorkerTerminalRetirementTests(unittest.TestCase):
             self.execute()
         with patch("todo_flow.terminal_release.terminal_adapter", return_value=self):
             self.assertEqual(terminal_cleanup(self.folder, False)["status"], "preserved")
-        self.assertEqual(self.state(), "active")
+        self.assertEqual(self.state(), "preserved")
         self.assertEqual((self.probes, self.closes), (0, 0))
 
-    def test_unsupported_backend_remains_charged(self):
+    def test_unsupported_backend_preserves_terminal_and_result(self):
         self.execute(supported=False)
-        self.assertEqual(self.state(), "quarantined")
+        self.assertEqual(self.state(), "preserved")
         self.assertEqual(self.closes, 0)
         self.assertTrue(self.present)
 
@@ -211,33 +208,52 @@ class WorkerTerminalRetirementTests(unittest.TestCase):
         self.execute()
         with patch("todo_flow.terminal_release.terminal_adapter", return_value=self):
             self.assertEqual(terminal_cleanup(self.folder, False)["status"], "preserved")
-        self.assertEqual(self.state(), "closing")
+        self.assertEqual(self.state(), "preserved")
         self.assertEqual(self.closes, 0)
         self.assertTrue(self.present)
 
     def test_lost_close_response_preserves_result_and_reconciles_without_reclose(self):
         self.lose_response = True
         self.assertEqual(self.execute()["summary"], "Synthetic result")
-        self.assertEqual(self.state(), "closing")
+        self.assertEqual(self.state(), "preserved")
         with patch("todo_flow.terminal_release.terminal_adapter", return_value=self):
             self.assertEqual(terminal_cleanup(self.folder, False)["status"], "closed")
         self.assertEqual(self.closes, 1)
 
-    def test_dry_run_does_not_probe_or_mutate_ledger(self):
+    def test_dry_run_does_not_mutate_cleanup_record(self):
         self.execute(supported=False)
-        before = self.slots.path.read_bytes()
+        before = (self.folder / "terminal-retirement.json").read_bytes()
         with patch("todo_flow.terminal_release.terminal_adapter", return_value=self):
             self.assertEqual(terminal_cleanup(self.folder, True)["status"], "preserved")
-        self.assertEqual(self.slots.path.read_bytes(), before)
+        self.assertEqual((self.folder / "terminal-retirement.json").read_bytes(), before)
         self.assertEqual((self.probes, self.closes), (0, 0))
 
     def test_misattributed_launch_cannot_reach_adapter(self):
         self.execute(supported=False)
         record = json.loads((self.folder / "launch.json").read_text())
-        record["terminal_slot"]["owner"]["execution"] = "another-execution"
+        record["owner"]["execution"] = "another-execution"
         self.write("launch.json", record)
         with patch("todo_flow.terminal_release.terminal_adapter", return_value=self):
             report = terminal_cleanup(self.folder, False)
         self.assertEqual(report["status"], "preserved")
         self.assertIn("identity", report["reason"])
         self.assertEqual((self.probes, self.closes), (0, 0))
+
+    def test_legacy_ownership_can_clean_without_reading_or_rewriting_capacity_ledger(self):
+        self.execute(supported=False)
+        launch = json.loads((self.folder / "launch.json").read_text())
+        prior = json.loads((self.folder / "terminal-retirement.json").read_text())
+        launch["terminal_slot"] = {
+            "owner": launch.pop("owner"),
+            "resource": prior["resource"],
+            "state": "active",
+        }
+        ledger = self.root / "terminal-slots.json"
+        ledger.write_text("historical ledger is not an execution prerequisite")
+        launch["terminal_ledger"] = str(ledger)
+        self.write("launch.json", launch)
+        before = {path: path.read_bytes() for path in (ledger, self.folder / "launch.json")}
+        with patch("todo_flow.terminal_release.terminal_adapter", return_value=self):
+            self.assertEqual(retire_launch(self.folder)["status"], "closed")
+        self.assertEqual(self.closes, 1)
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
