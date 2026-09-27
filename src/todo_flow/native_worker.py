@@ -131,17 +131,18 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
             timeout=spec["timeout"] + 10,
             env=dict(os.environ),
         )
-        if on_pid:
-            on_pid(process.pid)
         try:
             deadline = time.monotonic() + spec["timeout"] + 10
+            heartbeat_at = 0
             while process.poll() is None:
+                if on_pid and time.monotonic() >= heartbeat_at:
+                    on_pid(process.pid)
+                    heartbeat_at = time.monotonic() + 1
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Native worker timed out; do not resend")
                 time.sleep(0.05)
         finally:
-            if process.poll() is None:
-                process.stop()
+            process.stop()
         if process.returncode:
             raise RuntimeError(
                 "Native worker failed; inspect its durable session and stderr evidence"

@@ -136,12 +136,36 @@ class EngineVerificationArtifactTests(unittest.TestCase):
         self.assertNotIn("calc.py", self.receipt(workspace)["files"])
         self.assertEqual((workspace / "calc.py").read_text(), "# changed\n")
 
+    def test_cancel_after_artifact_creation_retains_proof_without_verification_result(self):
+        engine, task, workspace = self.prepare("import time\ntime.sleep(60)\n")
+        engine.config["verify_timeout"] = 10
+        check_claim = engine.check_claim
+        cancelled = False
+
+        def cancel_after_artifacts(current):
+            nonlocal cancelled
+            if not cancelled and all((workspace / name).exists() for name in GENERATED):
+                cancelled = True
+                self.s.control("addition", "cancel")
+            check_claim(current)
+
+        with patch.object(engine, "check_claim", side_effect=cancel_after_artifacts):
+            with self.assertRaisesRegex(Conflict, "Stale claim"):
+                engine.verify(task, workspace)
+        self.assertTrue(cancelled)
+        engine.process_barrier(task["track"]).require_clear()
+        self.assertEqual(self.receipt(workspace)["phase"], "complete")
+        self.assertEqual(set(self.removable(workspace)), set(GENERATED))
+        self.assertIsNone(self.s.track("addition")["verification"])
+        self.assertFalse((self.s.path / "attempts" / task["attempt"] / "verification.json").exists())
+
     def assert_uncertain_run(self, stage, error):
         engine, task, workspace = self.prepare()
         process = Mock()
-        process.wait.return_value = 0
-        if stage == "wait":
-            process.wait.side_effect = error
+        process.poll.return_value = 0
+        process.returncode = 0
+        if stage == "poll":
+            process.poll.side_effect = error
         elif stage == "stop":
             process.stop.side_effect = error
 
@@ -170,7 +194,7 @@ class EngineVerificationArtifactTests(unittest.TestCase):
         self.assert_uncertain_run("launch", ProcessBarrierError("unconfirmed launch"))
 
     def test_process_barrier_error_does_not_complete_artifact_receipt(self):
-        self.assert_uncertain_run("wait", ProcessBarrierError("unconfirmed process"))
+        self.assert_uncertain_run("poll", ProcessBarrierError("unconfirmed process"))
 
     def test_unconfirmed_stop_does_not_complete_artifact_receipt(self):
         self.assert_uncertain_run("stop", VerificationCleanupError("unconfirmed stop"))

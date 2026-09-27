@@ -131,11 +131,13 @@ def stop_group(proc, *, collect_output=True):
     return output
 
 
-def run_supervised(argv, workspace, timeout, identity, env=None):
+def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
     from .process_barrier import ProcessBarrierError
     from .supervised_process import SupervisedProcess
     from .verification_artifacts import Capture
 
+    if check is not None:
+        check()
     # Engine reaches this boundary only for an actual execution, after its
     # cache and input checks, with the existing durable launch identity.
     # Non-Git standalone callers still receive the same process supervision.
@@ -157,7 +159,16 @@ def run_supervised(argv, workspace, timeout, identity, env=None):
         )
         uncertain = False
         try:
-            code = proc.wait(timeout + 15)
+            deadline = time.monotonic() + timeout + 15
+            while proc.poll() is None:
+                if check is not None:
+                    check()
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired("process supervisor", timeout + 15)
+                time.sleep(0.1)
+            code = proc.returncode
+            if check is not None:
+                check()
         except (ProcessBarrierError, VerificationCleanupError):
             uncertain = True
             raise
@@ -181,9 +192,9 @@ def run_supervised(argv, workspace, timeout, identity, env=None):
         return (out + err).strip()
 
 
-def run(argv, workspace, timeout, env=None, *, launch_identity=None):
+def run(argv, workspace, timeout, env=None, *, launch_identity=None, check=None):
     if launch_identity is not None:
-        return run_supervised(argv, workspace, timeout, launch_identity, env=env)
+        return run_supervised(argv, workspace, timeout, launch_identity, env=env, check=check)
     # Standalone callers receive the same ownership contract. Preserve evidence
     # on failure; only a successfully confirmed run removes its temporary state.
     import shutil
@@ -196,6 +207,6 @@ def run(argv, workspace, timeout, env=None, *, launch_identity=None):
         "attempt": "standalone",
         "execution": uuid.uuid4().hex,
     }
-    result = run_supervised(argv, workspace, timeout, identity, env=env)
+    result = run_supervised(argv, workspace, timeout, identity, env=env, check=check)
     shutil.rmtree(folder)
     return result
