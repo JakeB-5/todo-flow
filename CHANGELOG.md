@@ -2,6 +2,30 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## 0.0.5 — 2026-09-27
+
+### Added
+
+- Declare verification inputs with `init --verify-identity`: track selected files, environment digests and a nonce alongside exact-candidate evidence. Changed or unavailable inputs invalidate cached success; legacy evidence requires fresh verification.
+- Support native Orca-managed Codex worker sessions for the verified Codex CLI 0.157.1 protocol, with owned workspaces, isolated App Server sessions, exact thread/turn associations and fresh review provenance. Launch status and the dashboard expose the recorded mode and compatibility reason.
+- Add bounded worker-terminal capacity, durable retirement evidence and synthetic terminal/native-session measurement scripts.
+
+### Fixed
+
+- Preserve process ownership and cleanup evidence across worker/verification exit, interruption and recovery. Unknown process or terminal cleanup blocks replacement instead of allowing uncertain duplicate launches.
+- Retire owned idle Orca/tmux worker terminals with checked identity and activity, retain uncertain resources for inspection, and account for existing terminals before dispatch.
+
+### Changed
+
+- Ground planning, work, review and starter-template acceptance conditions in the selected outcome and affected invariants; preserve user tradeoffs and keep optional improvements outside required scope.
+- Document verification-input limits, native-session compatibility and this repository's initial self-hosting setup. State/configuration formats and worker/skill protocols remain unchanged.
+
+### Validation
+
+- Published `0.0.4` to `0.0.5` engine upgrade, skill update/rollback and engine rollback passed in an isolated installation; canonical state, pending work and language bindings remained unchanged.
+- Synthetic future-version update checks passed, including active-dashboard exclusion, failed-update rollback and recovery with the CLI missing. Synthetic wheels are test fixtures only.
+- Native-session coverage uses local synthetic server/CLI/process fixtures; real-model/external live acceptance for the new native route has not been performed.
+
 ## 0.0.4 — 2026-09-25
 
 ### Fixed

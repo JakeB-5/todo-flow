@@ -92,11 +92,11 @@ track that covers this request, then report the actual result and next steps.
 Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Install the published release:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.4/todo_flow-0.0.4-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.5/todo_flow-0.0.5-py3-none-any.whl
 todo-flow --version
 ```
 
-[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.4). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
+[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.5). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
 
 In the **target project**, use its real verification command, base branch and relevant file patterns. This example assumes an existing Python project with a test suite, an initial Git commit and an `origin` remote:
 
@@ -118,7 +118,7 @@ Open **http://127.0.0.1:8765**. Ask your agent to use the installed todo skill, 
 
 ### Declare verification inputs
 
-The source implementation supports `init --verify-identity`. Check `todo-flow init --help` on the installed engine first; the published `0.0.4` wheel is not assumed to support this option. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:
+Version `0.0.5` supports `init --verify-identity`. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:
 
 ```sh
 --verify-identity '{"version":1,"files":["/absolute/verification/verify.py","/absolute/python/bin/python3","uv.lock"],"environment":["PATH","VERIFY_MODE"],"nonce":"baseline-1"}'
@@ -224,7 +224,7 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 ## Current scope
 
-**New in 0.0.4:** proposal commits preserve unrelated staged changes, verification and review check a clean checkout at the exact candidate commit, and timed-out verification stops its process group before more work proceeds. See [execution boundaries](OPERATIONS.md#review-landing-and-completion).
+**New in 0.0.5:** verification tracks declared runner inputs, process cleanup preserves ownership evidence, worker terminals have bounded capacity and retirement, and supported Orca/Codex installations can use native worker sessions. See [execution boundaries](OPERATIONS.md#review-landing-and-completion).
 
 **New in 0.0.3:** integration repairs merge the current base into the candidate checkout, expose conflict evidence by path and require new verification and independent review before landing. Interrupted repairs and decision answers retain the recorded merge. See [repair behavior](OPERATIONS.md#review-landing-and-completion).
 
@@ -232,7 +232,7 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 Completed tracks automatically clean disposable checkouts and unchanged worker terminals while retaining documents, logs, results and Git branches. Resources with user changes or unconfirmed ownership are kept with a reason. Use `--no-auto-cleanup` to retain resources for inspection; see [cleanup and retry](OPERATIONS.md#cleanup-migration-and-hooks).
 
-Latest release: **0.0.4**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
+Latest release: **0.0.5**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
 - Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.

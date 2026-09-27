@@ -84,11 +84,11 @@ https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md에 따라
 직접 설치할 때는 Python 3.11+, uv, Git과 인증된 Claude/Codex CLI가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.4/todo_flow-0.0.4-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.5/todo_flow-0.0.5-py3-none-any.whl
 todo-flow --version
 ```
 
-[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.4). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
+[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.5). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
 
 초기 커밋과 `origin`이 있는 대상 프로젝트로 이동합니다. 아래는 Python 프로젝트 예시이므로 검증 명령·기준 브랜치·파일 범위를 실제 프로젝트에 맞게 지정하세요.
 
@@ -109,7 +109,7 @@ Claude 세션에는 `.claude/skills`를 사용합니다. 스킬은 프로젝트 
 
 ### 검증 입력 선언
 
-소스 구현은 `init --verify-identity`를 지원합니다. 공개 `0.0.4` wheel에도 있다고 가정하지 말고 설치된 엔진의 `todo-flow init --help`를 먼저 확인하세요. **새 상태를 초기화할 때** 실제 `init` 명령에 아래와 같은 인자를 추가합니다. 예시 경로는 검증기가 실제 사용하는 기존 파일 경로로 바꾸세요.
+`0.0.5`는 `init --verify-identity`를 지원합니다. **새 상태를 초기화할 때** 실제 `init` 명령에 아래와 같은 인자를 추가합니다. 예시 경로는 검증기가 실제 사용하는 기존 파일 경로로 바꾸세요.
 
 ```sh
 --verify-identity '{"version":1,"files":["/absolute/verification/verify.py","/absolute/python/bin/python3","uv.lock"],"environment":["PATH","VERIFY_MODE"],"nonce":"baseline-1"}'
@@ -185,7 +185,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 ## 현재 범위
 
-**0.0.4의 변경 사항:** 제안 파일만 커밋해 기존 스테이징을 보존하고, 검증·리뷰 시 깨끗한 작업 폴더와 정확한 커밋을 확인합니다. 검증 시간 초과 시 프로세스 그룹을 종료·확인한 뒤 다음 작업으로 진행합니다. [실행 경계](OPERATIONS.md#review-landing-and-completion)를 참고하세요.
+**0.0.5의 변경 사항:** 선언한 검증기 입력을 추적하고, 프로세스 소유권 증거를 보존하며 정리합니다. 작업자 터미널의 용량과 종료를 관리하고, 지원되는 Orca/Codex 환경에서는 네이티브 작업자 세션을 사용할 수 있습니다. [실행 경계](OPERATIONS.md#review-landing-and-completion)를 참고하세요.
 
 **0.0.3의 변경 사항:** 충돌 복구 시 최신 기준 브랜치를 작업 브랜치에 병합하고, 충돌 증거를 경로로 제공합니다. 해결 후 새 검증과 독립 리뷰를 거쳐 랜딩하며, 중단이나 질문 후에도 기록된 병합을 이어갑니다. [복구 동작](OPERATIONS.md#review-landing-and-completion)을 참고하세요.
 
@@ -193,7 +193,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 완료된 트랙의 임시 체크아웃과 재사용되지 않은 워커 터미널은 자동 정리하며 문서·로그·결과·Git 브랜치는 보존합니다. 사용자 변경이나 소유권을 확인할 수 없는 항목은 이유를 기록하고 남깁니다. 점검을 위해 작업 공간을 유지하려면 `--no-auto-cleanup`을 사용하세요. [정리와 재시도](OPERATIONS.md#cleanup-migration-and-hooks)를 참고하세요.
 
-최신 릴리스는 **0.0.4**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
+최신 릴리스는 **0.0.5**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
 
 - 상태 하나당 저장소 하나. Forgejo·서브모듈·복수 저장소 결합 랜딩 미지원.
 - 개발 브랜치의 기본 워커는 읽기 전용 도구로 저장소를 탐색하고 JSON 변경안을 반환합니다. 엔진이 변경 적용·검증·반영을 담당하며 브라우저 작업은 미지원입니다.
