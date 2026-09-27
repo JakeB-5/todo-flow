@@ -17,6 +17,7 @@ from . import verification_identity
 from .checkout import require_clean
 from .verification_evidence import require_current
 from .claim_recovery import recover_expired_claim
+from .cancel_execution import reconcile_cancelled
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
 from .process_inventory import ProcessInventory, launch_identity
@@ -61,6 +62,10 @@ class Engine:
             reason="Unattributed cleanup failure requires supervisor reconciliation",
             evidence=evidence,
         )
+
+    def check_claim(self, task):
+        with self.store.connect() as connection:
+            self.store.assert_claim(connection, task)
 
     def update(self, task, **values):
         allowed = {
@@ -122,6 +127,7 @@ class Engine:
 
     def verify(self, task, workspace):
         self.process_barrier(task["track"]).require_clear()
+        self.check_claim(task)
         if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
             raise Conflict("Verification requires a committed, resolved merge")
         head = require_clean(workspace)
@@ -158,10 +164,11 @@ class Engine:
                 timeout=self.config.get("verify_timeout", 180),
                 env=environment,
                 launch_identity=launch_identity(self.store.path, task),
+                check=lambda: self.check_claim(task),
             )
             ok, error = True, None
-        except ProcessBarrierError:
-            # Uncertain launch/cleanup evidence blocks further work.
+        except (Conflict, ProcessBarrierError):
+            # Stale claims and uncertain cleanup cannot become verification results.
             raise
         except (
             RuntimeError,
@@ -318,6 +325,7 @@ class Engine:
         }
 
     def record_review(self, task, result, expected_head=None):
+        self.check_claim(task)
         t = self.store.track(task["track"])
         if expected_head is not None and t["head"] != expected_head:
             raise Conflict("Review candidate changed during the worker session")
@@ -350,8 +358,7 @@ class Engine:
         }
         if self.remote and t["pr"]:
             review["receipt"] = self.remote.post_review(task, t, result)
-        self.update(task, review=encode(review))
-
+        self.update(task, review=encode(review))n
     def gate(self, task):
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
@@ -604,6 +611,7 @@ class Engine:
                         self.store.path,
                         lambda pid: self.store.heartbeat(task, pid),
                     )
+                    self.check_claim(task)
                     if task["kind"] == "review":
                         require_clean(workspace, context["head"])
                     if repair and not result.get("question"):
@@ -686,6 +694,8 @@ class Engine:
         finally:
             stop.set()
             thread.join(timeout=1)
+            # process_attempt has released its lock and sealed the launch inventory.
+            reconcile_cancelled(self.store, track=task["track"])
         if adopted:
             self.cleanup_finished(task["track"])
 
@@ -773,7 +783,7 @@ class Engine:
                 ).fetchall()
             ]
         deferred = []
-        blocked_tracks = set()
+        blocked_tracks = reconcile_cancelled(self.store)
         for task in expired:
             try:
                 recover_expired_claim(self.store, task)
