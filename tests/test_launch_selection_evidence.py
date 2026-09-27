@@ -113,15 +113,15 @@ class LaunchSelectionEvidenceTests(unittest.TestCase):
     def test_evidence_write_failure_prevents_launch(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            original = Path.write_text
+            original = os.replace
 
-            def write(path, content, *args, **kwargs):
-                if path.name == "launch.json":
+            def replace(source, destination, *args, **kwargs):
+                if Path(destination).name == "launch.json":
                     raise OSError("fixture evidence storage unavailable")
-                return original(path, content, *args, **kwargs)
+                return original(source, destination, *args, **kwargs)
 
             with (
-                patch.object(Path, "write_text", write),
+                patch("todo_flow.maintenance.os.replace", side_effect=replace),
                 patch("todo_flow.worker.SupervisedProcess") as process,
                 patch("todo_flow.worker.spawn_terminal") as terminal,
             ):
