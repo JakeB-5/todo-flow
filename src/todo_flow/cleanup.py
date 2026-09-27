@@ -7,6 +7,7 @@ import subprocess
 import time
 
 from .adapters import command, file_lock
+from .cleanup_orca import OrcaCleanup, owner as orca_owner
 from .launchers import orca_result
 from .maintenance import guarded, write_json
 from .process_barrier import ProcessBarrier
@@ -354,12 +355,33 @@ def cleanup_track(store, track_id, dry_run=False):
                         if delivery_error:
                             raise Conflict(delivery_error)
                         confirmed_landing(store, track, connection)
-                        if not owned_path(store, value):
-                            raise Conflict("Path is not an owned local runtime worktree")
+                        evidence = orca_owner(store, track, value, config["repo"])
+                        if evidence is None and item.get("orca"):
+                            raise Conflict("Orca cleanup ownership is missing or changed")
+                        if evidence is None and not owned_path(store, value):
+                            raise Conflict("Path is not an owned runtime worktree")
                         if terminal_wait:
                             raise Conflict(
                                 "A terminal still needs inspection; preserve its checkout"
                             )
+                        orca = (
+                            OrcaCleanup(store, track, config["repo"], value, item, evidence)
+                            if evidence is not None
+                            else None
+                        )
+                        if orca is not None:
+                            if not orca.inspect():
+                                orca.branches(absent=True, dry_run=dry_run)
+                                item["status"] = (
+                                    "removed" if item.get("removalIntent") else "absent"
+                                )
+                                item.pop("reason", None)
+                                item.pop("orcaRemovalError", None)
+                                continue
+                            if item.get("orcaRemovalIntent"):
+                                raise Conflict(
+                                    "Previous Orca removal remains unconfirmed; do not dispatch it again"
+                                )
                         target = item.get("target")
                         if not exists and not registered:
                             if target and os.path.lexists(target["checkout"]["gitdir"]):
@@ -400,7 +422,10 @@ def cleanup_track(store, track_id, dry_run=False):
                             if local_target(path) != current:
                                 raise Conflict("Cleanup target changed before Git removal")
                             reclaim(store.path, track_id, path, dry_run=True)
-                            command(["git", "worktree", "remove", value], config["repo"])
+                            if orca is None:
+                                command(["git", "worktree", "remove", value], config["repo"])
+                            else:
+                                orca.remove(lambda: write_json(destination, report))
                             if (
                                 os.path.lexists(path)
                                 or str(path.resolve()) in registered_worktrees(config["repo"])
@@ -422,6 +447,9 @@ def cleanup_track(store, track_id, dry_run=False):
                 finally:
                     if not dry_run:
                         write_json(destination, report)
+        report["branchesPreserved"] = all(
+            item.get("branchPreserved", True) for item in report["worktrees"]
+        )
         report["status"] = (
             "deferred"
             if delivery_error
