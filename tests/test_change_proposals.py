@@ -63,7 +63,9 @@ class ChangeSchemaTests(unittest.TestCase):
 
     def test_both_formats_pass_worker_and_native_schema(self):
         changes = [{"path": "new.py", "content": "# 새 파일\n"}, self.edit]
-        self.assertEqual(validate({"summary": "제안", "changes": changes}, "work")["changes"], changes)
+        self.assertEqual(
+            validate({"summary": "제안", "changes": changes}, "work")["changes"], changes
+        )
         self.assertEqual(self.native(changes)["changes"], changes)
 
     def test_unknown_mixed_and_malformed_formats_are_rejected(self):
@@ -346,5 +348,6 @@ class ReplacementRepairTests(unittest.TestCase):
             (workspace / "calc.py").read_bytes(), test_integration_repair.RESOLVED.encode()
         )
         self.assertEqual(
-            (workspace / "upstream.txt").read_text(), "Upstream addition outside the write surface\n"
+            (workspace / "upstream.txt").read_text(),
+            "Upstream addition outside the write surface\n",
         )

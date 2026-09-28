@@ -171,6 +171,18 @@ class InterruptedProposalTests(unittest.TestCase):
     def test_real_postcommit_interrupt_recovers_exact_commit_without_replaying_worker(self):
         engine, task, workspace = self.workspace()
         changes = self.changes(workspace)
+        changes.append(
+            {
+                "path": "test_calc.py",
+                "content": (
+                    "import unittest\n"
+                    "from calc import add\n\n"
+                    "class AdditionTests(unittest.TestCase):\n"
+                    "    def test_sum(self):\n"
+                    "        self.assertEqual(add(2, 3), 5)\n"
+                ),
+            }
+        )
         record = interrupt(self, engine, task, workspace, changes, "after-commit")
         head = command(["git", "rev-parse", "HEAD"], workspace)
         self.assertNotEqual(head, record["intent"]["before_head"])
@@ -182,7 +194,10 @@ class InterruptedProposalTests(unittest.TestCase):
         self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), head)
         self.assertEqual(application.read(engine, task["track"])["phase"], "committed")
         self.assertEqual(self.s.track(task["track"])["head"], head)
-        self.assertTrue(json.loads(self.s.track(task["track"])["verification"])["ok"])
+        verification = json.loads(self.s.track(task["track"])["verification"])
+        self.assertTrue(verification["ok"], verification["output"])
+        self.assertEqual(verification["head"], head)
+        self.assertIn("test_sum", verification["output"])
         self.assertFalse(self.s.snapshot()["decisions"])
 
     def test_same_legacy_and_edit_proposal_are_idempotent(self):
@@ -294,7 +309,8 @@ class InterruptedRepairTests(unittest.TestCase):
         self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), head)
         self.assertIsNone(integration.pending(self.s.track(task["track"])))
         self.assertEqual(
-            (workspace / "upstream.txt").read_text(), "Upstream addition outside the write surface\n"
+            (workspace / "upstream.txt").read_text(),
+            "Upstream addition outside the write surface\n",
         )
         self.assertTrue(json.loads(self.s.track(task["track"])["verification"])["ok"])
         self.assertEqual(

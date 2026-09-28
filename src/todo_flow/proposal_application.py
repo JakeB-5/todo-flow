@@ -158,8 +158,7 @@ def adopt(engine, task, workspace, record):
         ):
             raise Conflict("Integration repair resolution receipt changed")
     if not record["intent"]["repair"] and (
-        head != record["intent"]["before_head"]
-        or engine.store.track(task["track"])["head"] != head
+        head != record["intent"]["before_head"] or engine.store.track(task["track"])["head"] != head
     ):
         engine.update(task, head=head, review=None, verification=None, landing=None)
     record = {**record, "phase": "committed", "head": head}
