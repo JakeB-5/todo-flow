@@ -1,5 +1,11 @@
 # Repository Guidelines
 
+## User-requested scope
+
+Always work only within the scope the user actually requested or explicitly authorized. Do not independently expand the task with additional fixes, cleanup, refactors, or improvements, even when they are related to the requested work.
+Perform the verification, review, and delivery needed for that authorized scope. Report newly discovered issues separately; discovering an issue does not authorize fixing it, reopening a completed track, or starting follow-up work.
+Once the requested outcome is delivered, stop. Additional work requires an explicit user request. Clearly distinguish completed delivery from any separately authorized follow-up work in status reports.
+
 ## Layout
 
 - `src/todo_flow/`: Python CLI, canonical HTML/Markdown documents and JSON files, disposable query cache, dispatcher, agent/GitHub adapters, loopback dashboard.

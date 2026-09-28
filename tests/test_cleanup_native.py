@@ -10,6 +10,8 @@ from unittest.mock import patch
 import test_cleanup_orca
 from todo_flow import managed_workspace as managed
 from todo_flow.cleanup import receipt_path, terminal_cleanup
+from todo_flow.process_inventory import ProcessInventory
+from todo_flow.process_launch import LaunchGate
 
 
 def native_evidence(folder, repo, worktree="owned-worktree"):
@@ -98,6 +100,57 @@ def inventory(rows=()):
             "hostScope": {"hostIds": ["local"], "omittedHostIds": []},
         },
     }
+
+
+def supervised_exit(folder, records):
+    """Synthetic owner journal; no real process or saved PID is signalled."""
+    state = folder.parent.parent
+    task = records["native-spec.json"]["task"]
+    task["generation"] = 1
+    records["native-session.json"]["task"] = task
+    processes = ProcessInventory(state, task["track"], folder.name, task["id"], 1)
+    processes.start()
+    identity = processes.register()
+    processes.prepared(identity["execution"])
+    gate = LaunchGate.prepare(**identity, backend="native-orca")
+    with gate.launching():
+        pass
+    event = gate._event()
+    gate.barrier.advance(
+        folder.name,
+        identity["execution"],
+        "cleaning",
+        expected_revision=event["revision"],
+        reason="Synthetic owning supervisor cleanup",
+        evidence={"fixture": "owning-supervisor"},
+    )
+    event = gate._event()
+    gate.barrier.advance(
+        folder.name,
+        identity["execution"],
+        "confirmed",
+        expected_revision=event["revision"],
+        reason="Synthetic owner confirmed group exit",
+        evidence={
+            "outcome": "group-exited",
+            "returncode": -15,
+            "proof": "Synthetic original owner retained its process handle",
+            "identity": {key: identity[key] for key in ("track", "attempt", "execution")},
+        },
+    )
+    processes.seal()
+    records["native-spec.json"].update(
+        state=str(state),
+        execution=identity["execution"],
+        process_identity=identity,
+    )
+    records["native-session.json"].update(
+        status="viewer-accepted",
+        server_exit=None,
+        server_group_exit_confirmed=True,
+    )
+    write_records(folder, records)
+    return processes, gate
 
 
 class NativeTerminalCleanupTests(unittest.TestCase):
@@ -223,6 +276,71 @@ class NativeTerminalCleanupTests(unittest.TestCase):
         result = terminal_cleanup(self.folder, False, previous=previous)
         self.assertEqual(result["status"], "preserved")
         self.assertIn("launch identity changed", result["reason"])
+
+    def group_fixture(self):
+        self.folder = self.repo / "attempts" / "attempt-disconnected"
+        self.folder.mkdir(parents=True)
+        self.records = native_evidence(self.folder, self.repo)
+        return supervised_exit(self.folder, self.records)
+
+    def test_disconnected_helper_uses_owned_group_exit_with_stale_or_failed_status(self):
+        self.group_fixture()
+        for status in ("viewer-accepted", "failed"):
+            self.records["native-session.json"]["status"] = status
+            write_records(self.folder, self.records)
+            with patch.object(managed, "_call", return_value=inventory()) as call:
+                result = terminal_cleanup(self.folder, False)
+            self.assertEqual(result["status"], "absent", result)
+            self.assertEqual(call.call_count, 1)
+            self.assertEqual(call.call_args.args[1][:2], ["terminal", "list"])
+
+    def test_group_flag_without_original_exit_proof_never_authorizes_cleanup(self):
+        processes, gate = self.group_fixture()
+        for path in (processes.path, gate.barrier.path):
+            with self.subTest(missing=path.name):
+                data = path.read_bytes()
+                path.unlink()
+                with patch.object(managed, "_call") as call:
+                    result = terminal_cleanup(self.folder, False)
+                self.assertEqual(result["status"], "preserved", result)
+                call.assert_not_called()
+                path.write_bytes(data)
+
+    def test_exit_proof_from_another_claim_or_unsealed_attempt_is_preserved(self):
+        processes, _ = self.group_fixture()
+        original = processes.read()
+        for replacement in (
+            {**original, "claim": {"task": "another-task", "generation": 1}},
+            {**original, "claim": {"task": "fixture-task", "generation": 2}},
+            {**original, "state": "open"},
+            {**original, "executions": {}},
+        ):
+            with self.subTest(replacement=replacement):
+                processes.write(replacement)
+                with patch.object(managed, "_call") as call:
+                    result = terminal_cleanup(self.folder, False)
+                self.assertEqual(result["status"], "preserved", result)
+                call.assert_not_called()
+        processes.write(original)
+
+    def test_confirmed_group_exit_still_preserves_viewer_reuse_and_missing_retirement(self):
+        self.group_fixture()
+        with patch.object(managed, "_call", return_value=inventory()) as call:
+            previous = terminal_cleanup(self.folder, False)
+        self.assertEqual(previous["status"], "absent", previous)
+        self.records["native-session.json"]["viewer_cleanup_error"] = "User reuse"
+        write_records(self.folder, self.records)
+        with patch.object(managed, "_call") as call:
+            result = terminal_cleanup(self.folder, False, previous=previous)
+        self.assertEqual(result["status"], "preserved", result)
+        call.assert_not_called()
+        self.records["native-session.json"]["viewer_cleanup_error"] = None
+        write_records(self.folder, self.records)
+        (self.folder / "native-viewer-retired.json").unlink()
+        with patch.object(managed, "_call") as call:
+            result = terminal_cleanup(self.folder, False, previous=previous)
+        self.assertEqual(result["status"], "preserved", result)
+        call.assert_not_called()
 
 
 class NativeWorktreeCleanupTests(unittest.TestCase):

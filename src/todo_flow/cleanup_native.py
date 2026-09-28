@@ -1,9 +1,12 @@
 """Consume native viewer retirement evidence without replaying terminal effects."""
 
 import json
+from pathlib import Path
 import subprocess
 
 from . import managed_workspace as managed
+from .process_inventory import ProcessInventory
+from .process_launch import LaunchGate
 from .store import fingerprint
 
 
@@ -22,6 +25,44 @@ def read_record(folder, name):
     if not isinstance(value, dict):
         raise ValueError("Native cleanup evidence must be an object: " + name)
     return value
+
+
+def confirmed_group_exit(folder, spec):
+    """Read the original supervisor's proof when the helper journal is stale."""
+    identity = spec.get("process_identity")
+    task = spec["task"]
+    if (
+        not isinstance(identity, dict)
+        or set(identity) != {"directory", "track", "attempt", "execution"}
+        or identity["directory"] != str(folder.parent.parent)
+        or spec.get("state") != identity["directory"]
+        or Path(identity["directory"]).is_symlink()
+        or identity["track"] != task.get("track")
+        or identity["attempt"] != folder.name
+        or spec.get("execution") != identity["execution"]
+    ):
+        return False
+    inventory = ProcessInventory(
+        identity["directory"],
+        identity["track"],
+        identity["attempt"],
+        task["id"],
+        task["generation"],
+    ).read()
+    if (
+        inventory["state"] != "sealed"
+        or inventory["executions"].get(identity["execution"]) is not True
+    ):
+        return False
+    event = LaunchGate(**identity)._event()
+    evidence = event["evidence"]
+    return (
+        event["state"] == "confirmed"
+        and evidence.get("outcome") == "group-exited"
+        and evidence.get("identity")
+        == {key: identity[key] for key in ("track", "attempt", "execution")}
+        and type(evidence.get("returncode")) is int
+    )
 
 
 def native_terminal_cleanup(folder, launch, previous=None):
@@ -69,10 +110,12 @@ def native_terminal_cleanup(folder, launch, previous=None):
             or intent.get("runtime_id") != runtime
         ):
             raise ValueError("Native attempt or viewer ownership evidence does not match")
-        if (
-            record.get("status") not in ("server-stopped", "complete")
-            or type(record.get("server_exit")) is not int
-            or record.get("viewer_cleanup_error") is not None
+        helper_exited = (
+            record.get("status") in ("server-stopped", "complete")
+            and type(record.get("server_exit")) is int
+        )
+        if record.get("viewer_cleanup_error") is not None or (
+            not helper_exited and not confirmed_group_exit(folder, spec)
         ):
             raise ValueError("Native server exit or viewer retirement is unconfirmed")
         receipt = closed.get("result", {}).get("close", {})
@@ -99,6 +142,8 @@ def native_terminal_cleanup(folder, launch, previous=None):
                 runtime,
                 record["session"],
                 record["turn"],
+                spec.get("process_identity"),
+                spec.get("execution"),
             ]
         )
         if previous and previous.get("execution_mode") == "orca-native":
