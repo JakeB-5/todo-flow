@@ -157,7 +157,9 @@ class EngineVerificationArtifactTests(unittest.TestCase):
         self.assertEqual(self.receipt(workspace)["phase"], "complete")
         self.assertEqual(set(self.removable(workspace)), set(GENERATED))
         self.assertIsNone(self.s.track("addition")["verification"])
-        self.assertFalse((self.s.path / "attempts" / task["attempt"] / "verification.json").exists())
+        self.assertFalse(
+            (self.s.path / "attempts" / task["attempt"] / "verification.json").exists()
+        )
 
     def assert_uncertain_run(self, stage, error):
         engine, task, workspace = self.prepare()
