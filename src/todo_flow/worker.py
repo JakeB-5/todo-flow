@@ -13,20 +13,13 @@ from .process_inventory import launch_identity
 from .supervised_process import SupervisedProcess
 from .language import output_instruction
 from .launchers import LauncherUnavailable, TerminalProcess, select_launcher, spawn_terminal
+from .change_proposal import CHANGE_SCHEMA, validate_changes
 
 SCHEMA = {
     "type": "object",
     "properties": {
         "summary": {"type": "string"},
-        "changes": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
-                "required": ["path", "content"],
-                "additionalProperties": False,
-            },
-        },
+        "changes": {"type": "array", "items": CHANGE_SCHEMA},
         "verify": {"type": "boolean"},
         "publish": {"type": "boolean"},
         "next": {
@@ -149,8 +142,15 @@ such observations as findings when useful; do not include them in changes or man
 Honor recorded user decisions and accepted tradeoffs. Before requiring an extra external capability,
 identify the concrete failure of the existing supported path. Reconcile necessary scope changes using
 existing authority and the document revision process; do not invent dependencies or reopen settled choices.
-For changes return complete UTF-8 file content (not a diff) within writable_patterns. The runtime applies
-changes, commits, executes the configured verification command and publishes GitHub effects.
+For changes use either {path,content} with complete UTF-8 content, or
+{path,format:"replace-v1",base_head,sha256,edits:[{old,new}]} for an existing UTF-8 file.
+Use the input head as base_head and the lowercase SHA-256 of the original raw file bytes as sha256.
+Each old must be nonempty and occur exactly once in the original UTF-8 bytes. All edit ranges refer
+to that same original and must not overlap; replacements are not searched by later edits. new may
+be empty. Preserve exact line endings. Do not mix content with edit fields or invent other formats.
+Paths must be normalized relative paths within writable_patterns, without aliases or symlinks.
+The host validates every item before writing and assembles full contents for merge protection.
+The runtime applies changes, commits, executes configured verification and publishes requested effects.
 Choose only useful next work; do not follow a mandatory sequence. Most small work can be completed in
 one work task. An assess task should delegate concrete implementation to work; assess does not edit.
 A work task can return changes, verify:true, publish:true, next:[{kind:review,purpose:...}].
@@ -159,9 +159,10 @@ The host has merged
 the pinned latest base into your candidate checkout. Conflict markers are in workspace files;
 the evidence lists each unmerged path and readable ancestor/candidate/base versions (a missing
 version means that side has no file). Preserve the goal and upstream changes. Resolve every
-unmerged path with complete UTF-8 content and no markers, or ask a concrete question when the
-resolution needs unsupported binary/deletion operations or a scope decision. Do not run Git merge
-yourself. The host commits both parents, re-verifies, publishes and requests a fresh independent review.
+unmerged path with complete UTF-8 content or replace-v1 edits whose assembled content has no markers,
+or ask a concrete question when the resolution needs unsupported binary/deletion operations or a
+scope decision. Do not run Git merge yourself. The host commits both parents, re-verifies, publishes
+and requests a fresh independent review.
 Use investigation or focused followup work if uncertain. A question suspends work awaiting an answer.
 Review is a FRESH READ-ONLY session: inspect goal, current files, exact diff and verification evidence;
 return verdict and EACH registered condition's id/verdict/evidence. Use only registered IDs in conditions;
@@ -220,11 +221,7 @@ def validate(result, kind):
         raise ValueError("Unknown result fields: " + str(unknown))
     if result.get("changes") and kind != "work":
         raise ValueError("Only a work task can propose file changes")
-    for change in result.get("changes", []):
-        if set(change) != {"path", "content"} or not all(
-            isinstance(x, str) for x in change.values()
-        ):
-            raise ValueError("Invalid change")
+    validate_changes(result.get("changes", []))
     for row in result.get("next", []):
         if (
             row.get("kind")
@@ -245,6 +242,8 @@ def codex_schema():
     schema = copy.deepcopy(SCHEMA)
 
     def strict(node):
+        for option in node.get("anyOf", []):
+            strict(option)
         if node.get("type") == "object":
             required = set(node.get("required", []))
             props = node.get("properties", {})

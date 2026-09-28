@@ -8,9 +8,10 @@ import threading
 import time
 from pathlib import Path
 
-from .adapters import GitHub, command, file_lock, permitted
+from .adapters import GitHub, command, file_lock
 from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
+from .change_proposal import prepare_changes
 from .maintenance import guarded
 from . import integration as integration_repair
 from . import verification_identity
@@ -206,25 +207,22 @@ class Engine:
             self.store.event(c, "verification.recorded", task["track"], record)
         return record
 
-    def apply_changes(self, task, workspace, changes, repair=None):
+    def apply_changes(self, task, workspace, changes, repair=None, expected_head=None):
         self.process_barrier(task["track"]).require_clear()
+        self.check_claim(task)
+        if expected_head is None:
+            expected_head = (
+                repair["workspace_head"] if repair else self.store.track(task["track"])["head"]
+            )
+        if not expected_head or command(["git", "rev-parse", "HEAD"], workspace) != expected_head:
+            raise Conflict("Proposal HEAD changed during worker execution")
+        changes = prepare_changes(
+            workspace, changes, self.config["writable_patterns"], expected_head
+        )
         if repair:
+            # Merge protection consumes the host-assembled contents for both formats.
             integration_repair.validate_resolution(workspace, changes, repair)
         paths = [x["path"] for x in changes]
-        if len(set(paths)) != len(paths):
-            raise ValueError("Duplicate file paths in result")
-        for change in changes:
-            name = change["path"]
-            if not permitted(name, self.config["writable_patterns"]):
-                raise Conflict("File is outside the authorized write surface: " + name)
-            target = workspace / name
-            if not target.resolve().is_relative_to(workspace.resolve()) or target.is_symlink():
-                raise Conflict("Symlink/path escape")
-            for parent in target.parents:
-                if parent == workspace:
-                    break
-                if parent.is_symlink():
-                    raise Conflict("Symlink ancestor")
         pathspecs = [":(literal)" + name for name in paths]
         if not repair:
             if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
@@ -236,13 +234,16 @@ class Engine:
                 raise Conflict(
                     "Proposal overlaps existing changes; preserve them before applying it"
                 )
-        # File proposal application and commit run under a checkout flock; each write is fenced.
+        # All proposal conflicts are checked before the first write. Execution owns
+        # the checkout flock, and the claim is fenced again at the write boundary.
         with self.store.transaction() as c:
             self.store.assert_claim(c, task)
+            if command(["git", "rev-parse", "HEAD"], workspace) != expected_head:
+                raise Conflict("Proposal HEAD changed before application")
             for change in changes:
                 target = workspace / change["path"]
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(change["content"])
+                target.write_bytes(change["content"].encode("utf-8"))
         if paths:
             command(["git", "add", "--", *pathspecs], workspace)
         if integration_repair.unmerged(workspace):
@@ -353,7 +354,9 @@ class Engine:
             "attempt": task["attempt"],
             "verdict": verdict,
             "conditions": [x for x in rows if x["id"] in required],
-            "additional_assessments": [x for x in rows if x["id"] not in required],
+            "additional_assessments": [x for x in rows if x["id"] in required] if False else [
+                x for x in rows if x["id"] not in required
+            ],
             "summary": result["summary"],
         }
         if self.remote and t["pr"]:
@@ -616,7 +619,13 @@ class Engine:
                     if task["kind"] == "review":
                         require_clean(workspace, context["head"])
                     if repair and not result.get("question"):
-                        self.apply_changes(task, workspace, result.get("changes", []), repair)
+                        self.apply_changes(
+                            task,
+                            workspace,
+                            result.get("changes", []),
+                            repair,
+                            expected_head=context["head"],
+                        )
                         integration_repair.finish_repair(self, task, workspace, repair)
                         result.update(
                             verify=True,
@@ -629,7 +638,9 @@ class Engine:
                             ],
                         )
                     elif result.get("changes"):
-                        self.apply_changes(task, workspace, result["changes"])
+                        self.apply_changes(
+                            task, workspace, result["changes"], expected_head=context["head"]
+                        )
                     if result.get("verify") or result.get("publish") or result.get("changes"):
                         v = self.verify(task, workspace)
                         if not v["ok"]:
