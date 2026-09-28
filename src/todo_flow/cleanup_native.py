@@ -1,7 +1,6 @@
 """Consume native viewer retirement evidence without replaying terminal effects."""
 
 import json
-from pathlib import Path
 import subprocess
 
 from . import managed_workspace as managed
@@ -61,8 +60,7 @@ def native_terminal_cleanup(folder, launch, previous=None):
             or any(not launch.get(key) for key in ("session", "turn"))
             or any(launch[key] != record.get(key) for key in ("session", "turn"))
             or any(
-                not isinstance(terminal.get(key), str) or not terminal[key]
-                for key in IDENTITY_KEYS
+                not isinstance(terminal.get(key), str) or not terminal[key] for key in IDENTITY_KEYS
             )
             or terminal["worktreeId"] != spec["worktree"]
             or terminal["executionHostId"] != "local"
@@ -135,8 +133,7 @@ def native_terminal_cleanup(folder, launch, previous=None):
         ):
             raise ValueError("Native viewer inventory is incomplete or its runtime changed")
         if any(
-            any(row[key] == terminal[key] for key in ("handle", "tabId", "ptyId"))
-            for row in rows
+            any(row[key] == terminal[key] for key in ("handle", "tabId", "ptyId")) for row in rows
         ):
             raise ValueError("Native viewer resource is present; preserve possible user reuse")
         return {**item, "status": "absent"}

@@ -245,9 +245,7 @@ class NativeWorktreeCleanupTests(unittest.TestCase):
         self.native_queries = 0
         self.native_inventory = inventory()
         self.finish_managed()
-        attempt = next(
-            row for row in self.s.snapshot()["attempts"] if row["status"] == "finished"
-        )
+        attempt = next(row for row in self.s.snapshot()["attempts"] if row["status"] == "finished")
         self.folder = self.s.path / "attempts" / attempt["id"]
         self.records = native_evidence(
             self.folder, self.repo, self.shown["result"]["worktree"]["id"]
