@@ -114,7 +114,7 @@ def serve(store, port=8765):
                         pieces = path.split("/")
                         id_ = unquote(pieces[3])
                         result = (
-                            dashboard.evidence(id_, pieces[5])
+                            dashboard.evidence(id_, pieces[5], **params)
                             if len(pieces) == 6 and pieces[4] == "evidence"
                             else dashboard.detail(id_)
                         )
