@@ -108,9 +108,9 @@ def _load(directory, ref):
     if not isinstance(ref, dict) or ref.get("version") != 1:
         raise UnsupportedLogFormat("Unsupported verification log reference")
     try:
-        expected = reference({"directory": directory, **{key: ref[key] for key in (
-            "track", "attempt", "execution"
-        )}})
+        expected = reference(
+            {"directory": directory, **{key: ref[key] for key in ("track", "attempt", "execution")}}
+        )
     except (KeyError, TypeError) as error:
         raise ValueError("Invalid verification log reference") from error
     if ref != expected:
@@ -178,9 +178,7 @@ def _termination(directory, ref):
     from .process_launch import LaunchGate
 
     try:
-        event = LaunchGate(
-            directory, ref["track"], ref["attempt"], ref["execution"]
-        )._event()
+        event = LaunchGate(directory, ref["track"], ref["attempt"], ref["execution"])._event()
         evidence = event["evidence"]
         return {
             "state": event["state"],
@@ -287,7 +285,9 @@ class LogCapture:
         except (OSError, ValueError) as error:
             self.resources.close()
             self._fail(error)
-            raise VerificationLogError("Cannot prepare verification output: " + str(error)) from error
+            raise VerificationLogError(
+                "Cannot prepare verification output: " + str(error)
+            ) from error
 
     def _fail(self, error):
         self.record.update(phase="error", complete=False, diagnostic=str(error)[:1000])

@@ -131,7 +131,9 @@ class VerificationLogTests(unittest.TestCase):
         @contextmanager
         def bounded(directory, path):
             with original(directory, path) as source:
-                limit = logs.MAX_READ_BYTES if str(path).endswith(".log") else logs.METADATA_BYTES + 1
+                limit = (
+                    logs.MAX_READ_BYTES if str(path).endswith(".log") else logs.METADATA_BYTES + 1
+                )
                 yield Reader(source, limit)
 
         with patch.object(logs, "_open", bounded):
@@ -143,7 +145,9 @@ class VerificationLogTests(unittest.TestCase):
         self.assertEqual(len(base64.b64decode(part["base64"])), logs.MAX_READ_BYTES)
         for offset, limit in ((-1, 1), (0, 0), (0, logs.MAX_READ_BYTES + 1)):
             with self.assertRaises(ValueError):
-                logs.read_range(self.directory, logs.reference(self.identity), "stdout", offset, limit)
+                logs.read_range(
+                    self.directory, logs.reference(self.identity), "stdout", offset, limit
+                )
 
     def test_storage_failure_keeps_bytes_and_does_not_claim_complete_output(self):
         with patch.object(logs.LogCapture, "_seal", side_effect=OSError(28, "disk full")):
@@ -239,7 +243,7 @@ class VerificationLogTests(unittest.TestCase):
             deadline = time.monotonic() + 6
             while time.monotonic() < deadline:
                 summary = logs.latest(self.directory, "track")
-                tail = ((summary or {}).get("streams", {}).get("stdout", {}).get("text", ""))
+                tail = (summary or {}).get("streams", {}).get("stdout", {}).get("text", "")
                 if "BEFORE-DRIVER-KILL" in tail:
                     break
                 if driver.poll() is not None:
