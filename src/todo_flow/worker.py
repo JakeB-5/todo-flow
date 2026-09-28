@@ -441,6 +441,7 @@ def run_worker(config, context, task, state, heartbeat):
     env = dict(os.environ)
     env.pop("CLAUDECODE", None)
     started = time.monotonic()
+    timeout = config.get("worker_timeout")
     # Persistent stdout survives driver death. Built-in tools read the workspace; custom
     # command adapters are trusted executables and must honor the read-only contract.
     with (
@@ -457,7 +458,7 @@ def run_worker(config, context, task, state, heartbeat):
                 stderr=err,
                 cwd=context["workspace"],
                 env=env,
-                timeout=max(1, config.get("worker_timeout", 600) + 5),
+                timeout=None if timeout is None else max(1, timeout + 5),
             )
         else:
             title = f"TODO {task.get('track', 'worker')} · {task['kind']} · {task['attempt'][-8:]}"
@@ -472,7 +473,7 @@ def run_worker(config, context, task, state, heartbeat):
         try:
             while proc.poll() is None:
                 heartbeat(proc.pid)
-                if time.monotonic() - started > config.get("worker_timeout", 600):
+                if timeout is not None and time.monotonic() - started > timeout:
                     raise TimeoutError("Worker timed out; input/output are preserved")
                 time.sleep(1)
             if proc.returncode:

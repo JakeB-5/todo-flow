@@ -245,8 +245,12 @@ class Store:
             self.event(c, "execution.control", track, {"action": action, "control": state})
         return state
 
-    def claim(self, owner, ttl=45):
-        with self.transaction() as c:
+    def claim(self, owner, ttl=45, *, connection=None):
+        with (
+            contextlib.nullcontext(connection)
+            if connection is not None
+            else self.transaction() as c
+        ):
             # One mutable checkout per track. Different tracks can proceed concurrently.
             row = c.execute(
                 "SELECT w.* FROM tasks w JOIN tracks t ON t.id=w.track "

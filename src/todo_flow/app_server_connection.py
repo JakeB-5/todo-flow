@@ -42,6 +42,9 @@ class AppServerConnection:
         self._buffer = []
         self._buffer_bytes = 0
         self._max_buffer_bytes = max_buffer_bytes
+        self._history_turn = None
+        self._binding = None
+        self._implementation_sessions = frozenset()
 
     @property
     def state(self):
@@ -54,6 +57,27 @@ class AppServerConnection:
     @property
     def turn_id(self):
         return self._turn
+
+    @property
+    def proposal_ready(self):
+        return self._state == "collecting" and (
+            self._collector.state == "completed" or self._history_turn is not None
+        )
+
+    @property
+    def history_turn(self):
+        return deepcopy(self._history_turn)
+
+    def poll_history(self):
+        """Read the submitted turn without resuming or submitting any work."""
+        self._require("collecting")
+        if "thread/turns/list" in self._pending.values():
+            return None
+        return self._request(
+            "thread/turns/list",
+            {"threadId": self._thread, "itemsView": "full", "limit": 2},
+            "collecting",
+        )
 
     def _require(self, state):
         if self._state != state:
@@ -157,7 +181,24 @@ class AppServerConnection:
         if not isinstance(result, dict):
             raise ValueError("Invalid App Server response result")
         method = self._pending[request_id]
-        if method == "initialize":
+        if method == "thread/turns/list":
+            self._require("collecting")
+            turns = result.get("data")
+            if (
+                result.get("nextCursor") is not None
+                or not isinstance(turns, list)
+                or len(turns) != 1
+                or not isinstance(turns[0], dict)
+                or turns[0].get("id") != self._turn
+                or turns[0].get("itemsView") != "full"
+            ):
+                raise ValueError("Native history is absent, incomplete or has another turn")
+            turn = turns[0]
+            if turn.get("status") != "inProgress":
+                if turn.get("status") != "completed" or turn.get("error") is not None:
+                    raise ValueError("Native history turn did not complete successfully")
+                self._history_turn = deepcopy(turn)
+        elif method == "initialize":
             self._require("initializing")
             for key in ("codexHome", "platformFamily", "platformOs", "userAgent"):
                 if not isinstance(result.get(key), str):
@@ -220,16 +261,28 @@ class AppServerConnection:
             self.disconnect()
             raise
         self._collector = collector
+        self._binding = launch
+        self._implementation_sessions = implementation_sessions
         self._buffer.clear()
         self._buffer_bytes = 0
         self._state = "collecting"
 
     def proposal(self, *, current):
         self._require("collecting")
-        if self._collector.state != "completed":
+        if not self.proposal_ready:
             raise ValueError("App Server proposal is not complete")
         try:
-            result = self._collector.proposal(current=current)
+            if self._history_turn is not None:
+                from .native_recovery import decode_history_turn
+
+                result = decode_history_turn(
+                    self._history_turn,
+                    binding=self._binding,
+                    current=current,
+                    implementation_sessions=self._implementation_sessions,
+                )
+            else:
+                result = self._collector.proposal(current=current)
         except ValueError:
             self.disconnect()
             raise

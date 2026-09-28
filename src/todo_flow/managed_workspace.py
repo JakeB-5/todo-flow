@@ -1,5 +1,6 @@
 """Fenced Orca checkout creation and recovery, called under Engine's Git lock."""
 
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -87,12 +88,13 @@ def _register(engine, task, observation):
     return Path(observation["path"])
 
 
-def _recover(engine, task, gate):
+def ownership(store, track, root, *, connection=None):
+    """Read and bind creation evidence without requiring a live checkout or claim."""
+    gate = WorkspaceCreationGate(store.path, track["id"])
     try:
         receipt, intent, response = (
             _read(path) for path in (receipt_path(gate), gate.intent, gate.response)
         )
-        track = engine.store.track(task["track"])
         if (
             type(receipt.get("version")) is not int
             or receipt["version"] != 1
@@ -102,9 +104,9 @@ def _recover(engine, task, gate):
             or receipt.get("response_sha256") != _digest(response)
             or response.get("intent_sha256") != _digest(intent)
             or response.get("claim") != intent.get("claim")
-            or receipt.get("track") != task["track"]
-            or intent.get("track") != task["track"]
-            or intent.get("claim", {}).get("track") != task["track"]
+            or receipt.get("track") != track["id"]
+            or intent.get("track") != track["id"]
+            or intent.get("claim", {}).get("track") != track["id"]
             or receipt.get("request") != track["request"]
             or intent.get("request") != track["request"]
             or response.get("request") != track["request"]
@@ -113,7 +115,7 @@ def _recover(engine, task, gate):
         ):
             raise ValueError("Ownership evidence binding mismatch")
         origin = intent["claim"]
-        with engine.store.connect() as connection:
+        with nullcontext(connection) if connection is not None else store.connect() as connection:
             row = connection.execute(
                 "SELECT task,generation FROM attempts WHERE id=?", (origin["attempt"],)
             ).fetchone()
@@ -121,7 +123,7 @@ def _recover(engine, task, gate):
             raise ValueError("Ownership origin attempt is missing")
         pins = intent["creation_pins"]
         if (
-            intent["repo"] != str(engine.root.resolve())
+            intent["repo"] != str(Path(root).resolve())
             or pins["repo_path"] != intent["repo"]
             or intent["base"] != pins["base"]
             or intent["argv"] != creation_argv(intent["argv"][0], pins, intent["argv"][6])
@@ -137,6 +139,19 @@ def _recover(engine, task, gate):
             or old["head"] != pins["base"]
         ):
             raise ValueError("Ownership observation does not match creation anchors")
+        return receipt, intent
+    except WorkspaceCreationBlocked:
+        raise
+    except Exception as error:
+        raise WorkspaceCreationBlocked("Owned workspace requires reconciliation") from error
+
+
+def _recover(engine, task, gate):
+    try:
+        track = engine.store.track(task["track"])
+        receipt, intent = ownership(engine.store, track, engine.root)
+        old = receipt["observation"]
+        pins = intent["creation_pins"]
         expected = _expectation(old, track["head"] if track["branch"] else pins["base"])
         cli = intent["argv"][0]
 

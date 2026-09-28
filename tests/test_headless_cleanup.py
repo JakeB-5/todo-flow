@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from todo_flow import verification, worker
@@ -13,6 +14,20 @@ from todo_flow import verification, worker
 
 @unittest.skipUnless(sys.platform in ("darwin", "linux"), "Requires POSIX process groups")
 class HeadlessCleanupTests(unittest.TestCase):
+    def test_unlimited_worker_survives_elapsed_time_beyond_old_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ticks = iter([0, 1000])
+            clock = SimpleNamespace(monotonic=lambda: next(ticks, 1000), sleep=time.sleep)
+            with patch("todo_flow.worker.time", clock):
+                result = self.run_fixture(
+                    root,
+                    'import time; time.sleep(.2); print(\'{"summary":"completed"}\')',
+                    lambda _: None,
+                    timeout=None,
+                )
+            self.assertEqual(result["summary"], "completed")
+
     def dispose(self, proc):
         # These are fixture-owned Popen objects, never PIDs from old receipts.
         proc.poll()

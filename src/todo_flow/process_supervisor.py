@@ -102,7 +102,7 @@ def supervise(argv, *, identity, lease_fd, cwd, timeout):
         or fcntl.fcntl(lease_fd, fcntl.F_GETFL) & os.O_ACCMODE != os.O_RDONLY
     ):
         raise ValueError("Supervisor requires the read end of a private lease pipe")
-    if timeout <= 0:
+    if timeout is not None and timeout <= 0:
         raise ValueError("Supervisor timeout must be positive")
     os.set_inheritable(lease_fd, False)
     gate = LaunchGate(**identity)
@@ -125,7 +125,7 @@ def supervise(argv, *, identity, lease_fd, cwd, timeout):
         try:
             with gate.launching():
                 owner = OwnedProcessGroup(argv, cwd=cwd, close_fds=True)
-            deadline = time.monotonic() + timeout
+            deadline = None if timeout is None else time.monotonic() + timeout
             while True:
                 if requested:
                     outcome = "signal"
@@ -140,7 +140,7 @@ def supervise(argv, *, identity, lease_fd, cwd, timeout):
                         else "leader-exited"
                     )
                     break
-                if time.monotonic() >= deadline:
+                if deadline is not None and time.monotonic() >= deadline:
                     outcome = "timeout"
                     break
         finally:

@@ -106,6 +106,42 @@ class AppServerConnectionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.connection.proposal(current=self.binding)
 
+    def test_history_poll_rechecks_exact_head_and_rejects_other_or_incomplete_turns(self):
+        for change in ("inProgress", "other", "summary", "stale", "complete"):
+            with self.subTest(change=change):
+                self.setUp()
+                start = self.start()
+                self.respond(start)
+                self.connection.bind(self.binding)
+                self.connection.receive(self.events[0])
+                poll = self.connection.poll_history()
+                self.assertIsNone(self.connection.poll_history())
+                turn = {**self.events[2]["params"]["turn"], "itemsView": "full", "error": None}
+                if change == "other":
+                    turn["id"] = "other-turn"
+                if change == "summary":
+                    turn["itemsView"] = "summary"
+                if change == "inProgress":
+                    turn["status"] = "inProgress"
+                response = {"id": poll["id"], "result": {"data": [turn], "nextCursor": None}}
+                if change in {"other", "summary"}:
+                    with self.assertRaises(ValueError):
+                        self.connection.receive(response)
+                    self.assertFalse(self.connection.proposal_ready)
+                    continue
+                self.connection.receive(response)
+                if change == "inProgress":
+                    self.assertFalse(self.connection.proposal_ready)
+                    self.assertIsNotNone(self.connection.poll_history())
+                elif change == "stale":
+                    with self.assertRaises(ValueError):
+                        self.connection.proposal(current=replace(self.binding, head="b" * 40))
+                else:
+                    self.assertTrue(self.connection.proposal_ready)
+                    self.assertEqual(
+                        self.connection.proposal(current=self.binding)["summary"], "합성 제안"
+                    )
+
     def test_missing_or_invalid_timestamp_blocks_buffered_and_direct_proposals(self):
         for buffered in (False, True):
             for value in ("missing", None, True, "123", 123.0):

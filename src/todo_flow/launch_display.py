@@ -52,6 +52,7 @@ REASONS = {
     ),
 }
 STATUSES = {
+    "failed": ("Worker failed; recovery required", "워커 실패; 복구 필요"),
     "reconciling": (
         "Reading the same session history; input is not resent",
         "같은 세션 기록 확인 중; 입력 재전송 안 함",
@@ -95,10 +96,16 @@ def describe_launch(record, language="en"):
 
     selection = record.get("selection") or {}
     backend = record.get("backend")
+    sidebar = record.get("sidebar") or {}
+    sidebar_confirmed = isinstance(sidebar, dict) and sidebar.get("status") == "confirmed"
     unknown = ("Not recorded", "기록 없음")[index]
     return {
         "requested": selection.get("requested") or unknown,
-        "backend": ("Orca Codex session", "Orca Codex 세션")[index]
+        "backend": (
+            ("Orca Codex sidebar session", "Orca Codex 사이드바 세션")[index]
+            if sidebar_confirmed
+            else ("Orca Codex terminal client", "Orca Codex 터미널 클라이언트")[index]
+        )
         if record.get("execution_mode") == "orca-native"
         else label(BACKENDS, backend)
         if backend
@@ -106,12 +113,12 @@ def describe_launch(record, language="en"):
         "reason": label(REASONS, selection["reason"]) if selection.get("reason") else unknown,
         "status": label(STATUSES, record["status"]) if record.get("status") else unknown,
         "native": (
-            "Native session adapter selected."
+            "Host-owned App Server; sidebar lifecycle is projected by the host."
             if selection.get("native_ready")
             else "Compatibility worker route selected."
             if backend
             else "Native session selection not recorded.",
-            "Native 세션 어댑터 선택됨."
+            "호스트 소유 App Server 사용; 호스트가 사이드바 세션 상태를 전달함."
             if selection.get("native_ready")
             else "호환 워커 경로 선택됨."
             if backend
@@ -125,6 +132,11 @@ def describe_launch(record, language="en"):
             "Selection and terminal acceptance do not prove worker start or completion.",
             "선택 및 터미널 요청 수락은 워커 시작이나 완료의 근거가 아닙니다.",
         )[index],
+        "sidebar": (
+            ("Sidebar session observed", "사이드바 세션 표시 확인됨")[index]
+            if sidebar_confirmed
+            else ("Sidebar session not confirmed", "사이드바 세션 표시 미확인")[index]
+        ),
     }
 
 
@@ -167,6 +179,7 @@ def read_launch(state, attempt, language="en"):
                 "session",
                 "turn",
                 "execution_mode",
+                "sidebar",
             )
             if key in record
         }

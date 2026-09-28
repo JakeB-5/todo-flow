@@ -53,6 +53,31 @@ class StoreTests(unittest.TestCase):
         self.s.start("other", "batch")
         self.assertEqual(len(self.s.snapshot()["tasks"]), 2)
 
+    def test_claim_and_recovery_registration_commit_or_rollback_together(self):
+        self.s.start("addition")
+        old = self.s.claim("old")
+        self.s.control("addition", "cancel")
+        for fail in (True, False):
+            try:
+                with self.s.transaction() as c:
+                    c.execute("UPDATE tracks SET control='active' WHERE id='addition'")
+                    work = self.s.enqueue(
+                        c, "addition", "work", "Adopt preserved proposal", "recovery"
+                    )
+                    task = self.s.claim("recovery", connection=c)
+                    self.assertEqual(task["id"], work)
+                    self.s.assert_claim(c, task)
+                    with self.assertRaises(Conflict):
+                        self.s.assert_claim(c, old)
+                    if fail:
+                        raise RuntimeError("Recovery registration interrupted")
+            except RuntimeError:
+                self.assertEqual(self.s.track("addition")["control"], "cancelled")
+                self.assertEqual(len(self.s.snapshot()["tasks"]), 1)
+                self.assertEqual(len(self.s.snapshot()["attempts"]), 1)
+        self.assertEqual(self.s.track("addition")["control"], "active")
+        self.assertIsNone(self.s.claim("competing-driver"))
+
     def test_stale_result_cannot_write(self):
         self.s.start("addition")
         task = self.s.claim("old")

@@ -97,13 +97,17 @@ while True:
   send({'method':'turn/started','params':{'threadId':thread,'turn':{'id':turn,'status':'inProgress','items':[]}}})
   send({'id':msg['id'],'result':{'turn':{'id':turn,'status':'inProgress','items':[]}}})
   if (root/'hang-after-accept').exists():time.sleep(60)
+  if (root/'delayed-proposal').exists():time.sleep(1.5)
   if (root/'drop-after-accept').exists():
    conn.close();conn=connect_client();continue
+  if (root/'silent-completion').exists():continue
+  if (root/'delta-storm').exists():
+   for i in range(5000):send({'method':'item/agentMessage/delta','params':{'threadId':thread,'turnId':turn,'delta':'x'}})
   send({'method':'item/completed','params':{'threadId':thread,'turnId':turn,'completedAtMs':123,'item':item}})
   send({'method':'turn/completed','params':{'threadId':thread,'turn':{'id':turn,'status':'completed','error':None,'itemsView':'summary','items':[]}}})
 """
 ORCA = r"""
-import json,sys
+import json,sys,shlex
 from pathlib import Path
 root=Path(ROOT);args=sys.argv[1:];meta={'runtimeId':'fixture-runtime'}
 with (root/'orca-calls.jsonl').open('a') as f:f.write(json.dumps(args)+'\n')
@@ -113,8 +117,14 @@ if args[:2]==['worktree','show']:
  result={'worktree':owned}
 elif args[:2]==['terminal','create']:
  command=args[args.index('--command')+1]
- assert command.startswith('exec env CODEX_HOME=') and ' resume thread-' in command and '--remote unix://' in command
- assert '--sandbox' not in command and '--ask-for-approval' not in command
+ argv=shlex.split(command)
+ assert argv[0]=='exec' and argv[2].endswith('native_viewer.py')
+ spec=json.loads(Path(argv[3]).read_text())
+ assert spec['argv'][1]=='resume' and spec['argv'][2].startswith('thread-')
+ assert '--remote' in spec['argv'] and '--sandbox' not in spec['argv']
+ assert '--ask-for-approval' not in spec['argv']
+ # This synthetic Orca has no UI; real projection behavior has separate tests.
+ (Path(spec['folder'])/'native-sidebar.json').write_text(json.dumps({'status':'unconfirmed','error':'synthetic CLI fixture has no sidebar'}))
  (root/'viewer-closed').unlink(missing_ok=True)
  result={'terminal':terminal}
 elif args[:2]==['terminal','show']:
@@ -199,6 +209,11 @@ class NativeExecutionTests(unittest.TestCase):
         )
         self.env.start()
         self.addCleanup(self.env.stop)
+        hook = patch(
+            "todo_flow.native_worker.status_hook", return_value=str(self.fixture / "hook.sh")
+        )
+        hook.start()
+        self.addCleanup(hook.stop)
 
     def execute(self):
         with (
@@ -238,6 +253,30 @@ class NativeExecutionTests(unittest.TestCase):
         ]
         self.assertEqual(sum(request["method"] == "turn/start" for request in requests), 1)
 
+    def test_thousands_of_deltas_do_not_delay_complete_proposal_adoption(self):
+        self.prepare()
+        self.config["worker_timeout"] = 8
+        (self.fixture / "delta-storm").touch()
+        self.assertEqual(self.execute()["summary"], "합성 native worker")
+        ProcessBarrier(self.s.path, "addition").require_clear()
+
+    def test_silent_completion_is_collected_without_another_worker_turn(self):
+        self.prepare()
+        self.config["worker_timeout"] = None
+        (self.fixture / "silent-completion").touch()
+        result = self.execute()
+        self.assertEqual(result["summary"], "합성 native worker")
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        record = json.loads((folder / "native-session.json").read_text())
+        self.assertEqual(record["recovery_source"], "same-connection-full-history")
+        self.assertTrue((folder / "native-recovered-turn.json").exists())
+        requests = [
+            json.loads(line) for line in (self.fixture / "requests.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(sum(r["method"] == "thread/start" for r in requests), 1)
+        self.assertEqual(sum(r["method"] == "turn/start" for r in requests), 1)
+        self.assertTrue(any(r["method"] == "thread/turns/list" for r in requests))
+
     def test_updated_codex_and_symlinked_large_auth_keep_native_execution(self):
         self.prepare()
         source = self.auth / "auth.json"
@@ -274,6 +313,38 @@ class NativeExecutionTests(unittest.TestCase):
         )
         for path in folder.glob("native-request-*.json"):
             self.assertNotIn("synthetic-secret", path.read_text())
+
+    def test_default_unlimited_worker_keeps_heartbeating_until_proposal(self):
+        self.prepare()
+        self.config.pop("worker_timeout")
+        (self.fixture / "delayed-proposal").touch()
+        with patch.object(self.s, "heartbeat", wraps=self.s.heartbeat) as heartbeat:
+            self.assertEqual(self.execute()["summary"], "합성 native worker")
+        self.assertGreaterEqual(heartbeat.call_count, 2)
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        self.assertIsNone(json.loads((folder / "native-spec.json").read_text())["timeout"])
+        ProcessBarrier(self.s.path, "addition").require_clear()
+
+    def test_unlimited_worker_stops_when_claim_is_cancelled(self):
+        self.prepare()
+        self.config["worker_timeout"] = None
+        (self.fixture / "hang-after-accept").touch()
+        heartbeat = self.s.heartbeat
+
+        def cancel_after_start(task, pid=None):
+            if (self.fixture / "orca-calls.jsonl").exists():
+                calls = (self.fixture / "orca-calls.jsonl").read_text()
+                if '"terminal", "create"' in calls:
+                    self.s.control("addition", "cancel")
+            return heartbeat(task, pid)
+
+        from todo_flow.store import Conflict
+
+        with patch.object(self.s, "heartbeat", side_effect=cancel_after_start):
+            with self.assertRaises(Conflict):
+                self.execute()
+        ProcessBarrier(self.s.path, "addition").require_clear()
+        self.assertTrue((self.fixture / "viewer-closed").exists())
 
     def test_lost_turn_response_stops_and_never_launches_or_replays_a_viewer(self):
         self.prepare()

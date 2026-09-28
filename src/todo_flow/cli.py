@@ -88,7 +88,12 @@ def parser():
     )
     i.add_argument("--endpoint", choices=["review", "land"], default="review")
     i.add_argument("--allow-land", action="store_true")
-    i.add_argument("--worker-timeout", type=int, default=600)
+    i.add_argument(
+        "--worker-timeout",
+        type=int,
+        default=None,
+        help="Optional worker time limit in seconds (default: no time limit)",
+    )
     i.add_argument("--verify-timeout", type=int, default=180)
     i.add_argument(
         "--language",

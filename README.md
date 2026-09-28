@@ -239,7 +239,7 @@ Latest release: **0.0.6**. Small-project full cycles, recovery and two–three i
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
 - Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.
 - Source contents and full evidence are not injected into the prompt; there is no aggregate 150,000-byte source limit on `main`. Provider context limits still apply to what a worker chooses to read. File deletion and binary edits are not supported.
-- Default worker timeout: 600 seconds. Default driver task-assignment limit: 100; remaining requests survive for the next run.
+- Workers have no default time limit. `init --worker-timeout SECONDS` opts into one; existing projects retain their configured limit (`worker_timeout: null` disables it). Cancellation and driver-loss cleanup remain active. Default driver task-assignment limit: 100; remaining requests survive for the next run.
 - No shared slot budget across drivers, separate heavy-verification queue or validated distributed-filesystem operation.
 
 ## Documentation and contributing

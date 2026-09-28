@@ -15,4 +15,10 @@ Keep each proposed change tied to a selected condition or an existing invariant 
 
 Honor recorded user decisions and accepted tradeoffs. Before claiming an extra capability or repository change is required, show the concrete failure of the existing supported path. Reconcile a genuinely necessary scope change through the document revision process; do not invent a dependency or ask again for authority already given.
 
+Use the smallest meaningful checks for the changed behavior. Resolve formatting, lint and focused failures before the host's expensive final verification; keep test execution with the authorized host when the worker is read-only. Do not request full application tests for instruction-only edits, duplicate a successful unchanged check, or add review rounds without a concrete failure or evidence gap. Existing configured verification and independent-review gates still apply.
+
+Before proposing another task, name the specific unmet user requirement or concrete correctness issue it resolves. If the requested result already has sufficient evidence, return completion through the required endpoint and stop. Choose the narrower scope for ordinary ambiguity instead of asking the user to manage optional work. Do not invent runtime or workflow changes to avoid making this stopping decision.
+
+Report discovered additional work separately in the user-facing summary: what it is, why it is needed or optional, whether it blocks the original request, and whether it has started. Do not treat that report as authorization or include unrequested work in changes or executable follow-ups. Disclose any unrequested work already performed.
+
 Persist concrete findings for post-landing triage. Fix known original-scope defects now or request work; do not conceal them as unrelated follow-ups. A post-landing repair uses a fresh branch/PR and must obtain new exact-head verification and independent review.
