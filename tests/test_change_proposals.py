@@ -201,9 +201,7 @@ class ProposalApplicationTests(unittest.TestCase):
         edit = replacement(workspace, old="# User recovery", new="# Replacement")
         before = snapshot(workspace)
         with self.assertRaisesRegex(Conflict, "existing changes"):
-            engine.apply_changes(
-                task, workspace, [{"path": "created.py", "content": "x"}, edit]
-            )
+            engine.apply_changes(task, workspace, [{"path": "created.py", "content": "x"}, edit])
         self.assertEqual(snapshot(workspace), before)
         self.assertEqual((workspace / "calc.py").read_bytes(), b"# User recovery\n")
         self.assertFalse((workspace / "created.py").exists())
@@ -254,16 +252,16 @@ class ProposalApplicationTests(unittest.TestCase):
                     self.assertEqual((workspace / "calc.py").read_bytes(), original)
                     decisions = case.s.snapshot()["decisions"]
                     self.assertTrue(any("HEAD changed" in row["question"] for row in decisions))
-                    self.assertEqual(command(["git", "log", "-1", "--format=%s"], workspace), "Concurrent")
+                    self.assertEqual(
+                        command(["git", "log", "-1", "--format=%s"], workspace), "Concurrent"
+                    )
                 finally:
                     case.tearDown()
 
     def run_example(self, lines, old=OLD):
         engine, task, workspace = self.workspace()
         source = ("# unchanged filler\r\n" * lines + OLD + "\r\n").encode()
-        engine.apply_changes(
-            task, workspace, [{"path": "large.py", "content": source.decode()}]
-        )
+        engine.apply_changes(task, workspace, [{"path": "large.py", "content": source.decode()}])
         before = command(["git", "rev-parse", "HEAD"], workspace)
         original_calc = (workspace / "calc.py").read_bytes()
         engine.config["worker"] = {
@@ -347,4 +345,6 @@ class ReplacementRepairTests(unittest.TestCase):
         self.assertEqual(
             (workspace / "calc.py").read_bytes(), test_integration_repair.RESOLVED.encode()
         )
-        self.assertEqual((workspace / "upstream.txt").read_text(), "Upstream addition outside the write surface\n")
+        self.assertEqual(
+            (workspace / "upstream.txt").read_text(), "Upstream addition outside the write surface\n"
+        )

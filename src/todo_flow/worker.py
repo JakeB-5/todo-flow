@@ -261,17 +261,19 @@ def codex_schema():
 
 
 def result_payload(output):
+    """Accept one JSON envelope or a complete stream ending in one result."""
     try:
         return json.loads(output)
     except json.JSONDecodeError:
-        for line in reversed(output.splitlines()):
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict) and event.get("type") == "result":
-                return event
-        raise ValueError("Worker stream ended without a result") from None
+        events = [json.loads(line) for line in output.splitlines() if line.strip()]
+        if (
+            not events
+            or any(not isinstance(event, dict) for event in events)
+            or events[-1].get("type") != "result"
+            or sum(event.get("type") == "result" for event in events) != 1
+        ):
+            raise ValueError("Worker stream must end in exactly one complete result") from None
+        return events[-1]
 
 
 def worker_error(folder, returncode):
@@ -488,7 +490,8 @@ def run_worker(config, context, task, state, heartbeat):
     if adapter["type"] == "codex":
         result = json.loads((folder / "final.json").read_text())
         return validate({k: v for k, v in result.items() if v is not None}, task["kind"])
-    payload = result_payload((folder / "output.json").read_text())
+    output = (folder / "output.json").read_text()
+    payload = result_payload(output) if adapter["type"] == "claude" else json.loads(output)
     if adapter["type"] == "claude":
         if payload.get("is_error"):
             raise RuntimeError("Claude failed: " + str(payload.get("result")))
