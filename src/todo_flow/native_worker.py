@@ -163,8 +163,7 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
                     raise TimeoutError("Native worker timed out; do not resend")
                 time.sleep(0.05)
         finally:
-            if process.poll() is None:
-                process.stop()
+            process.stop()
             # The helper can be killed during cancellation/driver cleanup before
             # its own finally runs. The supervisor's confirmed group exit permits
             # retiring the exact viewer, without inventing an App Server exit code.
