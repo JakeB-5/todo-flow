@@ -92,11 +92,11 @@ track that covers this request, then report the actual result and next steps.
 Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Install the published release:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.6/todo_flow-0.0.6-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.7/todo_flow-0.0.7-py3-none-any.whl
 todo-flow --version
 ```
 
-[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.6). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
+[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.7). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
 
 In the **target project**, use its real verification command, base branch and relevant file patterns. This example assumes an existing Python project with a test suite, an initial Git commit and an `origin` remote:
 
@@ -224,6 +224,8 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 ## Current scope
 
+**New in 0.0.7:** workers have no default time limit, native worker activity appears in the owning Orca sidebar, and completed proposals are collected even when the completion notification is missing. Active cancellation and owned-worktree cleanup retain durable ownership evidence. Updated skills keep work within the requested scope and avoid redundant checks.
+
 **New in 0.0.6:** native workers reuse the existing Codex login without a version allowlist or credential-file restrictions. Terminal counts and historical launch records no longer block new workers, and deferred viewer cleanup preserves completed proposals. Release-only CI avoids repeating the full runtime suite.
 
 **Added in 0.0.5:** declared verification-input identity, durable process cleanup and native Orca/Codex worker sessions. See [execution boundaries](OPERATIONS.md#review-landing-and-completion).
@@ -234,7 +236,7 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 Completed tracks automatically clean disposable checkouts and unchanged worker terminals while retaining documents, logs, results and Git branches. Resources with user changes or unconfirmed ownership are kept with a reason. Use `--no-auto-cleanup` to retain resources for inspection; see [cleanup and retry](OPERATIONS.md#cleanup-migration-and-hooks).
 
-Latest release: **0.0.6**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
+Latest release: **0.0.7**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
 - Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.

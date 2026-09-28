@@ -2,12 +2,15 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
-## Unreleased
+## 0.0.7 — 2026-09-28
 
 - Remove the default 600-second worker deadline across native and compatibility workers and their supervisors. Explicit project limits remain supported; JSON `null` selects unlimited execution.
 - Register native worker activity in the owning Orca worktree's sidebar through a host-side status bridge. Verify the actual pane projection and retain its receipt without enabling model hooks or treating UI state as completion evidence.
 - Check native worker claims while waiting, retire unchanged viewers after confirmed cancellation cleanup, and expose concrete native failure diagnostics.
 - Avoid filesystem and Git checks for each streamed output fragment; fence complete native proposals before adoption. Periodically reconcile full history on the same connection so a missing completion notification cannot leave a finished worker waiting indefinitely. Preserve partial WebSocket frames across idle polls.
+- Cancel active native, headless and verification work through owned process supervision, preserving cancellation evidence across recovery.
+- Reclaim unchanged verifier-generated artifacts and remove confirmed landed, owned Git/Orca worktrees. Consume native viewer retirement and attributed supervisor exit evidence, while preserving uncertain or reused resources.
+- Keep agent work within the user-requested scope, report additional work separately, reuse sufficient verification evidence and retain automatic cleanup unless the user explicitly requests resource preservation.
 
 ## 0.0.6 — 2026-09-28
 

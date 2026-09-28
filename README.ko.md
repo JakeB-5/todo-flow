@@ -84,11 +84,11 @@ https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md에 따라
 직접 설치할 때는 Python 3.11+, uv, Git과 인증된 Claude/Codex CLI가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.6/todo_flow-0.0.6-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.7/todo_flow-0.0.7-py3-none-any.whl
 todo-flow --version
 ```
 
-[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.6). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
+[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.7). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
 
 초기 커밋과 `origin`이 있는 대상 프로젝트로 이동합니다. 아래는 Python 프로젝트 예시이므로 검증 명령·기준 브랜치·파일 범위를 실제 프로젝트에 맞게 지정하세요.
 
@@ -185,6 +185,8 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 ## 현재 범위
 
+**0.0.7의 변경 사항:** 워커의 기본 시간 제한을 없애고, 소유 Orca 워크트리 사이드바에 native 워커 상태를 표시합니다. 완료 알림이 누락돼도 완료된 제안을 수집하며, 실행 취소와 소유 워크트리 정리는 영속 소유권 증거를 유지합니다. 스킬에는 요청 범위 준수와 불필요한 검증 반복 방지 지침을 반영했습니다.
+
 **0.0.6의 변경 사항:** native 워커가 버전 고정·인증 파일 제한 없이 기존 Codex 로그인을 사용합니다. 터미널 개수와 과거 실행 기록으로 새 워커를 차단하지 않으며, 뷰어 정리가 보류돼도 완료된 제안을 보존합니다. 버전만 변경하는 릴리즈 CI는 전체 실행 테스트를 반복하지 않습니다.
 
 **0.0.5에서 추가:** 선언한 검증기 입력의 식별, 프로세스 소유권·종료 근거 보존, Orca/Codex native 워커 세션. [실행 경계](OPERATIONS.md#review-landing-and-completion)를 참고하세요.
@@ -195,7 +197,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 완료된 트랙의 임시 체크아웃과 재사용되지 않은 워커 터미널은 자동 정리하며 문서·로그·결과·Git 브랜치는 보존합니다. 사용자 변경이나 소유권을 확인할 수 없는 항목은 이유를 기록하고 남깁니다. 점검을 위해 작업 공간을 유지하려면 `--no-auto-cleanup`을 사용하세요. [정리와 재시도](OPERATIONS.md#cleanup-migration-and-hooks)를 참고하세요.
 
-최신 릴리스는 **0.0.6**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
+최신 릴리스는 **0.0.7**입니다. 소규모 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 데이터로 검증했습니다.
 
 - 상태 하나당 저장소 하나. Forgejo·서브모듈·복수 저장소 결합 랜딩 미지원.
 - 개발 브랜치의 기본 워커는 읽기 전용 도구로 저장소를 탐색하고 JSON 변경안을 반환합니다. 엔진이 변경 적용·검증·반영을 담당하며 브라우저 작업은 미지원입니다.
