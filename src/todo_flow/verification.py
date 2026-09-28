@@ -135,6 +135,7 @@ def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
     from .process_barrier import ProcessBarrierError
     from .supervised_process import SupervisedProcess
     from .verification_artifacts import Capture
+    from .verification_logs import LogCapture
 
     if check is not None:
         check()
@@ -142,18 +143,16 @@ def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
     # cache and input checks, with the existing durable launch identity.
     # Non-Git standalone callers still receive the same process supervision.
     capture = Capture(workspace, identity, argv) if (Path(workspace) / ".git").exists() else None
-    # Persist output beside the execution evidence. No inherited output pipe can
-    # prevent cleanup or outlive the driver as an unbounded reader.
-    folder = Path(identity["directory"]) / "process-output" / identity["execution"]
-    folder.mkdir(parents=True, exist_ok=True)
-    with (folder / "stdout.log").open("w+") as stdout, (folder / "stderr.log").open("w+") as stderr:
+    # The command still writes directly to files. References and an incomplete
+    # receipt survive driver loss; no inherited reader pipe can prevent cleanup.
+    with LogCapture(identity) as logs:
         proc = SupervisedProcess(
             argv,
             identity=identity,
             cwd=workspace,
             stdin=subprocess.DEVNULL,
-            stdout=stdout,
-            stderr=stderr,
+            stdout=logs.streams["stdout"],
+            stderr=logs.streams["stderr"],
             timeout=timeout,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"} if env is None else env,
         )
@@ -179,16 +178,20 @@ def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
             # deletion authority. Confirmed failures/timeouts retain attribution.
             if capture is not None and not uncertain:
                 capture.finish()
-        stdout.seek(0)
-        stderr.seek(0)
-        out, err = stdout.read(), stderr.read()
         event = proc.gate._event()
+        summary = logs.finish(event, code)
+        out = summary["streams"]["stdout"].get("text", "")
+        err = summary["streams"]["stderr"].get("text", "")
         if event["evidence"].get("completion") == "timeout":
             raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err)
         if event["evidence"].get("completion") == "leader-exited-with-descendants":
             raise RuntimeError("Verification left background processes; the group was terminated")
         if code:
             raise RuntimeError(f"{argv[0]} failed ({code}): {err[-3000:]} {out[-1000:]}")
+        if not summary["complete"]:
+            from .verification_logs import VerificationLogError
+
+            raise VerificationLogError("Verification output is incomplete; inspect its log receipt")
         return (out + err).strip()
 
 
