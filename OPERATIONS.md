@@ -123,6 +123,8 @@ Verification checks checkout cleanliness before using a cache and checks both HE
 
 Verification commands run in their own process group. Timeout cleanup signals the entire group, escalates to a kill, reaps the direct process and confirms no live group members remain before returning a failed verification. Children left by a successful parent are also stopped and cause failure. If termination cannot be confirmed, execution stops for attention.
 
+`verify_timeout` accepts positive finite numbers of seconds or JSON `null` for no execution time limit. Omitting it retains the 180-second default. A null timeout is preserved in verification identity and differs from every numeric timeout, so changing between them invalidates cached verification. Claim cancellation, driver-disconnection cleanup, bounded cleanup waits and durable termination confirmation remain active without an execution time limit. `worker_timeout` controls worker execution separately.
+
 Review uses a fresh agent context independent of implementation and examines the exact candidate and verification. When the same GitHub account owns the PR, the assessment is a COMMENT review, not another person's APPROVE.
 
 The default endpoint is `review`. An explicitly authorized `land` endpoint requires both `--endpoint land` and `--allow-land` at initialization. The host combines current base and candidate in an isolated checkout, verifies that combined tree, and publishes the exact verified merge. Base advancement triggers another comparison; branch protection is not bypassed.
