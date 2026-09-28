@@ -67,6 +67,45 @@ class VerificationIdentityTests(unittest.TestCase):
         self.config["verify_timeout"] = 181
         self.assertFalse(identity.matches(third, self.capture()))
 
+    def test_null_timeout_is_preserved_and_distinct_from_numeric_limits(self):
+        default = self.capture()
+        self.assertEqual(default["timeout"], 180)
+        self.config["verify_timeout"] = None
+        unlimited = self.capture()
+        self.assertIsNone(unlimited["timeout"])
+        restored = json.loads(json.dumps(unlimited))
+        self.assertIsNone(restored["timeout"])
+        self.assertTrue(identity.matches(restored, self.capture()))
+        self.assertFalse(identity.matches(default, unlimited))
+        self.assertFalse(identity.matches(unlimited, default))
+        for timeout in (1, 0.5, 180.0):
+            with self.subTest(timeout=timeout):
+                self.config["verify_timeout"] = timeout
+                limited = self.capture()
+                self.assertEqual(limited["timeout"], timeout)
+                self.assertIs(type(limited["timeout"]), type(timeout))
+                self.assertTrue(identity.matches(limited, self.capture()))
+                self.assertFalse(identity.matches(unlimited, limited))
+                self.assertFalse(identity.matches(limited, unlimited))
+
+    def test_invalid_timeouts_are_rejected(self):
+        for timeout in (
+            True,
+            False,
+            "180",
+            0,
+            0.0,
+            -1,
+            -0.5,
+            float("inf"),
+            float("-inf"),
+            float("nan"),
+        ):
+            with self.subTest(timeout=timeout):
+                self.config["verify_timeout"] = timeout
+                with self.assertRaises(identity.VerificationIdentityError):
+                    self.capture()
+
     def test_legacy_configuration_is_supported_but_legacy_evidence_is_not_current(self):
         del self.config["verify_identity"]
         current = self.capture()

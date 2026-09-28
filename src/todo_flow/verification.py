@@ -158,11 +158,11 @@ def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
         )
         uncertain = False
         try:
-            deadline = time.monotonic() + timeout + 15
+            deadline = None if timeout is None else time.monotonic() + timeout + 15
             while proc.poll() is None:
                 if check is not None:
                     check()
-                if time.monotonic() >= deadline:
+                if deadline is not None and time.monotonic() >= deadline:
                     raise subprocess.TimeoutExpired("process supervisor", timeout + 15)
                 time.sleep(0.1)
             code = proc.returncode

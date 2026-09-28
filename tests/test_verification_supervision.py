@@ -9,9 +9,10 @@ import time
 import unittest
 from unittest.mock import patch
 
-from todo_flow import verification
+from todo_flow import verification, verification_logs
 from todo_flow.process_barrier import ProcessBarrierError
 from todo_flow.process_launch import LaunchGate
+from todo_flow.store import Conflict
 from todo_flow.supervised_process import SupervisedProcess
 
 
@@ -46,6 +47,69 @@ class SupervisedVerificationTests(unittest.TestCase):
         with self.assertRaises(ProcessBarrierError):
             with gate.launching():
                 self.fail("A confirmed execution cannot be launched again")
+
+    def test_null_timeout_completes_with_durable_cleanup_and_logs(self):
+        self.assertEqual(self.run_command(timeout=None), "done")
+        gate = LaunchGate(**self.identity)
+        gate.barrier.require_clear()
+        event = gate._event()
+        self.assertEqual(event["state"], "confirmed")
+        self.assertEqual(event["evidence"]["completion"], "leader-exited")
+        self.assertEqual(event["evidence"]["outcome"], "group-exited")
+        self.assertEqual(event["evidence"]["returncode"], 0)
+        logs = verification_logs.describe(
+            self.directory, verification_logs.reference(self.identity)
+        )
+        self.assertTrue(logs["complete"])
+        self.assertEqual(logs["streams"]["stdout"]["text"], "done\n")
+
+    def test_null_timeout_check_cancellation_stops_running_process(self):
+        marker = self.directory / "verifier.pid"
+        ready = self.directory / "ready"
+        original = Conflict("verification claim cancelled")
+        gate = LaunchGate(**self.identity)
+        pid = None
+        deadline = time.monotonic() + 5
+
+        def check():
+            nonlocal pid
+            if ready.exists():
+                pid = int(marker.read_text())
+                os.kill(pid, 0)
+                with self.assertRaises(ProcessBarrierError):
+                    gate.barrier.require_clear()
+                raise original
+            if time.monotonic() >= deadline:
+                self.fail("Verifier did not become ready for cancellation")
+
+        code = (
+            "import os,time; from pathlib import Path; "
+            f"Path({str(marker)!r}).write_text(str(os.getpid())); "
+            "print('started', flush=True); "
+            f"Path({str(ready)!r}).touch(); time.sleep(60)"
+        )
+        with self.assertRaises(Conflict) as raised:
+            verification.run(
+                [sys.executable, "-c", code],
+                self.directory,
+                None,
+                launch_identity=self.identity,
+                check=check,
+            )
+        self.assertIs(raised.exception, original)
+        self.assertIsNotNone(pid)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        gate.barrier.require_clear()
+        event = gate._event()
+        self.assertEqual(event["state"], "confirmed")
+        self.assertEqual(event["evidence"]["completion"], "driver-disconnected")
+        self.assertEqual(event["evidence"]["outcome"], "group-exited")
+        logs = verification_logs.describe(
+            self.directory, verification_logs.reference(self.identity)
+        )
+        self.assertFalse(logs["complete"])
+        self.assertEqual(logs["streams"]["stdout"]["text"], "started\n")
 
     def test_timeout_cleans_process_and_confirms_ownership(self):
         with self.assertRaises(subprocess.TimeoutExpired):
