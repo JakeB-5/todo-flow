@@ -7,6 +7,7 @@ import subprocess
 import time
 
 from .adapters import command, file_lock
+from .cleanup_native import native_terminal_cleanup
 from .cleanup_orca import OrcaCleanup, owner as orca_owner
 from .launchers import orca_result
 from .maintenance import guarded, write_json
@@ -140,8 +141,18 @@ def local_target(path):
     }
 
 
-def terminal_cleanup(folder, dry_run):
+def terminal_cleanup(folder, dry_run, previous=None):
     launch = read_json(folder / "launch.json")
+    if launch.get("execution_mode") == "orca-native":
+        return native_terminal_cleanup(folder, launch, previous)
+    if previous and previous.get("execution_mode") == "orca-native":
+        return {
+            **previous,
+            "status": "preserved",
+            "reason": "Native launch identity changed since cleanup began",
+        }
+    if previous and previous.get("status") in ("closed", "absent"):
+        return previous
     if "owner" in launch or "terminal_slot" in launch:
         return retire_launch(folder, dry_run=dry_run)
     backend = launch.get("backend")
@@ -268,9 +279,6 @@ def cleanup_track(store, track_id, dry_run=False):
         old_terminals = {r["attempt"]: r for r in previous.get("terminals", [])}
         for attempt in attempts:
             prior = old_terminals.get(attempt["id"], {})
-            if prior.get("status") in ("closed", "absent"):
-                report["terminals"].append(prior)
-                continue
             pending = {"attempt": attempt["id"], "status": "pending"}
             report["terminals"].append(pending)
             if not dry_run:
@@ -278,7 +286,9 @@ def cleanup_track(store, track_id, dry_run=False):
             try:
                 with store.transaction() as connection:
                     check_finished(store, track, connection)
-                    item = terminal_cleanup(store.path / "attempts" / attempt["id"], dry_run)
+                    item = terminal_cleanup(
+                        store.path / "attempts" / attempt["id"], dry_run, previous=prior
+                    )
             except (
                 OSError,
                 ValueError,
