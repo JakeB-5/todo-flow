@@ -13,7 +13,8 @@ from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
 from .maintenance import guarded
 from . import integration as integration_repair
-from . import verification_identity
+from . import verification_identity, verification_logs
+from .verification_log_view import log_view
 from .checkout import require_clean
 from .verification_evidence import require_current
 from .claim_recovery import recover_expired_claim
@@ -152,18 +153,21 @@ class Engine:
         log = self.store.path / "attempts" / task["attempt"]
         log.mkdir(parents=True, exist_ok=True)
         started = time.time()
+        log_reference = None
         try:
             before = verification_identity.capture(self.config, workspace, environment)
             if not verification_identity.matches(identity, before):
                 raise verification_identity.VerificationIdentityError(
                     "Verification inputs changed before execution"
                 )
+            execution = launch_identity(self.store.path, task)
+            log_reference = verification_logs.reference(execution)
             output = run_verification(
                 self.config["verify"],
                 workspace,
                 timeout=self.config.get("verify_timeout", 180),
                 env=environment,
-                launch_identity=launch_identity(self.store.path, task),
+                launch_identity=execution,
                 check=lambda: self.check_claim(task),
             )
             ok, error = True, None
@@ -195,6 +199,7 @@ class Engine:
             "key": key,
             "command": self.config["verify"],
             "identity": identity,
+            "logReference": log_reference,
             "ok": ok,
             "output": output[-12000:],
             "error": error,
@@ -307,6 +312,11 @@ class Engine:
             ),
             "writable_patterns": self.config["writable_patterns"],
             "verification": json.loads(t["verification"]) if t["verification"] else None,
+            "verification_logs": log_view(
+                self.store.path,
+                t["id"],
+                json.loads(t["verification"]) if t["verification"] else None,
+            ),
             "review": json.loads(t["review"]) if t["review"] else None,
             "landing": json.loads(t["landing"]) if t["landing"] else None,
             "recent_results": [

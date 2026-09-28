@@ -5,6 +5,7 @@ import time
 import hashlib
 
 from .launch_display import describe_launch, read_launch
+from .verification_log_view import log_view, read_log_range
 
 
 SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
@@ -201,11 +202,21 @@ class Dashboard:
             )
         return t
 
-    def evidence(self, id_, kind):
+    def evidence(self, id_, kind, **params):
         if kind not in ("verification", "review", "landing"):
             raise ValueError("Unknown evidence kind")
         t = self.store.track(id_)
-        return {"track": id_, "kind": kind, "value": json.loads(t[kind]) if t[kind] else None}
+        value = json.loads(t[kind]) if t[kind] else None
+        if kind == "verification":
+            if params:
+                value = read_log_range(self.store.path, id_, value, **params)
+            else:
+                logs = log_view(self.store.path, id_, value)
+                if value is not None or logs["latestExecution"] is not None:
+                    value = {**(value or {}), "logs": logs}
+        elif params:
+            raise ValueError("Log ranges require verification evidence")
+        return {"track": id_, "kind": kind, "value": value}
 
     def activity(self, limit=25, offset=0):
         limit, offset = bounds(limit, offset)
