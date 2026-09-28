@@ -132,10 +132,16 @@ def stop_group(proc, *, collect_output=True):
 
 
 def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
+    from .process_barrier import ProcessBarrierError
     from .supervised_process import SupervisedProcess
+    from .verification_artifacts import Capture
 
     if check is not None:
         check()
+    # Engine reaches this boundary only for an actual execution, after its
+    # cache and input checks, with the existing durable launch identity.
+    # Non-Git standalone callers still receive the same process supervision.
+    capture = Capture(workspace, identity, argv) if (Path(workspace) / ".git").exists() else None
     # Persist output beside the execution evidence. No inherited output pipe can
     # prevent cleanup or outlive the driver as an unbounded reader.
     folder = Path(identity["directory"]) / "process-output" / identity["execution"]
@@ -151,6 +157,7 @@ def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
             timeout=timeout,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"} if env is None else env,
         )
+        uncertain = False
         try:
             deadline = time.monotonic() + timeout + 15
             while proc.poll() is None:
@@ -162,8 +169,16 @@ def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
             code = proc.returncode
             if check is not None:
                 check()
+        except (ProcessBarrierError, VerificationCleanupError):
+            uncertain = True
+            raise
         finally:
             proc.stop()
+            # stop() requires durable supervisor confirmation. A failed launch
+            # or unconfirmed stop leaves the capture running and cannot grant
+            # deletion authority. Confirmed failures/timeouts retain attribution.
+            if capture is not None and not uncertain:
+                capture.finish()
         stdout.seek(0)
         stderr.seek(0)
         out, err = stdout.read(), stderr.read()
