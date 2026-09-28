@@ -149,14 +149,17 @@ class VerificationLogConsumerTests(unittest.TestCase):
                 engine.process_barrier(task["track"]).require_clear()
 
     def test_cached_result_keeps_its_reference_when_latest_execution_differs(self):
-        engine, task, workspace = self.verifier("print('FIRST')\n")
-        first_source = self.runner.read_text()
+        engine, task, workspace = self.verifier("import sys\nprint(sys.argv[1])\n")
+        command = engine.config["verify"]
+        engine.config["verify"] = [*command, "FIRST"]
         first = engine.verify(task, workspace)
-        self.runner.write_text(self.source + "print('SECOND')\n")
-        second = engine.verify(task, workspace)
+        self.assertTrue(first["ok"])
+        # Keep the runner's metadata unchanged so restoring argv restores its identity.
+        with patch.dict(engine.config, verify=[*command, "SECOND"]):
+            second = engine.verify(task, workspace)
+        self.assertTrue(second["ok"])
         self.assertNotEqual(first["logReference"], second["logReference"])
         engine.update(task, verification=encode(first))
-        self.runner.write_text(first_source)
         self.assertEqual(engine.verify(task, workspace), first)
         self.assertEqual(self.count(), 2)
         view = self.handoff(engine, task, workspace)
