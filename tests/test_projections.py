@@ -141,9 +141,7 @@ class ProjectionTests(unittest.TestCase):
                 "INSERT INTO decisions(id,track,task,question,status,created)"
                 " VALUES('decision','track-0001','three','Choose a policy','open',1)"
             )
-        before = {
-            str(p): p.read_bytes() for p in self.store.path.rglob("*.json") if p.is_file()
-        }
+        before = {str(p): p.read_bytes() for p in self.store.path.rglob("*.json") if p.is_file()}
         result = self.dashboard.activity()
         self.assertEqual((result["total"], result["taskTotal"]), (2, 3))
         first, second = result["items"]
@@ -168,9 +166,7 @@ class ProjectionTests(unittest.TestCase):
             self.dashboard.evidence("track-0000", "verification")["value"]["output"],
             purpose,
         )
-        after = {
-            str(p): p.read_bytes() for p in self.store.path.rglob("*.json") if p.is_file()
-        }
+        after = {str(p): p.read_bytes() for p in self.store.path.rglob("*.json") if p.is_file()}
         self.assertEqual(before, after)
 
     def test_activity_pages_keep_groups_and_decision_only_tracks(self):
