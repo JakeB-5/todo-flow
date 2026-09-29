@@ -61,6 +61,14 @@ class TriageTests(unittest.TestCase):
         self.e = Engine(self.s)
         self.e.run(max_tasks=4)
         task = self.s.claim("triager")
+        if task is None:
+            snapshot = self.s.snapshot()
+            self.fail(
+                "No post-landing triage task: "
+                + encode(
+                    {key: snapshot[key] for key in ("tasks", "decisions", "results", "events")}
+                )
+            )
         self.assertEqual(task["kind"], "triage")
         triage = Triage(self.e)
         return task, triage, triage.prepare(task)
