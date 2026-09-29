@@ -2,6 +2,14 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## 0.0.8 — 2026-09-30
+
+- Group Activity by track with current work, assignment and decision waits, recent verification results, and bounded task details. Preserve full instructions, evidence links and selection across Korean/English switching and reloads; mark stale or disconnected observations as needing confirmation.
+- Merge clearly identical pending assess/work obligations only for the same track, candidate, document revision, task kind and exact purpose. Preserve each parent request atomically, including interrupted writes and cache reconstruction; completed tasks are not reused as new fulfillment evidence.
+- Support bounded `replace-v1` text proposals with exact base/file checks and durable application recovery, while preserving unrelated edits and legacy whole-file proposals.
+- Retain original verification stdout/stderr as separate artifacts with bounded reads and explicit missing, partial and completed states. Keep log evidence available through recovery and dashboard detail views.
+- Keep state/configuration formats and worker/skill protocols unchanged.
+
 ## 0.0.7 — 2026-09-28
 
 - Remove the default 600-second worker deadline across native and compatibility workers and their supervisors. Explicit project limits remain supported; JSON `null` selects unlimited execution.

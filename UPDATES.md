@@ -32,6 +32,8 @@ Version `0.0.6` removes the exact Codex version gate, credential-file restrictio
 
 Version `0.0.7` removes the default worker deadline, adds host-observed native sidebar status and completion-history reconciliation, and delivers active cancellation plus verified owned-worktree cleanup. Existing explicit worker limits remain; `worker_timeout: null` selects unlimited execution. State/configuration formats and worker/skill protocols are unchanged. Update project skills for the requested-scope, proportional-verification and automatic-cleanup instructions.
 
+Version `0.0.8` adds track-level activity summaries, exact pending-obligation deduplication with parent provenance, bounded replacement proposals and retained verification log artifacts. State/configuration formats and worker/skill protocols remain unchanged. Update project skills to receive the bounded-change proposal guidance.
+
 ## 1. Inspect and stop relevant processes
 
 ```sh
@@ -51,11 +53,11 @@ All cooperating processes must use the same `TODO_FLOW_HOME`. Process locks are 
 
 This path requires an existing **`uv tool install` installation** and `uv` on PATH. Source checkouts, editable environments, ordinary virtualenv installations and uv tool installs with custom extra requirements/options or entrypoints are diagnosed rather than overwritten. Update those environments using their original workflow while idle, then run project compatibility and skill checks.
 
-Download the wheel and `SHA256SUMS` from the [v0.0.7 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.7), verify its checksum, then pass the local wheel path:
+Download the wheel and `SHA256SUMS` from the [v0.0.8 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.8), verify its checksum, then pass the local wheel path:
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.7-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.7-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.8-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.8-py3-none-any.whl
 ```
 
 The plan shows versions, artifact digest, compatibility contracts and known projects. Execution rechecks those facts under an exclusive runtime lock, snapshots the artifact, backs up the installed environment and two entrypoints, invokes uv, and checks the installed version, entrypoints and bundled skills. An ordinary install/validation failure restores the previous environment. Upgrades do not change project configuration, documents, claims or remote state.
