@@ -15,7 +15,8 @@ let decisionLanguage = '';
 const selected = new Map(), drafts = new Map(), evidenceCache = new Map(), evidenceOpen = new Set();
 const scrollPositions = new Map();
 let archiveLimit = 50;
-const savedViews = {todos:'#todos', completed:'#completed'};
+let activityData = null, activityConnected = true, activityFocus = null;
+const savedViews = {todos:'#todos', completed:'#completed', activity:'#activity'};
 function priorityLabel(value) {
   const keys={high:'High',medium:'Medium',normal:'Medium',low:'Low',unspecified:'Unspecified'};
   const key=keys[String(value).toLowerCase()];
@@ -163,9 +164,61 @@ function renderDecisions(data) {
   $('decisions').innerHTML=data.items.length?`<div class="section-heading"><h2>${tr("Your decisions")}</h2><span class="subtle">${number(data.total)}</span></div>`+data.items.map(d=>`<details class="decision-card" data-decision="${esc(d.id)}" ${expanded.has(d.id)?'open':''}><summary>◇ ${esc(d.title)}</summary><p>${esc(d.question)}</p><textarea data-draft="${esc(d.id)}" id="answer-${esc(d.id)}" aria-label="${esc(d.title)}${tr(" \u2014 decision answer")}" placeholder="${tr("Write your answer and reasoning.")}">${esc(drafts.get(d.id)||'')}</textarea><button class="primary" data-answer="${esc(d.id)}">${tr("Record answer")}</button></details>`).join(''):'';
 }
 function renderActivity(data) {
-  $('activityTotal').textContent=tr('{count} tasks',{count:number(data.total)});
-  $('work').innerHTML=data.items.map(w=>`<div class="work-row"><a class="work-track" href="#track/${encodeURIComponent(w.track)}">${esc(w.title)}</a><button class="work-card ${currentTask===w.id?'active':''}" data-task="${esc(w.id)}"><span class="work-meta">${badge(w.status==='running'&&w.lease<Date.now()/1000?'unknown':w.status,w.status==='running'&&w.lease<Date.now()/1000?tr("Check worker status"):undefined)}<span class="subtle">${esc(roles[w.kind]||w.kind)}</span></span><strong>${esc(w.purpose)}</strong><small>${w.owner?tr("Worker ")+esc(w.owner.slice(-8)):tr("No worker assigned")} · ${date(w.updated)}</small></button></div>`).join('')||`<p class="subtle">${tr("No active work right now.")}</p>`;
-  $('activityView').classList.toggle('has-context',!!currentTask||!!overview.counts.decisions);
+  activityData=data;
+  const r=route(), track=r.query.get('track');
+  $('activityTotal').textContent=tr('{tracks} tracks / {tasks} active tasks',{tracks:number(data.total),tasks:number(data.taskTotal)});
+  const html=data.items.map(t=>{
+    const w=t.current, uncertain=!activityConnected||t.uncertain>0;
+    const state=uncertain?'unknown':t.status;
+    const recent=t.verificationOk===0?tr("Failed"):t.verificationOk===1?tr("Passed"):tr("No record");
+    return `<section class="activity-track"><a class="work-track" href="#track/${encodeURIComponent(t.id)}">${esc(t.title)}</a>
+      <div class="work-meta">${badge(state,uncertain?tr("Execution needs checking"):undefined)} ${['paused','pause-requested'].includes(t.control)?badge(t.control):''}
+      <span>${tr('{count} active tasks',{count:number(t.taskCount)})}</span></div>
+      <p><b>${tr("Current task")}</b> · ${w?esc(roles[w.kind]||tr("Task")):tr("No active task")}</p>
+      <p>${w?esc(taskDescription(w)):tr("Review the open decision.")}</p>
+      <p class="subtle">${tr('{running} running · {queued} awaiting assignment · {waiting} waiting',{running:number(t.running),queued:number(t.queued),waiting:number(t.waiting)})}
+      · ${tr('{count} open decisions',{count:number(t.decisions)})}</p>
+      <p class="subtle">${tr("Recent verification")} · ${recent}${t.verificationAt?' · '+date(t.verificationAt):''}</p>
+      <button data-activity-track="${esc(t.id)}" aria-expanded="${track===t.id}" aria-controls="activityTasks">${track===t.id?tr("Close track tasks"):tr("Tasks and evidence")}</button></section>`;
+  }).join('')||`<p class="subtle">${tr("No active work right now.")}</p>`;
+  if($('work').innerHTML!==html)$('work').innerHTML=html;
+  $('activityPages').innerHTML=activityPages(data,'offset');
+  $('activityWarning').hidden=activityConnected;
+  $('activityView').classList.toggle('has-context',!!track||!!currentTask||!!overview.counts.decisions);
+}
+function taskDescription(w) {
+  if(w.intent==='verification-repair')return tr("Fix the recorded verification failure.");
+  const descriptions={
+    assess:tr("Assess the track against its conditions."),
+    work:tr("Implement or investigate the track."),
+    verify:tr("Check the candidate against required verification."),
+    review:tr("Independently review the candidate."),
+    land:tr("Integrate the verified candidate."),
+    triage:tr("Assess findings after landing."),
+    complete:tr("Check completion evidence."),
+    watch:tr("Reassess the recorded observation.")
+  };
+  return (descriptions[w.kind]||tr("Task"))+' '+tr("Detailed intent unavailable; open the original instructions.");
+}
+function activityPages(data,key) {
+  return `<button data-activity-page="${Math.max(0,data.offset-data.limit)}" data-page-key="${key}" ${data.offset===0?'disabled':''}>${tr("Previous page")}</button>
+    <span>${number(data.total?data.offset+1:0)}–${number(data.offset+data.items.length)} / ${number(data.total)}</span>
+    <button data-activity-page="${data.offset+data.limit}" data-page-key="${key}" ${!data.hasMore?'disabled':''}>${tr("Next page")}</button>`;
+}
+function renderActivityTasks(data,track) {
+  const html=`<div class="panel"><h2>${tr("Track tasks")} · ${esc(track)}</h2>`+data.items.map(w=>{
+    const uncertain=w.status==='running'&&(!activityConnected||!w.lease||w.lease<=Date.now()/1000);
+    return `<button class="activity-task" data-task="${esc(w.id)}" aria-expanded="${currentTask===w.id}" aria-controls="taskInspector">
+      ${badge(uncertain?'unknown':w.status,uncertain?tr("Execution needs checking"):undefined)}
+      <strong>${esc(roles[w.kind]||tr("Task"))}</strong><span>${esc(taskDescription(w))}</span>
+      <small>${esc(w.id)} · ${tr("Last observed")} ${date(w.updated)}</small></button>`;
+  }).join('')+`<div class="pagination">${activityPages(data,'tasks_offset')}</div></div>`;
+  $('activityTasks').hidden=false;
+  if($('activityTasks').innerHTML!==html)$('activityTasks').innerHTML=html;
+}
+function activityDisconnected() {
+  activityConnected=false;
+  if(route().view==='activity'&&activityData)renderActivity(activityData);
 }
 function launchPanel(launch) {
   const evidence=launch?.evidence||'missing';
@@ -181,7 +234,7 @@ function launchPanel(launch) {
   }
   return `<section class="evidence-block"><h3>${esc(tr("Execution evidence"))}</h3><dl>${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></section>`;
 }
-async function inspectTask(id) {
+async function inspectTask(id, focus=false) {
   currentTask=id;
   $('taskInspector').hidden=false;
   $('activityView').classList.add('has-context');
@@ -189,7 +242,9 @@ async function inspectTask(id) {
   try {
     const d=await api('tasks/'+encodeURIComponent(id));if(currentTask!==id)return;
     const w=d.task;
-    $('taskInspector').innerHTML=`<div class="panel"><div class="eyebrow">${tr("Selected work")}</div><h2>${esc(roles[w.kind]||w.kind)}</h2><p class="prose">${esc(w.purpose)}</p><dl>${[[tr("Owner"),w.owner||tr("Unassigned")],[tr("Status"),labels[w.status]||w.status],[tr("Last observed"),date(w.updated,true)],[tr("Claim generation"),w.generation],[tr("Attempt"),d.attempt?.id||tr("Not yet")],[tr("Track"),w.track]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${launchPanel(d.launch)}${d.result?`<div class="quiet">${esc(d.result.summary)}</div>`:''}<a class="section-link" href="#track/${encodeURIComponent(w.track)}">${tr("View full track context")} →</a></div>`;
+    const html=`<div class="panel"><button data-close-task>${tr("Close task details")}</button><div class="eyebrow">${tr("Selected work")}</div><h2>${esc(roles[w.kind]||w.kind)}</h2><p class="prose">${esc(w.purpose)}</p><dl>${[[tr("Owner"),w.owner||tr("Unassigned")],[tr("Status"),w.status==='running'&&(!w.lease||w.lease<=Date.now()/1000)?tr("Execution needs checking"):labels[w.status]||w.status],[tr("Last observed"),date(w.updated,true)],[tr("Claim generation"),w.generation],[tr("Attempt"),d.attempt?.id||tr("Not yet")],[tr("Track"),w.track]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${w.error?`<section class="evidence-block"><h3>${tr("Task needs attention")}</h3><pre>${esc(w.error)}</pre></section>`:''}${launchPanel(d.launch)}<a class="section-link" href="#track/${encodeURIComponent(w.track)}?from=activity&amp;evidence=verification&amp;return=${encodeURIComponent(savedViews.activity)}">${tr("Verification results")} →</a>${d.result?`<div class="quiet">${esc(d.result.summary)}</div>`:''}<a class="section-link" href="#track/${encodeURIComponent(w.track)}">${tr("View full track context")} →</a></div>`;
+    if($('taskInspector').innerHTML!==html)$('taskInspector').innerHTML=html;
+    if(focus)$('taskInspector').focus();
   }catch(e){if(currentTask!==id)return;$('taskInspector').innerHTML=`<div class="notice">${esc(e.message)}</div>`;}
 }
 function planning(doc) {
@@ -203,13 +258,19 @@ function triagePanel(t) {
 }
 function renderTrack(t,r) {
   currentDetail=t;
+  const back=r.query.get('return');
+  if(back==='#activity'||back?.startsWith('#activity?'))savedViews.activity=back;
   const signature=JSON.stringify(t);
   if(signature===detailSignature)return;
   detailSignature=signature;
   $('eyebrow').textContent=t.id; $('title').textContent=t.document.title; $('subtitle').textContent=t.document.goal;
-  const from=r.query.get('from')==='completed'?'completed':'todos';
+  const from=['completed','activity'].includes(r.query.get('from'))?r.query.get('from'):'todos';
   const review=t.review;
-  $('trackView').innerHTML=`<a class="section-link" href="${esc(savedViews[from]||'#'+from)}">← ${from==='completed'?tr("Completed archive"):tr("TODO list")}</a>${t.document.documentReview==='pending-human-review'?`<div class="notice">${tr("Triage registered this follow-up document. Review its contents and scope before selection.")}</div>`:''}<section class="document-stage"><div class="section-heading"><h2>${tr("Analysis and plan")}</h2><a href="${esc(t.documentView.url)}" target="_blank" rel="noopener">${tr("Open document")} ↗</a></div><iframe title="${esc(t.document.title)} ${tr("Analysis and plan")}" src="${esc(t.documentView.url)}" sandbox="allow-scripts allow-downloads" referrerpolicy="no-referrer"></iframe></section><details class="runtime-details"><summary>${tr("Conditions \u00b7 execution \u00b7 evidence")}</summary><div class="detail-grid"><div><div class="panel"><h2>${tr("Goal and scope")}</h2><p class="prose">${esc(t.document.scope)}</p></div><div class="panel"><h2>${tr("Problem and evidence")}</h2><p class="prose">${esc(t.document.evidence)}</p></div>${triagePanel(t)}${planning(t.document)}<div class="panel"><h2>${tr("Acceptance conditions")}</h2>${t.document.conditions.map((c,i)=>{const v=review?.conditions?.find(x=>x.id===c.id);return `<div class="condition"><span class="condition-num">${String(i+1).padStart(2,'0')}</span><div><strong>${esc(c.text)}</strong><small>${esc(c.id)} · ${esc(c.method)}</small>${v?.evidence?`<small>${esc(v.evidence)}</small>`:''}</div>${badge(v?.verdict||tr("Not verified"))}</div>`}).join('')}</div>${t.document.design?`<div class="panel"><h2>${tr("Approach and decisions")}</h2><p class="prose">${esc(t.document.design)}</p></div>`:''}<div class="panel"><h2>${tr("Outputs and evidence")}</h2>${resultLinks(t)}${['verification','review','landing'].map(kind=>`<div class="evidence-block"><button class="evidence-button" data-evidence="${kind}" aria-expanded="false">${{verification:tr("Verification results"),review:tr("Independent review"),landing:tr("Landing record")}[kind]} <span>＋</span></button><div id="evidence-${kind}" hidden></div></div>`).join('')}</div></div><aside class="inspector"><div class="panel"><h3>${tr("Current state")}</h3>${badge(t.status==='done'?'done':t.control)}<div class="quiet">${t.status==='done'?tr("Acceptance conditions and delivery results are preserved."):t.control==='finished'?tr("The requested endpoint was reached. This does not necessarily mean the track is complete."):tr("See Activity for assigned work and waiting conditions.")}</div><div class="controls">${['active','pause-requested'].includes(t.control)?`<button data-control="pause" data-track="${t.id}">${tr("Request pause")}</button>`:''}${['paused','pause-requested'].includes(t.control)?`<button data-control="resume" data-track="${t.id}">${tr("Resume")}</button>`:''}${t.status!=='done'&&t.request&&t.control!=='cancelled'?`<button data-control="cancel" data-track="${t.id}">${tr("Cancelled")}</button>`:''}</div><a class="section-link" href="#activity">${tr("View activity")} →</a></div><div class="panel"><h3>${tr("Track information")}</h3><dl class="metadata">${[[tr("Area"),t.document.area||tr("General")],[tr("Priority"),t.document.priority||tr("Unspecified")],[tr("Document revision"),t.revision],[tr("Last updated"),date(t.updated,true)],[tr("Change revision"),t.head||tr("Not yet")],[tr("Workspace"),t.workspace||tr("Not yet")]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div><div class="panel"><h3>${tr("Canonical document")}</h3><p class="subtle">${tr("Create and revise documents with the agent's todo skill. Execution facts are linked from their records.")}</p></div></aside></div></details>`;
+  $('trackView').innerHTML=`<a class="section-link" href="${esc(savedViews[from]||'#'+from)}">← ${from==='completed'?tr("Completed archive"):from==='activity'?tr("Activity"):tr("TODO list")}</a>${t.document.documentReview==='pending-human-review'?`<div class="notice">${tr("Triage registered this follow-up document. Review its contents and scope before selection.")}</div>`:''}<section class="document-stage"><div class="section-heading"><h2>${tr("Analysis and plan")}</h2><a href="${esc(t.documentView.url)}" target="_blank" rel="noopener">${tr("Open document")} ↗</a></div><iframe title="${esc(t.document.title)} ${tr("Analysis and plan")}" src="${esc(t.documentView.url)}" sandbox="allow-scripts allow-downloads" referrerpolicy="no-referrer"></iframe></section><details class="runtime-details"><summary>${tr("Conditions \u00b7 execution \u00b7 evidence")}</summary><div class="detail-grid"><div><div class="panel"><h2>${tr("Goal and scope")}</h2><p class="prose">${esc(t.document.scope)}</p></div><div class="panel"><h2>${tr("Problem and evidence")}</h2><p class="prose">${esc(t.document.evidence)}</p></div>${triagePanel(t)}${planning(t.document)}<div class="panel"><h2>${tr("Acceptance conditions")}</h2>${t.document.conditions.map((c,i)=>{const v=review?.conditions?.find(x=>x.id===c.id);return `<div class="condition"><span class="condition-num">${String(i+1).padStart(2,'0')}</span><div><strong>${esc(c.text)}</strong><small>${esc(c.id)} · ${esc(c.method)}</small>${v?.evidence?`<small>${esc(v.evidence)}</small>`:''}</div>${badge(v?.verdict||tr("Not verified"))}</div>`}).join('')}</div>${t.document.design?`<div class="panel"><h2>${tr("Approach and decisions")}</h2><p class="prose">${esc(t.document.design)}</p></div>`:''}<div class="panel"><h2>${tr("Outputs and evidence")}</h2>${resultLinks(t)}${['verification','review','landing'].map(kind=>`<div class="evidence-block"><button class="evidence-button" data-evidence="${kind}" aria-expanded="false">${{verification:tr("Verification results"),review:tr("Independent review"),landing:tr("Landing record")}[kind]} <span>＋</span></button><div id="evidence-${kind}" hidden></div></div>`).join('')}</div></div><aside class="inspector"><div class="panel"><h3>${tr("Current state")}</h3>${badge(t.status==='done'?'done':t.control)}<div class="quiet">${t.status==='done'?tr("Acceptance conditions and delivery results are preserved."):t.control==='finished'?tr("The requested endpoint was reached. This does not necessarily mean the track is complete."):tr("See Activity for assigned work and waiting conditions.")}</div><div class="controls">${['active','pause-requested'].includes(t.control)?`<button data-control="pause" data-track="${t.id}">${tr("Request pause")}</button>`:''}${['paused','pause-requested'].includes(t.control)?`<button data-control="resume" data-track="${t.id}">${tr("Resume")}</button>`:''}${t.status!=='done'&&t.request&&t.control!=='cancelled'?`<button data-control="cancel" data-track="${t.id}">${tr("Cancelled")}</button>`:''}</div><a class="section-link" href="#activity">${tr("View activity")} →</a></div><div class="panel"><h3>${tr("Track information")}</h3><dl class="metadata">${[[tr("Area"),t.document.area||tr("General")],[tr("Priority"),t.document.priority||tr("Unspecified")],[tr("Document revision"),t.revision],[tr("Last updated"),date(t.updated,true)],[tr("Change revision"),t.head||tr("Not yet")],[tr("Workspace"),t.workspace||tr("Not yet")]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div><div class="panel"><h3>${tr("Canonical document")}</h3><p class="subtle">${tr("Create and revise documents with the agent's todo skill. Execution facts are linked from their records.")}</p></div></aside></div></details>`;
+  if(r.query.get('evidence')==='verification') {
+    document.querySelector('.runtime-details').open=true;
+    evidenceOpen.add(t.id+':verification');
+  }
   for(const kind of ['verification','review','landing']) if(evidenceOpen.has(t.id+':'+kind))showEvidence(kind,true);
 }
 async function showEvidence(kind,force=false) {
@@ -236,8 +297,9 @@ async function loadRoute(poll=false) {
   const thisRoute=location.hash, changed=routeKey!==thisRoute;
   if(changed && routeKey)scrollPositions.set(routeKey,window.scrollY);
   routeKey=thisRoute;
+  if(r.view!=='activity')currentTask=null;
   const version=++generation;if(controller)controller.abort();controller=new AbortController();const signal=controller.signal;
-  if(changed){chrome(r);detailSignature='';if(r.view==='completed')archiveLimit=50;if(['todos','completed'].includes(r.view)){savedViews[r.view]=thisRoute;}}
+  if(changed){chrome(r);detailSignature='';if(r.view==='completed')archiveLimit=50;if(['todos','completed','activity'].includes(r.view)){savedViews[r.view]=thisRoute;}}
   if(['todos','completed'].includes(r.view)){
     if(document.activeElement!==$('search'))$('search').value=r.query.get('q')||'';
     $('filter').value=r.query.get('control')||'all';$('sort').value=r.query.get('sort')||'updated';
@@ -253,15 +315,39 @@ async function loadRoute(poll=false) {
     } else if(r.view==='track'){
       const t=await api('tracks/'+encodeURIComponent(r.id),signal);if(version!==generation)return;renderTrack(t,r);
     } else if(r.view==='activity'){
-      const [work,decisions,feed]=await Promise.all([collect('activity',{},signal),collect('decisions',{},signal),api('events?limit=20',signal)]);
+      const track=r.query.get('track'), task=r.query.get('task');
+      currentTask=task;
+      $('taskInspector').hidden=!task;
+      if(changed&&task)$('taskInspector').innerHTML='';
+      $('activityTasks').hidden=!track;
+      const decisionQuery=new URLSearchParams({limit:25,offset:r.query.get('decisions_offset')||0});
+      if(track)decisionQuery.set('track',track);
+      const [work,decisions,feed,tasks]=await Promise.all([
+        api('activity?limit=25&offset='+(r.query.get('offset')||0),signal),
+        api('decisions?'+decisionQuery,signal),
+        api('events?limit=20',signal),
+        track?api('activity/tasks?'+new URLSearchParams({track,limit:10,offset:r.query.get('tasks_offset')||0}),signal):null
+      ]);
       if(version!==generation)return;
-      renderActivity(work);renderDecisions(decisions);if(currentTask)inspectTask(currentTask);if(!poll||changed||events.length<=20){events=feed.items;eventCursor=feed.next;renderEvents();}
+      activityConnected=true;
+      renderActivity(work);renderDecisions(decisions);
+      $('decisionPages').innerHTML=activityPages(decisions,'decisions_offset');
+      $('decisionPages').hidden=!decisions.total;
+      if(tasks)renderActivityTasks(tasks,track);
+      if(task)await inspectTask(task,activityFocus==='inspector');
+      if(version!==generation)return;
+      if(activityFocus&&activityFocus!=='inspector') {
+        const button=[...document.querySelectorAll('[data-task],[data-activity-track]')].find(b=>b.dataset.task===activityFocus||b.dataset.activityTrack===activityFocus);
+        button?.focus();
+      }
+      activityFocus=null;
+      if(!poll||changed||events.length<=20){events=feed.items;eventCursor=feed.next;renderEvents();}
     } else {
       const data=await collect('watches',{},signal);if(version!==generation)return;renderWatch(data);
     }
     if(changed)window.scrollTo(0,scrollPositions.get(thisRoute)||0);
     $('connection').textContent=tr("Connected");$('connectionDot').classList.remove('stale');
-  } catch(e){if(e.name==='AbortError')return;$('connection').textContent=tr("Connection lost");$('connectionDot').classList.add('stale');notice(tr("Could not refresh. The last observed state is preserved. ")+e.message,true);}
+  } catch(e){if(e.name==='AbortError')return;activityDisconnected();$('connection').textContent=tr("Connection lost");$('connectionDot').classList.add('stale');notice(tr("Could not refresh. The last observed state is preserved. ")+e.message,true);}
   finally{if(version===generation){$('tableShell').setAttribute('aria-busy','false');$('tableShell').classList.remove('loading');}}
 }
 async function refresh(poll=false) {
@@ -276,7 +362,7 @@ async function refresh(poll=false) {
     for(const [id,key]of [['navActive','active'],['navRunning','running'],['navWatch','watch']])$(id).textContent=number(overview.counts[key]);
     if(!routeKey)chrome(route());
     await loadRoute(poll);
-  }catch(e){$('connection').textContent=tr("Connection lost");$('connectionDot').classList.add('stale');notice(tr("Check the server connection. The last observed screen does not mean work is complete."),true);}
+  }catch(e){activityDisconnected();$('connection').textContent=tr("Connection lost");$('connectionDot').classList.add('stale');notice(tr("Check the server connection. The last observed screen does not mean work is complete."),true);}
 }
 function queryChange(changes,replace=false){const r=route(),params=Object.fromEntries(r.query);Object.assign(params,changes);delete params.as_of;go(r.view,params,replace);}
 $('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>queryChange({q:$('search').value,offset:0},true),250);});
@@ -294,7 +380,15 @@ document.addEventListener('input',e=>{if(e.target.dataset.draft)drafts.set(e.tar
 document.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.hasAttribute('data-reset'))go(route().view);
-  if(b.dataset.task)inspectTask(b.dataset.task);
+  if(b.dataset.task){activityFocus='inspector';queryChange({task:b.dataset.task});}
+  if(b.hasAttribute('data-close-task')){activityFocus=currentTask;currentTask=null;queryChange({task:null});}
+  if(b.dataset.activityTrack){
+    const closing=route().query.get('track')===b.dataset.activityTrack;
+    activityFocus=b.dataset.activityTrack;
+    currentTask=null;
+    queryChange({track:closing?null:b.dataset.activityTrack,task:null,tasks_offset:0,decisions_offset:0});
+  }
+  if(b.hasAttribute('data-activity-page'))queryChange({[b.dataset.pageKey]:b.dataset.activityPage});
   if(b.dataset.evidence)showEvidence(b.dataset.evidence);
   if(b.dataset.control){const result=await post('control',{track:b.dataset.track,action:b.dataset.control},b);if(result){notice(tr("Control request recorded. Current state: ")+(labels[result.control]||result.control));await refresh();}}
   if(b.dataset.answer){const answer=drafts.get(b.dataset.answer)||'';if(!answer.trim()){notice(tr("Enter an answer."));return;}const result=await post('answer',{decision:b.dataset.answer,answer},b);if(result){drafts.delete(b.dataset.answer);b.blur();notice(tr("Answer recorded. A running driver can continue the follow-up work."));await refresh();}}

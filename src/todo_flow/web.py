@@ -120,6 +120,8 @@ def serve(store, port=8765):
                         )
                     elif path == "/api/activity":
                         result = dashboard.activity(**params)
+                    elif path == "/api/activity/tasks":
+                        result = dashboard.activity_tasks(**params)
                     elif path == "/api/decisions":
                         result = dashboard.decisions(**params)
                     elif path == "/api/events":

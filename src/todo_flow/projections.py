@@ -17,6 +17,17 @@ SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
  COALESCE(json_extract(t.document,'$.area'),'General') AS area"""
 
 
+# Only the runtime's explicit repair instruction has a more specific display intent.
+# Legacy/free-form purposes remain available through task(), never sliced into summaries.
+TASK_SUMMARY = """id,track,kind,status,owner,lease,updated,
+ CASE WHEN kind='work' AND substr(purpose,1,18)='Fix verification: '
+ THEN 'verification-repair' ELSE NULL END AS intent"""
+TASK_ORDER = (
+    "CASE status WHEN 'running' THEN 0 WHEN 'waiting' THEN 1 "
+    "WHEN 'queued' THEN 2 ELSE 3 END,created,id"
+)
+
+
 def bounds(limit=25, offset=0):
     limit, offset = int(limit), int(offset)
     if not 1 <= limit <= 100 or offset < 0:
@@ -220,29 +231,85 @@ class Dashboard:
 
     def activity(self, limit=25, offset=0):
         limit, offset = bounds(limit, offset)
-        source = "FROM tasks w JOIN tracks t ON t.id=w.track WHERE w.status IN ('queued','running','waiting') AND t.status<>'done' AND t.control NOT IN ('cancelled','finished')"
+        now = time.time()
+        source = """FROM tracks t
+          LEFT JOIN (
+            SELECT track,COUNT(*) AS task_count,
+              SUM(status='running') AS running,
+              SUM(status='queued') AS queued,
+              SUM(status='waiting') AS waiting,
+              SUM(status='running' AND (lease IS NULL OR lease<=?)) AS uncertain
+            FROM tasks WHERE status IN ('queued','running','waiting') GROUP BY track
+          ) a ON a.track=t.id
+          LEFT JOIN (
+            SELECT track,COUNT(*) AS decisions FROM decisions
+            WHERE status='open' GROUP BY track
+          ) d ON d.track=t.id
+          WHERE t.status<>'done' AND t.control NOT IN ('cancelled','finished')
+            AND (a.task_count>0 OR d.decisions>0)"""
         with self.store.connect() as c:
             c.execute("BEGIN")
             result = page(
                 c,
-                "SELECT w.*,json_extract(t.document,'$.title') AS title,t.control,t.workspace",
+                """SELECT t.id,json_extract(t.document,'$.title') AS title,t.control,
+                  COALESCE(a.task_count,0) AS taskCount,
+                  COALESCE(a.running,0) AS running,
+                  COALESCE(a.queued,0) AS queued,
+                  COALESCE(a.waiting,0) AS waiting,
+                  COALESCE(a.uncertain,0) AS uncertain,
+                  COALESCE(d.decisions,0) AS decisions,
+                  json_extract(t.verification,'$.ok') AS verificationOk,
+                  json_extract(t.verification,'$.at') AS verificationAt,
+                  CASE WHEN a.running>0 THEN 'running'
+                    WHEN a.waiting>0 OR d.decisions>0 THEN 'waiting'
+                    ELSE 'queued' END AS status""",
                 source,
-                [],
-                "CASE w.status WHEN 'running' THEN 0 WHEN 'waiting' THEN 1 ELSE 2 END,w.created,w.id",
+                [now],
+                "t.id",
                 limit,
                 offset,
             )
+            result["taskTotal"] = c.execute(
+                "SELECT COALESCE(SUM(a.task_count),0) " + source, (now,)
+            ).fetchone()[0]
+            for track in result["items"]:
+                task = c.execute(
+                    "SELECT "
+                    + TASK_SUMMARY
+                    + " FROM tasks WHERE track=? AND status IN ('queued','running','waiting')"
+                    + " ORDER BY "
+                    + TASK_ORDER
+                    + " LIMIT 1",
+                    (track["id"],),
+                ).fetchone()
+                track["current"] = dict(task) if task else None
+        result["observedAt"] = now
         return result
 
-    def decisions(self, limit=25, offset=0):
+    def activity_tasks(self, track, limit=10, offset=0):
+        limit, offset = bounds(limit, offset)
+        with self.store.connect() as c:
+            c.execute("BEGIN")
+            return page(
+                c,
+                "SELECT " + TASK_SUMMARY,
+                "FROM tasks WHERE track=?",
+                [track],
+                TASK_ORDER,
+                limit,
+                offset,
+            )
+
+    def decisions(self, limit=25, offset=0, track=None):
         limit, offset = bounds(limit, offset)
         with self.store.connect() as c:
             c.execute("BEGIN")
             return page(
                 c,
                 "SELECT d.*,json_extract(t.document,'$.title') AS title",
-                "FROM decisions d JOIN tracks t ON t.id=d.track WHERE d.status='open' AND t.control NOT IN ('cancelled','finished')",
-                [],
+                "FROM decisions d JOIN tracks t ON t.id=d.track WHERE d.status='open' AND t.control NOT IN ('cancelled','finished')"
+                + (" AND d.track=?" if track else ""),
+                [track] if track else [],
                 "d.created,d.id",
                 limit,
                 offset,
