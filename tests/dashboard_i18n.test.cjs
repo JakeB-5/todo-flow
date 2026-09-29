@@ -133,7 +133,7 @@ function launchFixture(status='accepted') {
 }
 function taskFixture(id='one',launch=launchFixture()) {
   return {task:{id,kind:'work',purpose:'Authored purpose '+id,owner:'worker-one',
-    status:'running',updated:1,generation:2,track:'track/'+id},
+    status:'running',lease:Date.now()/1000+60,updated:1,generation:2,track:'track/'+id},
     attempt:{id:'attempt-'+id},launch,result:null};
 }
 
@@ -286,4 +286,140 @@ test('native session associations retain identifiers and escape authored-looking
   e.run("applyLanguage('ko')");html=e.run('launchPanel(launch)');
   assert.ok(html.includes('Codex 세션'));
   assert.ok(html.includes('repo::/candidate'));
+});
+
+
+function activityEnvironment() {
+  const e=environment();
+  const elements=new Map();
+  e.document.getElementById=id=>{
+    if(!elements.has(id))elements.set(id,{innerHTML:'',hidden:false,textContent:'',dataset:{},
+      setAttribute(){},focus(){e.document.activeElement=this;},
+      classList:{add(){},remove(){},toggle(){}}});
+    return elements.get(id);
+  };
+  e.context.URL=URL;
+  e.context.URLSearchParams=URLSearchParams;
+  e.context.AbortController=AbortController;
+  e.context.location={hash:'#activity?track=alpha&task=one&offset=25&tasks_offset=10'};
+  e.context.window={scrollY:0,scrollTo(){}};
+  const requests=[];
+  const handlers=new Map();
+  e.document.addEventListener=(name,handler)=>handlers.set(name,handler);
+  const purpose='검증 실패 😀\n<authored>' .repeat(800);
+  const current={id:'one',track:'alpha',kind:'work',status:'running',lease:Date.now()/1000+60,
+    updated:1,intent:'verification-repair'};
+  const data={items:[
+    {id:'alpha',title:'Alpha',taskCount:2,running:1,queued:1,waiting:0,uncertain:0,
+      decisions:0,status:'running',verificationOk:0,current},
+    {id:'beta',title:'Beta',taskCount:1,running:0,queued:0,waiting:1,uncertain:0,
+      decisions:1,status:'waiting',verificationOk:null,
+      current:{id:'three',kind:'work',status:'waiting',intent:null}}
+  ],total:2,taskTotal:3,limit:25,offset:0,hasMore:false};
+  let disconnected=false;
+  e.context.fetch=async url=>{
+    requests.push(url);
+    if(disconnected)throw Error('offline');
+    let body;
+    if(url.startsWith('/api/activity/tasks?'))body={items:[current],total:11,offset:10,limit:10,hasMore:false};
+    else if(url.startsWith('/api/activity?'))body=data;
+    else if(url.startsWith('/api/decisions?'))body={items:[],total:0,limit:25,offset:0,hasMore:false};
+    else if(url.startsWith('/api/events?'))body={items:[],next:null};
+    else if(url==='/api/tasks/one')body={...taskFixture(),task:{...current,purpose}};
+    else throw Error('Unexpected request '+url);
+    return {ok:true,json:async()=>body};
+  };
+  const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+  for(const [start,end] of [
+    [0,app.indexOf('function go(')],
+    [app.indexOf('function go('),app.indexOf('function badge(')],
+    [app.indexOf('function badge('),app.indexOf('async function post(')],
+    [app.indexOf('function renderDecisions('),app.indexOf('function planning(')],
+    [app.indexOf('async function loadRoute('),app.indexOf('async function refresh(')],
+    [app.indexOf('function queryChange('),app.indexOf("$('search').addEventListener")],
+    [app.indexOf("document.addEventListener('click'"),app.indexOf("$('moreEvents').onclick")]
+  ])e.run(app.slice(start,end));
+  e.run("function chrome(){} function renderEvents(){}; overview={counts:{decisions:1}}; useProjectLanguage({key:'activity-fixture',language:'en'})");
+  return {...e,elements,requests,data,purpose,handlers,disconnect(){disconnected=true;},
+    html:id=>elements.get(id)?.innerHTML||'',load:()=>e.run('loadRoute()')};
+}
+
+test('activity uses bounded routes and restores track, task and page context from the URL',async()=>{
+  for(const locale of ['en','ko']) {
+    const e=activityEnvironment();
+    e.run('saveDisplayLanguage('+JSON.stringify(locale)+')');
+    await e.load();
+    assert.equal(e.requests.length,5);
+    assert.ok(e.requests.includes('/api/activity?limit=25&offset=25'));
+    assert.ok(e.requests.includes('/api/activity/tasks?track=alpha&limit=10&offset=10'));
+    assert.ok(e.requests.includes('/api/decisions?limit=25&offset=0&track=alpha'));
+    assert.equal(e.run('currentTask'),'one');
+    assert.equal(e.run("route().query.get('track')"),'alpha');
+    assert.ok(e.html('activityTasks').includes('aria-expanded="true"'));
+    assert.ok(e.html('taskInspector').includes('검증 실패 😀'));
+    assert.ok(e.html('taskInspector').includes('&lt;authored&gt;'));
+    assert.ok(!e.html('work').includes('검증 실패 😀'));
+    assert.ok(!e.html('activityTasks').includes('검증 실패 😀'));
+    assert.ok(e.html('taskInspector').includes('data-close-task'));
+    assert.ok(e.html('taskInspector').includes('evidence=verification'));
+    assert.ok(e.html('taskInspector').includes('return=%23activity'));
+    assert.ok(e.html('work').includes(locale==='en'?'Recent verification':'최근 검증 결과'));
+    assert.ok(e.html('work').includes(locale==='en'?'Fix the recorded verification failure.':'기록된 검증 실패를 수정합니다.'));
+    assert.ok(e.html('work').includes(locale==='en'?'Detailed intent unavailable':'구체적인 목적 정보가 없습니다'));
+    const hash=e.context.location.hash;
+    e.run("saveDisplayLanguage('ko')");
+    await e.load();
+    assert.equal(e.context.location.hash,hash);
+    assert.equal(e.run('currentTask'),'one');
+    assert.ok(e.html('taskInspector').includes('검증 실패 😀'));
+  }
+});
+
+test('activity separates recorded failure, implementation, waiting and uncertain execution',async()=>{
+  const e=activityEnvironment();
+  await e.load();
+  assert.ok(e.html('work').includes('Implementation / investigation'));
+  assert.ok(e.html('work').includes('Failed'));
+  assert.ok(e.html('work').includes('awaiting assignment'));
+  assert.ok(e.html('work').includes('Awaiting decision'));
+  assert.ok(!e.html('work').includes('Check the candidate against required verification.'));
+  e.data.items[0].uncertain=1;
+  e.data.items[0].current.lease=1;
+  await e.load();
+  assert.ok(e.html('work').includes('Execution needs checking'));
+  assert.ok(e.html('activityTasks').includes('Execution needs checking'));
+  assert.ok(e.html('taskInspector').includes('Execution needs checking'));
+  e.disconnect();
+  await e.load();
+  assert.equal(e.elements.get('activityWarning').hidden,false);
+  assert.ok(e.html('work').includes('Execution needs checking'));
+  assert.ok(e.html('taskInspector').includes('검증 실패 😀'));
+  assert.equal(e.run('currentTask'),'one');
+});
+
+test('activity task pages expose bounded navigation without losing instructions',()=>{
+  const e=activityEnvironment();
+  e.context.page={items:[{id:'old',kind:'work',status:'done',intent:null}],total:31,limit:10,offset:10,hasMore:true};
+  e.run("renderActivityTasks(page,'alpha')");
+  assert.ok(e.html('activityTasks').includes('data-activity-page="0"'));
+  assert.ok(e.html('activityTasks').includes('data-activity-page="20"'));
+  assert.ok(e.html('activityTasks').includes('data-page-key="tasks_offset"'));
+  assert.ok(e.html('activityTasks').includes('Detailed intent unavailable'));
+});
+
+test('task details receive keyboard focus and the close button preserves track context',async()=>{
+  const e=activityEnvironment();
+  e.run("activityFocus='inspector'");
+  await e.load();
+  assert.equal(e.document.activeElement,e.elements.get('taskInspector'));
+  const button={dataset:{},hasAttribute:name=>name==='data-close-task'};
+  await e.handlers.get('click')({target:{closest:()=>button}});
+  assert.equal(e.run("route().query.get('track')"),'alpha');
+  assert.equal(e.run("route().query.get('task')"),null);
+  assert.equal(e.run("route().query.get('tasks_offset')"),'10');
+  // The real browser dispatches hashchange after the native button activation.
+  e.document.activeElement=null;
+  await e.load();
+  assert.equal(e.elements.get('taskInspector').hidden,true);
+  assert.equal(e.run('currentTask'),null);
 });
