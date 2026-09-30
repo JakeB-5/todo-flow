@@ -234,9 +234,7 @@ class Store:
                 "SELECT b.* FROM budgets b JOIN tracks t ON t.id=b.track "
                 "AND t.request=b.request ORDER BY b.track"
             ).fetchall()
-            return [
-                self.budget_details(c, self.track(row["track"], c), dict(row)) for row in rows
-            ]
+            return [self.budget_details(c, self.track(row["track"], c), dict(row)) for row in rows]
 
     def stop_for_budget(self, c, track, task, budget):
         if not budget["decision"]:
@@ -320,7 +318,9 @@ class Store:
             if t["control"] in ("active", "paused", "pause-requested"):
                 budget = self.budget(c, t)
                 if worker_limit is not None and budget["worker_limit"] != worker_limit:
-                    raise Conflict("Existing request limit is immutable; answer its budget decision")
+                    raise Conflict(
+                        "Existing request limit is immutable; answer its budget decision"
+                    )
                 return {
                     "requestId": t["request"],
                     "existing": True,
@@ -358,7 +358,9 @@ class Store:
             if action == "resume":
                 budget = self.budget(c, t)
                 if budget and budget["decision"]:
-                    raise Conflict("Answer the budget decision with explicit additional worker attempts")
+                    raise Conflict(
+                        "Answer the budget decision with explicit additional worker attempts"
+                    )
             active = c.execute(
                 "SELECT 1 FROM tasks WHERE track=? AND status='running'", (track,)
             ).fetchone()
@@ -546,9 +548,7 @@ class Store:
             if budget:
                 if additional_worker_attempts is None:
                     raise Conflict("Budget resumption requires --additional-worker-attempts N")
-                return self.extend_budget(
-                    c, t, d, dict(budget), answer, additional_worker_attempts
-                )
+                return self.extend_budget(c, t, d, dict(budget), answer, additional_worker_attempts)
             if additional_worker_attempts is not None:
                 raise Conflict("Additional attempts require an open budget decision")
             c.execute("UPDATE decisions SET status='answered',answer=? WHERE id=?", (answer, id_))

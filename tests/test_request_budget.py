@@ -121,9 +121,7 @@ class BudgetStoreTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()["tasks"], [])
         self.store.start("addition")
         task = self.store.claim("first")
-        self.store.finish(
-            task, {"summary": "First", "next": [{"kind": "work", "purpose": "Next"}]}
-        )
+        self.store.finish(task, {"summary": "First", "next": [{"kind": "work", "purpose": "Next"}]})
         self.assertIsNotNone(self.store.claim("second"))
         budget = self.store.snapshot()["budgets"][0]
         self.assertIsNone(budget["worker_limit"])
