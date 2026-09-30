@@ -116,7 +116,7 @@ class ProcessSupervisorTests(unittest.TestCase):
             stderr=subprocess.DEVNULL,
         )
         self.addCleanup(control.stop)
-        driver, supervisor = self.start(parent)
+        driver, supervisor = self.start(parent, timeout=None)
         self.await_file(ready)
         with self.assertRaises(ProcessBarrierError):
             self.gate.barrier.require_clear()

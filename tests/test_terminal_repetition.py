@@ -15,10 +15,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from todo_flow.launchers import accept_terminal
 from todo_flow.process_inventory import ProcessInventory
 from todo_flow.process_launch import LaunchGate
-from todo_flow.terminal_slots import TerminalCapacityError, TerminalSlots
 from todo_flow.worker import run_worker
 
 
@@ -27,7 +25,6 @@ class TerminalRepetitionTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
-        self.slots = TerminalSlots(self.root, concurrency=2, idle_limit=1)
         self.rows = {}
         self.created = 0
         self.closed = 0
@@ -35,13 +32,6 @@ class TerminalRepetitionTests(unittest.TestCase):
         self.max_physical = 0
         self.preserved = {}
         self.executions = set()
-
-    def accept(self, reservation, record, folder):
-        accepted = accept_terminal(reservation, record, folder)
-        counts = self.slots.counts(self.slots.snapshot())
-        self.max_active = max(self.max_active, counts["active"])
-        self.assertLessEqual(counts["active"] + counts["reserved"], 2)
-        return accepted
 
     def finish_bridge(self):
         spec = json.loads((self.folder / "terminal-spec.json").read_text())
@@ -208,16 +198,7 @@ class TerminalRepetitionTests(unittest.TestCase):
             with (
                 patch("todo_flow.worker.select_launcher", return_value=launcher),
                 patch("todo_flow.launchers.subprocess.run", side_effect=self.cli),
-                patch("todo_flow.launchers.accept_terminal", side_effect=self.accept),
             ):
-                if backend == "terminal" and number >= 2:
-                    with self.assertRaises(TerminalCapacityError):
-                        run_worker(
-                            config, {"workspace": str(self.root)}, task, self.root, lambda _: None
-                        )
-                    blocked += 1
-                    self.assertFalse((self.folder / "terminal-spec.json").exists())
-                    continue
                 result = run_worker(
                     config, {"workspace": str(self.root)}, task, self.root, lambda _: None
                 )
@@ -225,19 +206,17 @@ class TerminalRepetitionTests(unittest.TestCase):
             report = json.loads((self.folder / "terminal-retirement.json").read_text())
             self.assertEqual(report["status"], "preserved" if backend == "terminal" else "closed")
             self.remember(task, visible=True)
-        expected = 2 if backend == "terminal" else 50
+        expected = 50
         self.assertEqual(self.created, expected)
         self.assertEqual(len(self.executions), expected)
-        self.assertEqual(blocked, 48 if backend == "terminal" else 0)
+        self.assertEqual(blocked, 0)
         self.assertEqual(self.closed, 50 if backend == "orca" else 0)
-        self.assertEqual(len(self.rows), 2 if backend == "terminal" else 0)
-        counts = self.slots.counts(self.slots.snapshot())
-        self.assertEqual(counts["closed"], 0 if backend == "terminal" else 50)
-        self.assertEqual(counts["quarantined"], 2 if backend == "terminal" else 0)
-        maximum = 2 if backend == "terminal" else 1
+        self.assertEqual(len(self.rows), 50 if backend == "terminal" else 0)
+        reclaimed = 0 if backend == "terminal" else 50
+        preserved = 50 if backend == "terminal" else 0
+        maximum = 50 if backend == "terminal" else 1
         self.assertEqual(self.max_physical, maximum)
-        self.assertEqual(self.slots.snapshot()["max_owned"], maximum)
-        self.assertEqual(self.max_active, 1)
+        self.assertFalse((self.root / "terminal-slots.json").exists())
         for path, content in self.preserved.items():
             self.assertEqual(path.read_bytes(), content)
         print(
@@ -248,9 +227,9 @@ class TerminalRepetitionTests(unittest.TestCase):
                     "requests": 50,
                     "created": self.created,
                     "reused": 0,
-                    "reclaimed": counts["closed"],
+                    "reclaimed": reclaimed,
                     "close_calls": self.closed,
-                    "preserved": counts["quarantined"],
+                    "preserved": preserved,
                     "blocked": blocked,
                     "max_owned": maximum,
                     "max_active": self.max_active,
@@ -266,7 +245,7 @@ class TerminalRepetitionTests(unittest.TestCase):
     def test_tmux_fifty_sequential_workers_observe_automatic_removal(self):
         self.repeat("tmux")
 
-    def test_custom_fifty_requests_preserve_two_and_block_forty_eight(self):
+    def test_custom_fifty_requests_continue_without_a_terminal_limit(self):
         self.repeat("terminal")
 
     def test_headless_fifty_local_workers_preserve_evidence_without_tabs(self):
@@ -302,7 +281,7 @@ class TerminalRepetitionTests(unittest.TestCase):
                 self.assertEqual((self.folder / "stderr.log").read_text(), f"diagnostic {number}\n")
                 self.remember(task, visible=False)
             visible.assert_not_called()
-        self.assertFalse(self.slots.path.exists())
+        self.assertFalse((self.root / "terminal-slots.json").exists())
         self.assertEqual(len(self.executions), 50)
         for path, content in self.preserved.items():
             self.assertEqual(path.read_bytes(), content)

@@ -14,6 +14,9 @@ class UnixWebSocket:
         self.deadline = deadline
         self.max_bytes = max_bytes
         self.buffer = bytearray()
+        self._receive_deadline = None
+        self._fragments = bytearray()
+        self._fragment_active = False
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             self._timeout()
@@ -61,7 +64,13 @@ class UnixWebSocket:
             raise
 
     def _timeout(self):
-        remaining = self.deadline - time.monotonic()
+        deadlines = [
+            value for value in (self.deadline, self._receive_deadline) if value is not None
+        ]
+        if not deadlines:
+            self.sock.settimeout(None)
+            return
+        remaining = min(deadlines) - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("App Server deadline expired")
         self.sock.settimeout(remaining)
@@ -73,12 +82,9 @@ class UnixWebSocket:
             raise EOFError("App Server connection closed")
         return data
 
-    def _exact(self, length):
+    def _fill(self, length):
         while len(self.buffer) < length:
             self.buffer.extend(self._recv())
-        value = bytes(self.buffer[:length])
-        del self.buffer[:length]
-        return value
 
     def _send_frame(self, payload, opcode):
         if len(payload) > self.max_bytes:
@@ -96,42 +102,68 @@ class UnixWebSocket:
     def send(self, message):
         self._send_frame(json.dumps(message, allow_nan=False, ensure_ascii=False).encode(), 1)
 
-    def receive(self):
-        fragments = bytearray()
-        active = False
+    def receive(self, timeout=None):
+        """Bound one poll, retaining incomplete frames/messages across idle polls."""
+        self._receive_deadline = None if timeout is None else time.monotonic() + timeout
+        try:
+            return self._receive()
+        finally:
+            self._receive_deadline = None
+
+    def _receive(self):
         while True:
-            first, second = self._exact(2)
+            # Do not consume a header until the complete frame is buffered. An
+            # idle timeout in any header/payload byte is not a lost connection.
+            self._fill(2)
+            first, second = self.buffer[:2]
             opcode, finished = first & 15, bool(first & 128)
             if first & 112 or second & 128:
                 raise ValueError("Unsupported WebSocket flags or masked server frame")
             size = second & 127
+            header_size = 2
             if size == 126:
-                size = struct.unpack("!H", self._exact(2))[0]
+                header_size = 4
+                self._fill(header_size)
+                size = struct.unpack("!H", self.buffer[2:4])[0]
                 if size < 126:
                     raise ValueError("Noncanonical WebSocket frame length")
             elif size == 127:
-                size = struct.unpack("!Q", self._exact(8))[0]
+                header_size = 10
+                self._fill(header_size)
+                size = struct.unpack("!Q", self.buffer[2:10])[0]
                 if size < 65536 or size >= 2**63:
                     raise ValueError("Invalid WebSocket frame length")
-            if size > self.max_bytes or (opcode < 8 and len(fragments) + size > self.max_bytes):
+            if size > self.max_bytes or (
+                opcode < 8 and len(self._fragments) + size > self.max_bytes
+            ):
                 raise ValueError("App Server message exceeds limit")
             if opcode >= 8 and (not finished or size > 125):
                 raise ValueError("Invalid WebSocket control frame")
-            payload = self._exact(size)
+            self._fill(header_size + size)
+            payload = bytes(self.buffer[header_size : header_size + size])
+            del self.buffer[: header_size + size]
             if opcode == 8:
                 raise EOFError("App Server closed the WebSocket")
             if opcode == 9:
-                self._send_frame(payload, 10)
+                try:
+                    self._send_frame(payload, 10)
+                except TimeoutError as error:
+                    # A partial pong write is uncertain delivery, not an idle
+                    # read poll. Let the caller reconcile a new connection.
+                    raise OSError("WebSocket pong delivery was not confirmed") from error
                 continue
             if opcode == 10:
                 continue
-            if opcode == 1 and not active:
-                active = True
-            elif opcode != 0 or not active:
+            if opcode == 1 and not self._fragment_active:
+                self._fragment_active = True
+            elif opcode != 0 or not self._fragment_active:
                 raise ValueError("Unexpected WebSocket data frame")
-            fragments.extend(payload)
+            self._fragments.extend(payload)
             if finished:
-                return json.loads(fragments.decode("utf-8"))
+                result = json.loads(self._fragments.decode("utf-8"))
+                self._fragments.clear()
+                self._fragment_active = False
+                return result
 
     def close(self):
         self.sock.close()

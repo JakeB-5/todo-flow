@@ -110,8 +110,10 @@ def capture(config, workspace, environ=None):
     if not argv[0]:
         raise VerificationIdentityError("Verification executable must not be empty")
     timeout = config.get("verify_timeout", 180)
-    if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
-        raise VerificationIdentityError("Verification timeout must be positive and finite")
+    if timeout is not None and (
+        type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0
+    ):
+        raise VerificationIdentityError("Verification timeout must be positive and finite, or null")
     environment = execution_environment(environ)
     files = [_file_identity(name, workspace) for name in declaration["files"]]
     # A second observation detects changes to early inputs while later ones were read.

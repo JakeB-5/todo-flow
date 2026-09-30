@@ -9,6 +9,8 @@ Read installed `project.json` and STATE's `config/1.json` for the primary langua
 
 This is a temporary, read-only role scheduled after confirmed landing during trackrun. Inspect the landed SHA, original goal and conditions, extra review observations, GitHub review discussions, findings and relevant watches. Verify whether an old observation is already fixed. Do not create a resident supervisor or re-audit every track.
 
+Use existing exact-head verification and review evidence. Triage is not another general review or full-test phase: inspect the named sources and request a focused check only for a concrete unresolved fact. Do not search for extra work after the authorized outcome is established or turn optional checks into completion requirements. Respect the user's stopping boundary.
+
 Assess each source ID exactly once with current evidence, scope and a disposition reason. Return an explicit empty `triage` list when no findings remain. Additional observations may use stable `new:<key>` IDs. Do not invent work to fill a quota.
 
 - **repair**: an unresolved original-scope defect. The host creates fresh work and a repair branch on the same track. New verification, independent review, landing and triage precede completion.

@@ -53,6 +53,31 @@ class StoreTests(unittest.TestCase):
         self.s.start("other", "batch")
         self.assertEqual(len(self.s.snapshot()["tasks"]), 2)
 
+    def test_claim_and_recovery_registration_commit_or_rollback_together(self):
+        self.s.start("addition")
+        old = self.s.claim("old")
+        self.s.control("addition", "cancel")
+        for fail in (True, False):
+            try:
+                with self.s.transaction() as c:
+                    c.execute("UPDATE tracks SET control='active' WHERE id='addition'")
+                    work = self.s.enqueue(
+                        c, "addition", "work", "Adopt preserved proposal", "recovery"
+                    )
+                    task = self.s.claim("recovery", connection=c)
+                    self.assertEqual(task["id"], work)
+                    self.s.assert_claim(c, task)
+                    with self.assertRaises(Conflict):
+                        self.s.assert_claim(c, old)
+                    if fail:
+                        raise RuntimeError("Recovery registration interrupted")
+            except RuntimeError:
+                self.assertEqual(self.s.track("addition")["control"], "cancelled")
+                self.assertEqual(len(self.s.snapshot()["tasks"]), 1)
+                self.assertEqual(len(self.s.snapshot()["attempts"]), 1)
+        self.assertEqual(self.s.track("addition")["control"], "active")
+        self.assertIsNone(self.s.claim("competing-driver"))
+
     def test_stale_result_cannot_write(self):
         self.s.start("addition")
         task = self.s.claim("old")
@@ -68,6 +93,147 @@ class StoreTests(unittest.TestCase):
             self.s.finish(task, {"summary": "x", "next": [{"kind": "bad", "purpose": "x"}]})
         self.assertEqual(self.s.snapshot()["results"], [])
         self.assertEqual(self.s.snapshot()["tasks"][0]["status"], "running")
+
+    def pending_followup(self, kind="work"):
+        self.s.start("addition")
+        with self.s.transaction() as c:
+            c.execute("UPDATE tracks SET head='candidate-a' WHERE id='addition'")
+            self.s.enqueue(c, "addition", "work", "Second parent", "second-parent")
+        first = self.s.claim("first")
+        followup = {"kind": kind, "purpose": "Resolve the same obligation"}
+        self.s.finish(first, {"summary": "First request", "next": [followup]})
+        second = self.s.claim("second")
+        self.assertEqual(second["purpose"], "Second parent")
+        return first, second, followup
+
+    def followup_sources(self, work_id):
+        return [
+            json.loads(event["body"])
+            for event in self.s.snapshot()["events"]
+            if event["type"] in ("work.requested", "work.joined")
+            and json.loads(event["body"]).get("workId") == work_id
+            and "parentWorkId" in json.loads(event["body"])
+        ]
+
+    def assert_pending_followups_join(self, kind):
+        first, second, followup = self.pending_followup(kind)
+        self.s.finish(second, {"summary": "Second request", "next": [followup]})
+        pending = [row for row in self.s.snapshot()["tasks"] if row["status"] == "queued"]
+        self.assertEqual(len(pending), 1)
+        target = pending[0]
+        self.assertEqual((target["kind"], target["purpose"]), (kind, followup["purpose"]))
+        sources = self.followup_sources(target["id"])
+        self.assertEqual(len(sources), 2)
+        self.assertEqual(
+            {(source["parentWorkId"], source["parentAttemptId"]) for source in sources},
+            {(first["id"], first["attempt"]), (second["id"], second["attempt"])},
+        )
+        self.assertEqual(len({source["requestKey"] for source in sources}), 2)
+        self.assertTrue(
+            all(
+                source["head"] == "candidate-a" and source["documentRevision"] == 1
+                for source in sources
+            )
+        )
+        # Claiming against a later checkout must not rewrite the enrollment binding.
+        with self.s.transaction() as c:
+            c.execute("UPDATE tracks SET head='candidate-b' WHERE id='addition'")
+        claimed = self.s.claim("successor")
+        self.assertEqual(claimed["id"], target["id"])
+        self.assertEqual(claimed["obligation_head"], "candidate-a")
+        self.assertEqual(claimed["obligation_revision"], 1)
+        self.s.finish(claimed, {"summary": "Obligation handled"})
+        self.assertIsNone(self.s.claim("no-duplicate"))
+        with self.assertRaises(Conflict):
+            self.s.finish(second, {"summary": "Stale duplicate", "next": [followup]})
+        self.assertEqual(len(self.followup_sources(target["id"])), 2)
+
+    def test_pending_work_followups_join_with_both_sources(self):
+        self.assert_pending_followups_join("work")
+
+    def test_pending_assess_followups_join_with_both_sources(self):
+        self.assert_pending_followups_join("assess")
+
+    def test_followup_matching_requires_exact_pending_candidate(self):
+        self.s.register({**DOC, "id": "other"})
+        self.s.start("addition")
+        parent = self.s.claim("parent")
+        cases = [
+            ("same", {}, True),
+            ("running", {"status": "running"}, True),
+            ("waiting", {"status": "waiting"}, True),
+            ("purpose", {"purpose_suffix": " "}, False),
+            ("kind", {"kind": "assess"}, False),
+            ("head", {"head": "candidate-b"}, False),
+            ("revision", {"revision": 2}, False),
+            ("track", {"track": "other"}, False),
+            ("done", {"status": "done"}, False),
+            ("cancelled", {"status": "cancelled"}, False),
+            ("unknown", {"initial_head": None}, False),
+            ("empty", {"initial_head": ""}, False),
+            ("unbound", {"unbound": True}, False),
+            ("direct", {"direct": True}, False),
+        ]
+        for name, change, joins in cases:
+            with self.subTest(name=name), self.s.transaction() as c:
+                head = change.get("initial_head", "candidate-a")
+                c.execute("UPDATE tracks SET head=?,revision=1", (head,))
+                purpose = "Exact obligation " + name
+                first = self.s.enqueue(
+                    c,
+                    "addition",
+                    "work",
+                    purpose,
+                    name,
+                    parent=None if change.get("unbound") else parent,
+                )
+                if "status" in change:
+                    c.execute("UPDATE tasks SET status=? WHERE id=?", (change["status"], first))
+                track = change.get("track", "addition")
+                c.execute(
+                    "UPDATE tracks SET head=?,revision=? WHERE id=?",
+                    (change.get("head", head), change.get("revision", 1), track),
+                )
+                second = self.s.enqueue(
+                    c,
+                    track,
+                    change.get("kind", "work"),
+                    purpose + change.get("purpose_suffix", ""),
+                    name,
+                    parent=None if change.get("direct") else parent,
+                )
+                self.assertEqual(first == second, joins)
+                if not joins:
+                    row = c.execute("SELECT status FROM tasks WHERE id=?", (second,)).fetchone()
+                    self.assertEqual(row["status"], "queued")
+
+    def test_join_and_new_followup_roll_back_with_parent_result(self):
+        first, second, followup = self.pending_followup()
+        before = self.s.snapshot()
+        with self.assertRaisesRegex(ValueError, "Unknown task kind"):
+            self.s.finish(
+                second,
+                {
+                    "summary": "Interrupted registration",
+                    "next": [
+                        followup,
+                        {"kind": "work", "purpose": "Another obligation"},
+                        {"kind": "invalid", "purpose": "Fail after joining and inserting"},
+                    ],
+                },
+            )
+        after = self.s.snapshot()
+        before.pop("observedAt")
+        after.pop("observedAt")
+        self.assertEqual(after, before)
+        self.s.finish(second, {"summary": "Retry registration", "next": [followup]})
+        pending = [row for row in self.s.snapshot()["tasks"] if row["status"] == "queued"]
+        self.assertEqual(len(pending), 1)
+        sources = self.followup_sources(pending[0]["id"])
+        self.assertEqual(
+            {source["parentWorkId"] for source in sources}, {first["id"], second["id"]}
+        )
+        self.assertEqual(len(sources), 2)
 
     def test_decision_resume_without_parent(self):
         self.s.start("addition")
@@ -306,11 +472,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(len(snapshot["triages"]), 2)
         self.assertEqual(list(inventory.iterdir()), [])
         self.assertEqual(len(closed), len(receipts))
-        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
-        self.assertLessEqual(ledger["max_owned"], 3)
-        self.assertEqual(len(ledger["slots"]), len(receipts))
-        for slot in ledger["slots"].values():
-            self.assertEqual(slot["history"][-1]["state"], "closed")
+        self.assertFalse((self.s.path / "terminal-slots.json").exists())
         for receipt in receipts:
             folder = receipt.parent
             retirement = json.loads((folder / "terminal-retirement.json").read_text())
@@ -318,23 +480,19 @@ class IntegrationTests(unittest.TestCase):
             self.assertTrue((folder / "output.json").is_file())
             self.assertTrue((folder / "launch.json").is_file())
 
-    def test_unsupported_terminal_driver_stops_without_losing_physical_capacity(self):
+    def test_unsupported_terminal_cleanup_does_not_block_parallel_tracks(self):
         engine, inventory = self.terminal_fixture()
         engine.run(jobs=2, max_tasks=20)
         snapshot = self.s.snapshot()
-        self.assertTrue(all(t["status"] != "done" for t in snapshot["tracks"]))
-        decisions = [d for d in snapshot["decisions"] if d["status"] == "open"]
-        self.assertEqual(len(decisions), 2)
-        self.assertTrue(all("terminal-slots.json" in d["question"] for d in decisions))
+        self.assertTrue(
+            all(t["status"] == "done" for t in snapshot["tracks"]), encode(snapshot["decisions"])
+        )
+        self.assertFalse([d for d in snapshot["decisions"] if d["status"] == "open"])
         receipts = list((self.s.path / "attempts").glob("*/terminal-process.json"))
-        self.assertEqual(len(receipts), 2)
+        self.assertGreaterEqual(len(receipts), 6)
         self.assertTrue(all(json.loads(p.read_text())["cleanup_confirmed"] for p in receipts))
-        self.assertEqual(len(list(inventory.iterdir())), 2)
-        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
-        self.assertEqual(ledger["max_owned"], 2)
-        self.assertEqual(len(ledger["slots"]), 2)
-        for slot in ledger["slots"].values():
-            self.assertEqual(slot["history"][-1]["state"], "quarantined")
+        self.assertEqual(len(list(inventory.iterdir())), len(receipts))
+        self.assertFalse((self.s.path / "terminal-slots.json").exists())
         for receipt in receipts:
             report = json.loads((receipt.parent / "terminal-retirement.json").read_text())
             self.assertEqual(report["status"], "preserved")

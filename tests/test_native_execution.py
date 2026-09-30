@@ -17,16 +17,22 @@ from todo_flow.workspace_creation import WorkspaceCreationGate
 
 
 CODEX = r"""
-import base64,hashlib,json,os,socket,struct,sys,time,uuid
+import base64,hashlib,json,os,socket,struct,sys,time,tomllib,uuid
 from pathlib import Path
 root=Path(ROOT)
 if sys.argv[1:] == ['--version']:
- print('codex-cli unsupported' if (root/'changed-version').exists() else 'codex-cli 0.157.1');sys.exit()
+ (root/'version-probed').touch();print('codex-cli 9.9.9');sys.exit()
 assert sys.argv[1]=='app-server'
 home=Path(os.environ['CODEX_HOME'])
-config=(home/'config.toml').read_text()
-assert 'trust_level = "untrusted"' in config and 'project_doc_max_bytes = 0' in config
-assert json.loads((home/'auth.json').read_text()) == {'synthetic':True}
+assert home == root/'auth'
+settings=[sys.argv[i+1] for i,arg in enumerate(sys.argv) if arg=='-c']
+assert 'sandbox_mode="read-only"' in settings and 'project_doc_max_bytes=0' in settings
+assert 'features.plugins=false' in settings and 'features.hooks=false' in settings
+projects=next(tomllib.loads(setting)['projects'] for setting in settings if setting.startswith('projects='))
+assert projects[os.getcwd()]['trust_level']=='untrusted'
+assert not any('cli_auth_credentials_store' in setting for setting in settings)
+if not (root/'no-auth-file').exists():
+ assert json.loads((home/'auth.json').read_text()) == {'synthetic':True}
 with (root/'server-launches').open('a') as f:f.write('launch\n')
 path=sys.argv[sys.argv.index('--listen')+1].removeprefix('unix://')
 listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);listener.bind(path);listener.listen()
@@ -70,8 +76,11 @@ while True:
  if method=='initialize':
   send({'id':msg['id'],'result':{'codexHome':str(home),'platformFamily':'unix','platformOs':'test','userAgent':'synthetic'}})
  elif method=='initialized':pass
+ elif method=='config/read':
+  send({'id':msg['id'],'result':{'config':{'mcp_servers':{'fixture-tool':{'command':'must-not-run','env':{'TOKEN':'synthetic-secret'}}}}}})
  elif method=='thread/start':
   assert msg['params']['sandbox']=='read-only' and msg['params']['approvalPolicy']=='never'
+  assert msg['params']['config']['mcp_servers']=={'fixture-tool':{'enabled':False}}
   send({'id':msg['id'],'result':{'thread':{'id':thread},'approvalPolicy':'never','sandbox':{'type':'readOnly','networkAccess':False},'cwd':msg['params']['cwd'],'instructionSources':[]}})
  elif method=='thread/read':
   assert msg['params']['threadId']==thread
@@ -88,13 +97,17 @@ while True:
   send({'method':'turn/started','params':{'threadId':thread,'turn':{'id':turn,'status':'inProgress','items':[]}}})
   send({'id':msg['id'],'result':{'turn':{'id':turn,'status':'inProgress','items':[]}}})
   if (root/'hang-after-accept').exists():time.sleep(60)
+  if (root/'delayed-proposal').exists():time.sleep(1.5)
   if (root/'drop-after-accept').exists():
    conn.close();conn=connect_client();continue
+  if (root/'silent-completion').exists():continue
+  if (root/'delta-storm').exists():
+   for i in range(5000):send({'method':'item/agentMessage/delta','params':{'threadId':thread,'turnId':turn,'delta':'x'}})
   send({'method':'item/completed','params':{'threadId':thread,'turnId':turn,'completedAtMs':123,'item':item}})
   send({'method':'turn/completed','params':{'threadId':thread,'turn':{'id':turn,'status':'completed','error':None,'itemsView':'summary','items':[]}}})
 """
 ORCA = r"""
-import json,sys
+import json,sys,shlex
 from pathlib import Path
 root=Path(ROOT);args=sys.argv[1:];meta={'runtimeId':'fixture-runtime'}
 with (root/'orca-calls.jsonl').open('a') as f:f.write(json.dumps(args)+'\n')
@@ -104,8 +117,14 @@ if args[:2]==['worktree','show']:
  result={'worktree':owned}
 elif args[:2]==['terminal','create']:
  command=args[args.index('--command')+1]
- assert command.startswith('exec env CODEX_HOME=') and ' resume thread-' in command and '--remote unix://' in command
- assert '--sandbox' not in command and '--ask-for-approval' not in command
+ argv=shlex.split(command)
+ assert argv[0]=='exec' and argv[2].endswith('native_viewer.py')
+ spec=json.loads(Path(argv[3]).read_text())
+ assert spec['argv'][1]=='resume' and spec['argv'][2].startswith('thread-')
+ assert '--remote' in spec['argv'] and '--sandbox' not in spec['argv']
+ assert '--ask-for-approval' not in spec['argv']
+ # This synthetic Orca has no UI; real projection behavior has separate tests.
+ (Path(spec['folder'])/'native-sidebar.json').write_text(json.dumps({'status':'unconfirmed','error':'synthetic CLI fixture has no sidebar'}))
  (root/'viewer-closed').unlink(missing_ok=True)
  result={'terminal':terminal}
 elif args[:2]==['terminal','show']:
@@ -190,6 +209,11 @@ class NativeExecutionTests(unittest.TestCase):
         )
         self.env.start()
         self.addCleanup(self.env.stop)
+        hook = patch(
+            "todo_flow.native_worker.status_hook", return_value=str(self.fixture / "hook.sh")
+        )
+        hook.start()
+        self.addCleanup(hook.stop)
 
     def execute(self):
         with (
@@ -213,12 +237,9 @@ class NativeExecutionTests(unittest.TestCase):
         folder = self.s.path / "attempts" / self.task["attempt"]
         record = json.loads((folder / "native-session.json").read_text())
         self.assertEqual(record["status"], "complete")
-        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
-        self.assertEqual(ledger["max_owned"], 1)
-        self.assertEqual(
-            [row["history"][-1]["state"] for row in ledger["slots"].values()], ["closed"]
-        )
-        self.assertFalse((folder / "native-home/auth.json").exists())
+        self.assertFalse((self.s.path / "terminal-slots.json").exists())
+        self.assertFalse((folder / "native-home").exists())
+        self.assertEqual(json.loads((self.auth / "auth.json").read_text()), {"synthetic": True})
         self.assertFalse(Path(record["socket"]).exists())
         ProcessBarrier(self.s.path, "addition").require_clear()
         calls = [
@@ -231,6 +252,99 @@ class NativeExecutionTests(unittest.TestCase):
             json.loads(line) for line in (self.fixture / "requests.jsonl").read_text().splitlines()
         ]
         self.assertEqual(sum(request["method"] == "turn/start" for request in requests), 1)
+
+    def test_thousands_of_deltas_do_not_delay_complete_proposal_adoption(self):
+        self.prepare()
+        self.config["worker_timeout"] = 8
+        (self.fixture / "delta-storm").touch()
+        self.assertEqual(self.execute()["summary"], "합성 native worker")
+        ProcessBarrier(self.s.path, "addition").require_clear()
+
+    def test_silent_completion_is_collected_without_another_worker_turn(self):
+        self.prepare()
+        self.config["worker_timeout"] = None
+        (self.fixture / "silent-completion").touch()
+        result = self.execute()
+        self.assertEqual(result["summary"], "합성 native worker")
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        record = json.loads((folder / "native-session.json").read_text())
+        self.assertEqual(record["recovery_source"], "same-connection-full-history")
+        self.assertTrue((folder / "native-recovered-turn.json").exists())
+        requests = [
+            json.loads(line) for line in (self.fixture / "requests.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(sum(r["method"] == "thread/start" for r in requests), 1)
+        self.assertEqual(sum(r["method"] == "turn/start" for r in requests), 1)
+        self.assertTrue(any(r["method"] == "thread/turns/list" for r in requests))
+
+    def test_updated_codex_and_symlinked_large_auth_keep_native_execution(self):
+        self.prepare()
+        source = self.auth / "auth.json"
+        original = source.read_text() + " " * 1_000_001
+        target = self.auth / "linked-auth.json"
+        target.write_text(original)
+        source.unlink()
+        source.symlink_to(target)
+        self.assertEqual(self.execute()["summary"], "합성 native worker")
+        self.assertFalse((self.fixture / "version-probed").exists())
+        self.assertTrue(source.is_symlink())
+        self.assertEqual(target.read_text(), original)
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        self.assertEqual(
+            json.loads((folder / "launch.json").read_text())["execution_mode"], "orca-native"
+        )
+        self.assertFalse((folder / "native-home").exists())
+
+    def test_authentication_without_file_is_delegated_to_codex(self):
+        self.prepare()
+        (self.auth / "auth.json").unlink()
+        (self.auth / "config.toml").write_text('cli_auth_credentials_store="keyring"\n')
+        (self.fixture / "no-auth-file").touch()
+        with patch.dict(os.environ):
+            os.environ.pop("OPENAI_API_KEY", None)
+            self.assertEqual(self.execute()["summary"], "합성 native worker")
+        self.assertFalse((self.auth / "auth.json").exists())
+        self.assertEqual(
+            (self.auth / "config.toml").read_text(), 'cli_auth_credentials_store="keyring"\n'
+        )
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        self.assertEqual(
+            json.loads((folder / "launch.json").read_text())["execution_mode"], "orca-native"
+        )
+        for path in folder.glob("native-request-*.json"):
+            self.assertNotIn("synthetic-secret", path.read_text())
+
+    def test_default_unlimited_worker_keeps_heartbeating_until_proposal(self):
+        self.prepare()
+        self.config.pop("worker_timeout")
+        (self.fixture / "delayed-proposal").touch()
+        with patch.object(self.s, "heartbeat", wraps=self.s.heartbeat) as heartbeat:
+            self.assertEqual(self.execute()["summary"], "합성 native worker")
+        self.assertGreaterEqual(heartbeat.call_count, 2)
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        self.assertIsNone(json.loads((folder / "native-spec.json").read_text())["timeout"])
+        ProcessBarrier(self.s.path, "addition").require_clear()
+
+    def test_unlimited_worker_stops_when_claim_is_cancelled(self):
+        self.prepare()
+        self.config["worker_timeout"] = None
+        (self.fixture / "hang-after-accept").touch()
+        heartbeat = self.s.heartbeat
+
+        def cancel_after_start(task, pid=None):
+            if (self.fixture / "orca-calls.jsonl").exists():
+                calls = (self.fixture / "orca-calls.jsonl").read_text()
+                if '"terminal", "create"' in calls:
+                    self.s.control("addition", "cancel")
+            return heartbeat(task, pid)
+
+        from todo_flow.store import Conflict
+
+        with patch.object(self.s, "heartbeat", side_effect=cancel_after_start):
+            with self.assertRaises(Conflict):
+                self.execute()
+        ProcessBarrier(self.s.path, "addition").require_clear()
+        self.assertTrue((self.fixture / "viewer-closed").exists())
 
     def test_lost_turn_response_stops_and_never_launches_or_replays_a_viewer(self):
         self.prepare()
@@ -326,47 +440,47 @@ class NativeExecutionTests(unittest.TestCase):
                 try:
                     case.prepare()
                     (case.fixture / marker).touch()
-                    with self.assertRaises(RuntimeError):
-                        case.execute()
+                    self.assertEqual(case.execute()["summary"], "합성 native worker")
                     calls = (case.fixture / "orca-calls.jsonl").read_text()
                     self.assertNotIn('"terminal", "close"', calls)
                 finally:
                     case.doCleanups()
                     case.tearDown()
 
-    def test_unconfirmed_viewer_kill_cannot_release_proposal(self):
+    def test_viewer_cleanup_failure_preserves_completed_proposal(self):
         self.prepare()
         (self.fixture / "kill-unconfirmed").touch()
-        with self.assertRaises(RuntimeError):
-            self.execute()
-        ledger = json.loads((self.s.path / "terminal-slots.json").read_text())
-        self.assertTrue(
-            all(row["history"][-1]["state"] != "closed" for row in ledger["slots"].values())
-        )
+        self.assertEqual(self.execute()["summary"], "합성 native worker")
         folder = self.s.path / "attempts" / self.task["attempt"]
-        self.assertFalse((folder / "native-proposal.json").exists())
+        record = json.loads((folder / "native-session.json").read_text())
+        self.assertEqual(record["status"], "complete")
+        self.assertTrue(record["viewer_cleanup_error"])
+        self.assertTrue((folder / "native-proposal.json").exists())
 
-    def test_native_dispatch_obeys_existing_terminal_capacity(self):
-        from todo_flow.terminal_slots import TerminalSlots, TerminalCapacityError
-
+    def test_188_legacy_terminals_and_old_limits_do_not_block_native_worker(self):
         self.prepare()
-        self.launcher["terminal_limits"] = {"concurrency": 1, "idle": 0}
-        slots = TerminalSlots(self.s.path, concurrency=1, idle_limit=0)
-        slots.reserve(
-            {
-                "track": "other",
-                "attempt": "other",
-                "execution": "uncertain",
-                "task": "other",
-                "generation": 1,
-            },
-            "orca",
-            evidence={"reason": "Unconfirmed existing terminal creation"},
-        )
-        with self.assertRaises(TerminalCapacityError):
-            self.execute()
-        self.assertFalse((self.fixture / "server-launches").exists())
-        self.assertEqual(len(slots.snapshot()["slots"]), 1)
+        records = {}
+        for number in range(188):
+            folder = self.s.path / "attempts" / f"old-{number}"
+            folder.mkdir(parents=True)
+            path = folder / "launch.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "backend": "orca",
+                        "status": "accepted",
+                        "terminal": {"handle": f"old-{number}"},
+                    }
+                )
+            )
+            records[path] = path.read_bytes()
+        ledger = self.s.path / "terminal-slots.json"
+        ledger.write_text('{"version":999,"limits":{"concurrency":0},"old":"preserve"}')
+        original_ledger = ledger.read_bytes()
+        self.config.update(terminal_concurrency=0, terminal_idle_limit=0)
+        self.assertEqual(self.execute()["summary"], "합성 native worker")
+        self.assertEqual(ledger.read_bytes(), original_ledger)
+        self.assertEqual(records, {path: path.read_bytes() for path in records})
 
     def test_missing_owned_workspace_is_prelaunch_compatibility_reason(self):
         self.prepare()
@@ -376,11 +490,10 @@ class NativeExecutionTests(unittest.TestCase):
         self.assertEqual(reason, "native_managed_workspace_required")
         self.assertFalse((self.fixture / "server-launches").exists())
 
-    def test_reused_viewer_is_preserved_and_cannot_release_proposal(self):
+    def test_reused_viewer_is_preserved_without_losing_completed_proposal(self):
         self.prepare()
         (self.fixture / "reuse-viewer").touch()
-        with self.assertRaises(RuntimeError):
-            self.execute()
+        self.assertEqual(self.execute()["summary"], "합성 native worker")
         ProcessBarrier(self.s.path, "addition").require_clear()
         calls = [
             json.loads(line)
@@ -388,10 +501,10 @@ class NativeExecutionTests(unittest.TestCase):
         ]
         self.assertFalse(any(call[:2] == ["terminal", "close"] for call in calls))
         folder = self.s.path / "attempts" / self.task["attempt"]
-        self.assertFalse((folder / "native-proposal.json").exists())
-        self.assertEqual(
-            json.loads((folder / "native-session.json").read_text())["status"], "cleanup-failed"
-        )
+        self.assertTrue((folder / "native-proposal.json").exists())
+        record = json.loads((folder / "native-session.json").read_text())
+        self.assertEqual(record["status"], "complete")
+        self.assertTrue(record["viewer_cleanup_error"])
 
     def test_review_starts_an_independent_server_and_thread_with_provenance(self):
         self.prepare()
@@ -463,4 +576,5 @@ class NativeExecutionTests(unittest.TestCase):
         self.assertIsInstance(record["server_exit"], int)
         self.assertFalse(Path(record["socket"]).exists())
         self.assertFalse((folder / "native-proposal.json").exists())
-        self.assertFalse((folder / "native-home/auth.json").exists())
+        self.assertFalse((folder / "native-home").exists())
+        self.assertEqual(json.loads((self.auth / "auth.json").read_text()), {"synthetic": True})

@@ -8,15 +8,18 @@ import threading
 import time
 from pathlib import Path
 
-from .adapters import GitHub, command, file_lock, permitted
+from .adapters import GitHub, command, file_lock
 from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
+from . import proposal_application
 from .maintenance import guarded
 from . import integration as integration_repair
-from . import verification_identity
+from . import verification_identity, verification_logs
+from .verification_log_view import log_view
 from .checkout import require_clean
 from .verification_evidence import require_current
 from .claim_recovery import recover_expired_claim
+from .cancel_execution import reconcile_cancelled
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
 from .process_inventory import ProcessInventory, launch_identity
@@ -62,6 +65,10 @@ class Engine:
             evidence=evidence,
         )
 
+    def check_claim(self, task):
+        with self.store.connect() as connection:
+            self.store.assert_claim(connection, task)
+
     def update(self, task, **values):
         allowed = {
             "branch",
@@ -83,6 +90,7 @@ class Engine:
             )
 
     def ensure_workspace(self, task):
+        proposal_application.read(self, task["track"])
         # Git worktree registration writes shared .git/config even for different tracks.
         with file_lock(self.store.path / "locks" / "git-metadata.lock", blocking=True):
             with self.store.transaction() as c:
@@ -121,7 +129,9 @@ class Engine:
         return workspace
 
     def verify(self, task, workspace):
+        proposal_application.require_clear(self, task["track"])
         self.process_barrier(task["track"]).require_clear()
+        self.check_claim(task)
         if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
             raise Conflict("Verification requires a committed, resolved merge")
         head = require_clean(workspace)
@@ -146,22 +156,26 @@ class Engine:
         log = self.store.path / "attempts" / task["attempt"]
         log.mkdir(parents=True, exist_ok=True)
         started = time.time()
+        log_reference = None
         try:
             before = verification_identity.capture(self.config, workspace, environment)
             if not verification_identity.matches(identity, before):
                 raise verification_identity.VerificationIdentityError(
                     "Verification inputs changed before execution"
                 )
+            execution = launch_identity(self.store.path, task)
+            log_reference = verification_logs.reference(execution)
             output = run_verification(
                 self.config["verify"],
                 workspace,
                 timeout=self.config.get("verify_timeout", 180),
                 env=environment,
-                launch_identity=launch_identity(self.store.path, task),
+                launch_identity=execution,
+                check=lambda: self.check_claim(task),
             )
             ok, error = True, None
-        except ProcessBarrierError:
-            # Uncertain launch/cleanup evidence blocks further work.
+        except (Conflict, ProcessBarrierError):
+            # Stale claims and uncertain cleanup cannot become verification results.
             raise
         except (
             RuntimeError,
@@ -188,6 +202,7 @@ class Engine:
             "key": key,
             "command": self.config["verify"],
             "identity": identity,
+            "logReference": log_reference,
             "ok": ok,
             "output": output[-12000:],
             "error": error,
@@ -199,69 +214,13 @@ class Engine:
             self.store.event(c, "verification.recorded", task["track"], record)
         return record
 
-    def apply_changes(self, task, workspace, changes, repair=None):
-        self.process_barrier(task["track"]).require_clear()
-        if repair:
-            integration_repair.validate_resolution(workspace, changes, repair)
-        paths = [x["path"] for x in changes]
-        if len(set(paths)) != len(paths):
-            raise ValueError("Duplicate file paths in result")
-        for change in changes:
-            name = change["path"]
-            if not permitted(name, self.config["writable_patterns"]):
-                raise Conflict("File is outside the authorized write surface: " + name)
-            target = workspace / name
-            if not target.resolve().is_relative_to(workspace.resolve()) or target.is_symlink():
-                raise Conflict("Symlink/path escape")
-            for parent in target.parents:
-                if parent == workspace:
-                    break
-                if parent.is_symlink():
-                    raise Conflict("Symlink ancestor")
-        pathspecs = [":(literal)" + name for name in paths]
-        if not repair:
-            if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
-                raise Conflict("An unowned merge is in progress; preserve it for inspection")
-            if paths and command(
-                ["git", "status", "--porcelain=v1", "--untracked-files=all", "--", *pathspecs],
-                workspace,
-            ):
-                raise Conflict(
-                    "Proposal overlaps existing changes; preserve them before applying it"
-                )
-        # File proposal application and commit run under a checkout flock; each write is fenced.
-        with self.store.transaction() as c:
-            self.store.assert_claim(c, task)
-            for change in changes:
-                target = workspace / change["path"]
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(change["content"])
-        if paths:
-            command(["git", "add", "--", *pathspecs], workspace)
-        if integration_repair.unmerged(workspace):
-            raise Conflict("Cannot commit unresolved merge paths")
-        dirty = (
-            command(
-                ["git", "diff", "--cached", "--name-only"] + ([] if repair else ["--", *pathspecs]),
-                workspace,
-            )
-            if (paths or repair)
-            else ""
+    def apply_changes(self, task, workspace, changes, repair=None, expected_head=None, result=None):
+        return proposal_application.apply(
+            self, task, workspace, changes, repair, expected_head, result
         )
-        if dirty or (repair and integration_repair.merge_head(workspace)):
-            if repair:
-                integration_repair.record_resolution(self, task, workspace, repair)
-            command(
-                ["git", "commit", "-m", "Implement " + task["track"]]
-                + ([] if repair else ["--only", "--", *pathspecs]),
-                workspace,
-            )
-        head = command(["git", "rev-parse", "HEAD"], workspace)
-        t = self.store.track(task["track"])
-        if head != t["head"] and not repair:
-            self.update(task, head=head, review=None, verification=None, landing=None)
 
     def publish(self, task, workspace, doc):
+        proposal_application.require_clear(self, task["track"])
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
         require_current(self.config, workspace, t["head"], t["verification"])
@@ -300,6 +259,11 @@ class Engine:
             ),
             "writable_patterns": self.config["writable_patterns"],
             "verification": json.loads(t["verification"]) if t["verification"] else None,
+            "verification_logs": log_view(
+                self.store.path,
+                t["id"],
+                json.loads(t["verification"]) if t["verification"] else None,
+            ),
             "review": json.loads(t["review"]) if t["review"] else None,
             "landing": json.loads(t["landing"]) if t["landing"] else None,
             "recent_results": [
@@ -318,6 +282,8 @@ class Engine:
         }
 
     def record_review(self, task, result, expected_head=None):
+        proposal_application.require_clear(self, task["track"])
+        self.check_claim(task)
         t = self.store.track(task["track"])
         if expected_head is not None and t["head"] != expected_head:
             raise Conflict("Review candidate changed during the worker session")
@@ -345,7 +311,9 @@ class Engine:
             "attempt": task["attempt"],
             "verdict": verdict,
             "conditions": [x for x in rows if x["id"] in required],
-            "additional_assessments": [x for x in rows if x["id"] not in required],
+            "additional_assessments": [x for x in rows if x["id"] in required]
+            if False
+            else [x for x in rows if x["id"] not in required],
             "summary": result["summary"],
         }
         if self.remote and t["pr"]:
@@ -353,6 +321,7 @@ class Engine:
         self.update(task, review=encode(review))
 
     def gate(self, task):
+        proposal_application.require_clear(self, task["track"])
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
         if integration_repair.pending(t):
@@ -553,6 +522,13 @@ class Engine:
             with self.process_attempt(task):
                 self.process_barrier(task["track"]).require_clear()
                 workspace = self.ensure_workspace(task)
+                recovered = None
+                if task["kind"] == "work":
+                    recovered = proposal_application.recover(self, task, workspace)
+                    if recovered and recovered["intent"]["task"] != task["id"]:
+                        recovered = None
+                else:
+                    proposal_application.require_clear(self, task["track"])
                 t = self.store.track(task["track"])
                 doc = json.loads(t["document"])
                 if self.remote and not t["issue"]:
@@ -597,17 +573,39 @@ class Engine:
                         context["integration_repair"] = repair
                     if task["kind"] == "review":
                         require_clean(workspace, context["head"])
-                    result = run_worker(
-                        self.config,
-                        context,
-                        task,
-                        self.store.path,
-                        lambda pid: self.store.heartbeat(task, pid),
-                    )
+                    if recovered:
+                        result = dict(
+                            recovered["intent"]["result"]
+                            or {
+                                "summary": "Recovered the exact committed proposal",
+                                "next": [
+                                    {"kind": "review", "purpose": "Assess recovered proposal"}
+                                ],
+                            }
+                        )
+                        result.pop("changes", None)
+                        result["verify"] = True
+                    else:
+                        result = run_worker(
+                            self.config,
+                            context,
+                            task,
+                            self.store.path,
+                            lambda pid: self.store.heartbeat(task, pid),
+                        )
+                    self.check_claim(task)
                     if task["kind"] == "review":
                         require_clean(workspace, context["head"])
                     if repair and not result.get("question"):
-                        self.apply_changes(task, workspace, result.get("changes", []), repair)
+                        if not recovered:
+                            self.apply_changes(
+                                task,
+                                workspace,
+                                result.get("changes", []),
+                                repair,
+                                expected_head=context["head"],
+                                result=result,
+                            )
                         integration_repair.finish_repair(self, task, workspace, repair)
                         result.update(
                             verify=True,
@@ -620,7 +618,13 @@ class Engine:
                             ],
                         )
                     elif result.get("changes"):
-                        self.apply_changes(task, workspace, result["changes"])
+                        self.apply_changes(
+                            task,
+                            workspace,
+                            result["changes"],
+                            expected_head=context["head"],
+                            result=result,
+                        )
                     if result.get("verify") or result.get("publish") or result.get("changes"):
                         v = self.verify(task, workspace)
                         if not v["ok"]:
@@ -686,6 +690,8 @@ class Engine:
         finally:
             stop.set()
             thread.join(timeout=1)
+            # process_attempt has released its lock and sealed the launch inventory.
+            reconcile_cancelled(self.store, track=task["track"])
         if adopted:
             self.cleanup_finished(task["track"])
 
@@ -773,7 +779,7 @@ class Engine:
                 ).fetchall()
             ]
         deferred = []
-        blocked_tracks = set()
+        blocked_tracks = reconcile_cancelled(self.store)
         for task in expired:
             try:
                 recover_expired_claim(self.store, task)

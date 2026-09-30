@@ -10,13 +10,8 @@ from unittest.mock import patch
 
 from todo_flow.process_inventory import ProcessInventory
 from todo_flow.process_launch import LaunchGate
-from todo_flow.terminal_capacity import (
-    accept_terminal,
-    reconcile_tmux_terminals,
-    reserve_terminal,
-)
 from todo_flow.terminal_release import retire_launch, terminal_adapter
-from todo_flow.terminal_slots import TerminalCapacityError
+from todo_flow.terminal_retirement import TerminalRetirementError
 from todo_flow.terminal_tmux import TmuxTerminalAdapter, socket_identity
 
 
@@ -56,7 +51,7 @@ class TmuxTerminalReleaseTests(unittest.TestCase):
             query.call_args.args[0],
             ["tmux", "-S", self.socket_path, "list-windows", "-a", "-F", "#{window_id}"],
         )
-        with self.assertRaises(TerminalCapacityError):
+        with self.assertRaises(TerminalRetirementError):
             terminal_adapter(self.launch).close(result)
 
     def test_present_retained_or_user_window_is_never_declared_idle(self):
@@ -113,7 +108,6 @@ class TmuxTerminalReleaseTests(unittest.TestCase):
         inventory.start()
         identity = inventory.register()
         launcher = {"backend": "tmux", "socket": self.socket_path}
-        reservation = reserve_terminal(launcher, identity, folder)
         gate = LaunchGate.prepare(**identity, backend="tmux")
         inventory.prepared(identity["execution"])
         with gate.launching():
@@ -133,9 +127,13 @@ class TmuxTerminalReleaseTests(unittest.TestCase):
             **launcher,
             "handle": f"@{number + 1}",
             "status": "accepted",
-            "terminal_ledger": str(reservation[0].path),
+            "tmux_socket_identity": socket_identity(self.socket_path),
+            "owner": {
+                **{k: identity[k] for k in ("track", "attempt", "execution")},
+                "task": "task",
+                "generation": 1,
+            },
         }
-        record["terminal_slot"] = accept_terminal(reservation, record, folder)
         (folder / "launch.json").write_text(json.dumps(record))
         (folder / "terminal-spec.json").write_text(json.dumps({"launch_identity": identity}))
         (folder / "terminal-process.json").write_text(
@@ -148,7 +146,7 @@ class TmuxTerminalReleaseTests(unittest.TestCase):
             )
         )
         (folder / "worker.stdout").write_text(f"synthetic execution {number}\n")
-        return folder, reservation[0]
+        return folder
 
     def test_fifty_automatic_removals_preserve_logs_and_bound_owned_windows(self):
         windows = {"@0"}  # A user window is neither counted nor disposed.
@@ -163,7 +161,7 @@ class TmuxTerminalReleaseTests(unittest.TestCase):
             for pair in range(25):
                 pending = []
                 for number in (pair * 2, pair * 2 + 1):
-                    folder, slots = self.prepare(number)
+                    folder = self.prepare(number)
                     folders.append(folder)
                     windows.add(f"@{number + 1}")
                     pending.append((number, folder))
@@ -180,116 +178,39 @@ class TmuxTerminalReleaseTests(unittest.TestCase):
             self.assertEqual(calls.call_count, 50)
         self.assertEqual(windows, {"@0"})
         self.assertEqual(maximum, 2)
-        snapshot = slots.snapshot()
-        self.assertEqual(snapshot["limits"], {"concurrency": 2, "idle": 1})
-        self.assertEqual(snapshot["max_owned"], 2)
-        self.assertEqual(slots.counts(snapshot)["closed"], 50)
+        self.assertFalse((self.root / "terminal-slots.json").exists())
         self.assertEqual(len(folders), 50)
 
-    def test_retained_windows_stay_charged_until_observed_absent(self):
-        first, slots = self.prepare(0)
-        second, _ = self.prepare(1)
+    def test_retained_windows_do_not_block_more_work_and_can_be_rechecked(self):
+        first, second = self.prepare(0), self.prepare(1)
         with patch(
             "todo_flow.terminal_tmux.subprocess.run",
             return_value=subprocess.CompletedProcess([], 0, "@0\n@1\n@2\n", ""),
         ):
-            self.assertEqual(retire_launch(first)["state"], "quarantined")
-            self.assertEqual(retire_launch(second)["state"], "quarantined")
-            with self.assertRaises(TerminalCapacityError):
-                self.prepare(2)
-        self.assertEqual(slots.counts(slots.snapshot())["quarantined"], 2)
+            self.assertEqual(retire_launch(first)["status"], "preserved")
+            self.assertEqual(retire_launch(second)["status"], "preserved")
+            self.assertTrue(self.prepare(2).exists())
         with patch(
             "todo_flow.terminal_tmux.subprocess.run",
             return_value=subprocess.CompletedProcess([], 0, "@0\n", ""),
         ):
-            self.assertEqual(retire_launch(first)["state"], "closed")
-            self.assertEqual(retire_launch(second)["state"], "closed")
+            self.assertEqual(retire_launch(first)["status"], "closed")
+            self.assertEqual(retire_launch(second)["status"], "closed")
 
-    def test_fifty_delayed_removals_reconcile_before_next_reservation(self):
-        windows = {"@0"}
-        preserved = {}
-        maximum = 0
-        deferred = 0
-
-        def query(args, **kwargs):
-            self.assertEqual(args[-4:], ["list-windows", "-a", "-F", "#{window_id}"])
-            return subprocess.CompletedProcess(args, 0, "\n".join(sorted(windows)) + "\n", "")
-
-        with patch("todo_flow.terminal_tmux.subprocess.run", side_effect=query):
-            for pair in range(25):
-                pending = []
-                for number in (pair * 2, pair * 2 + 1):
-                    folder, slots = self.prepare(number)
-                    windows.add(f"@{number + 1}")
-                    pending.append(folder)
-                    for name in ("worker.stdout", "terminal-process.json", "terminal-spec.json"):
-                        path = folder / name
-                        preserved[path] = path.read_bytes()
-                    counts = slots.counts(slots.snapshot())
-                    self.assertLessEqual(counts["active"], 2)
-                    self.assertEqual(counts["closed"], pair * 2)
-                maximum = max(maximum, len(windows) - 1)
-                # The receipt exists while the physical windows still exist.
-                for folder in pending:
-                    self.assertEqual(retire_launch(folder)["state"], "quarantined")
-                    deferred += 1
-                self.assertEqual(slots.counts(slots.snapshot())["quarantined"], 2)
-                # The supervisor exits after retirement returned. The next
-                # reservation must discover absence without manual cleanup.
-                windows = {"@0"}
-            # Exercise the same reconciliation boundary for the final pair,
-            # without creating a fifty-first physical terminal.
-            reconcile_tmux_terminals(slots)
-        snapshot = slots.snapshot()
-        self.assertEqual(len(snapshot["slots"]), 50)
-        self.assertEqual(slots.counts(snapshot)["closed"], 50)
-        self.assertEqual(slots.counts(snapshot)["quarantined"], 0)
-        self.assertEqual(snapshot["max_owned"], 2)
-        self.assertEqual(maximum, 2)
-        self.assertEqual(deferred, 50)
-        self.assertEqual(windows, {"@0"})
-        for path, content in preserved.items():
-            self.assertEqual(path.read_bytes(), content)
-        executions = {
-            json.loads(path.read_text())["launch_identity"]["execution"]
-            for path in preserved
-            if path.name == "terminal-spec.json"
-        }
-        self.assertEqual(len(executions), 50)
-
-    def test_reconciliation_preserves_capacity_when_socket_changes(self):
-        first, slots = self.prepare(0)
-        second, _ = self.prepare(1)
-        with patch(
-            "todo_flow.terminal_tmux.subprocess.run",
-            return_value=subprocess.CompletedProcess([], 0, "@0\n@1\n@2\n", ""),
-        ):
-            retire_launch(first)
-            retire_launch(second)
+    def test_cleanup_preserves_original_window_when_socket_changes(self):
+        folder = self.prepare(0)
         with (
             patch("todo_flow.terminal_tmux.socket_identity", return_value=None),
             patch("todo_flow.terminal_tmux.subprocess.run") as query,
         ):
-            with self.assertRaises(TerminalCapacityError):
-                self.prepare(2)
+            self.assertEqual(retire_launch(folder)["status"], "preserved")
             query.assert_not_called()
-        self.assertEqual(slots.counts(slots.snapshot())["quarantined"], 2)
 
-    def test_reconciliation_rechecks_process_receipt_before_inventory(self):
-        first, slots = self.prepare(0)
-        second, _ = self.prepare(1)
-        with patch(
-            "todo_flow.terminal_tmux.subprocess.run",
-            return_value=subprocess.CompletedProcess([], 0, "@0\n@1\n@2\n", ""),
-        ):
-            retire_launch(first)
-            retire_launch(second)
-        for folder in (first, second):
-            (folder / "terminal-process.json").write_text(
-                json.dumps({"status": "exited", "returncode": 0, "cleanup_confirmed": False})
-            )
+    def test_cleanup_rechecks_process_receipt_before_inventory(self):
+        folder = self.prepare(0)
+        (folder / "terminal-process.json").write_text(
+            json.dumps({"status": "exited", "returncode": 0, "cleanup_confirmed": False})
+        )
         with patch("todo_flow.terminal_tmux.subprocess.run") as query:
-            with self.assertRaises(TerminalCapacityError):
-                self.prepare(2)
+            self.assertEqual(retire_launch(folder)["status"], "preserved")
             query.assert_not_called()
-        self.assertEqual(slots.counts(slots.snapshot())["quarantined"], 2)

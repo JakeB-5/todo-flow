@@ -121,6 +121,109 @@ class ProjectionTests(unittest.TestCase):
         self.assertNotIn("HUGE_EVENT_BODY", encode(one))
         self.assertEqual(one["items"][0]["summary"], "event 79")
 
+    def test_activity_groups_three_tasks_without_shipping_originals(self):
+        purpose = "Fix verification: " + "검증 실패 😀\n" * 800
+        with self.store.transaction() as c:
+            c.executemany(
+                "INSERT INTO tasks(id,track,kind,purpose,status,lease,created,updated)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                [
+                    ("one", "track-0000", "work", purpose, "running", self.now + 60, 1, 2),
+                    ("two", "track-0000", "review", purpose, "queued", None, 2, 2),
+                    ("three", "track-0001", "work", purpose, "waiting", None, 3, 3),
+                ],
+            )
+            c.execute(
+                "UPDATE tracks SET verification=? WHERE id='track-0000'",
+                (encode({"ok": False, "at": 1, "output": purpose}),),
+            )
+            c.execute(
+                "INSERT INTO decisions(id,track,task,question,status,created)"
+                " VALUES('decision','track-0001','three','Choose a policy','open',1)"
+            )
+        before = {str(p): p.read_bytes() for p in self.store.path.rglob("*.json") if p.is_file()}
+        result = self.dashboard.activity()
+        self.assertEqual((result["total"], result["taskTotal"]), (2, 3))
+        first, second = result["items"]
+        self.assertEqual(first["taskCount"], 2)
+        self.assertEqual((first["running"], first["queued"], first["waiting"]), (1, 1, 0))
+        self.assertEqual(first["current"]["id"], "one")
+        self.assertEqual(first["current"]["intent"], "verification-repair")
+        self.assertEqual(first["current"]["kind"], "work")
+        self.assertEqual(first["verificationOk"], 0)
+        self.assertEqual((second["waiting"], second["decisions"]), (1, 1))
+        self.assertEqual(self.dashboard.decisions(track="track-0000")["total"], 0)
+        self.assertEqual(self.dashboard.decisions(track="track-0001")["total"], 1)
+        one = self.dashboard.activity_tasks("track-0000", limit=1)
+        two = self.dashboard.activity_tasks("track-0000", limit=1, offset=1)
+        self.assertEqual([one["items"][0]["id"], two["items"][0]["id"]], ["one", "two"])
+        for response in (result, one, two):
+            self.assertNotIn("검증 실패", encode(response))
+            self.assertNotIn("purpose", encode(response))
+            self.assertNotIn("HEAVY_", encode(response))
+        self.assertEqual(self.dashboard.task("one")["task"]["purpose"], purpose)
+        self.assertEqual(
+            self.dashboard.evidence("track-0000", "verification")["value"]["output"],
+            purpose,
+        )
+        after = {str(p): p.read_bytes() for p in self.store.path.rglob("*.json") if p.is_file()}
+        self.assertEqual(before, after)
+
+    def test_activity_pages_keep_groups_and_decision_only_tracks(self):
+        with self.store.transaction() as c:
+            c.executemany(
+                "INSERT INTO tasks(id,track,kind,purpose,status,lease,created,updated)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        f"task-{i}-{j}",
+                        f"track-{i:04}",
+                        "work",
+                        "LONG_ORIGINAL_" * 1000,
+                        "queued" if j else "running",
+                        None if i == 0 else self.now + 60,
+                        1,
+                        1,
+                    )
+                    for i in range(36)
+                    for j in range(4)
+                ],
+            )
+            c.execute(
+                "INSERT INTO decisions(id,track,question,status,created)"
+                " VALUES('decision-only','track-0036','Choose','open',1)"
+            )
+            c.execute(
+                "INSERT INTO tasks(id,track,kind,purpose,status,created,updated)"
+                " VALUES('archived','track-0037','work','Ignore completed','queued',1,1)"
+            )
+        with self.store.connect() as c:
+            before = [tuple(r) for r in c.execute("SELECT * FROM tasks ORDER BY id")]
+        seen = []
+        for offset in range(0, 37, 7):
+            result = self.dashboard.activity(limit=7, offset=offset)
+            self.assertEqual((result["total"], result["taskTotal"]), (37, 144))
+            self.assertLessEqual(len(result["items"]), 7)
+            self.assertNotIn("LONG_ORIGINAL", encode(result))
+            self.assertLess(len(encode(result)), 10000)
+            seen.extend(t["id"] for t in result["items"])
+        self.assertEqual(seen, [f"track-{i:04}" for i in range(37)])
+        first = self.dashboard.activity(limit=1)["items"][0]
+        self.assertEqual((first["status"], first["uncertain"]), ("running", 1))
+        self.assertIsNone(first["current"]["intent"])
+        last = self.dashboard.activity(limit=1, offset=36)["items"][0]
+        self.assertEqual((last["taskCount"], last["decisions"], last["current"]), (0, 1, None))
+        with self.store.connect() as c:
+            self.assertEqual(
+                before, [tuple(r) for r in c.execute("SELECT * FROM tasks ORDER BY id")]
+            )
+        for query in (
+            lambda: self.dashboard.activity(limit=101),
+            lambda: self.dashboard.activity_tasks("track-0000", offset=-1),
+        ):
+            with self.assertRaises(ValueError):
+                query()
+
     def test_expired_claim_is_not_counted_as_observed_running(self):
         self.store.start("track-0000")
         work = self.store.claim("worker")
@@ -130,3 +233,4 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(self.dashboard.overview()["counts"]["running"], 0)
         self.assertEqual(self.dashboard.tracks(control="running")["total"], 0)
         self.assertEqual(self.dashboard.activity()["items"][0]["status"], "running")
+        self.assertEqual(self.dashboard.activity()["items"][0]["uncertain"], 1)

@@ -131,7 +131,7 @@ class TerminalFixtureMeasurementTests(unittest.TestCase):
             fixture.cli(["fixture-orca", "terminal", "close", "--terminal", handle, "--json"])
         self.assertIn(handle, fixture.rows)
 
-    def test_candidate_saturation_blocks_third_before_create_then_retries(self):
+    def test_candidate_allows_third_worker_while_two_are_still_running(self):
         for backend in ("orca", "tmux"):
             with self.subTest(backend=backend):
                 fixture = self.fixture(backend)
@@ -139,13 +139,13 @@ class TerminalFixtureMeasurementTests(unittest.TestCase):
                 report = fixture.report()
                 self.assertTrue(report["measurement_complete"], report)
                 self.assertEqual(report["completed"], 4)
-                self.assertEqual(report["blocked_calls"], 1)
+                self.assertEqual(report["blocked_calls"], 0)
                 self.assertEqual(report["blocked_requests"], 0)
                 self.assertEqual(report["created"], 4)
                 self.assertEqual(report["reclaimed"], 4)
-                self.assertEqual(report["terminal_admission"], "blocked")
-                self.assertEqual(report["max_active_worker_processes"], 2)
-                self.assertEqual(report["max_owned_tabs"], 2)
+                self.assertEqual(report["terminal_admission"], "completed")
+                self.assertEqual(report["max_active_worker_processes"], 3)
+                self.assertEqual(report["max_owned_tabs"], 3)
                 self.assertEqual(report["preserved"], 0)
                 self.assertTrue((fixture.output / "barrier-pair.json").is_file())
                 for bridge in fixture.bridges.values():
@@ -155,20 +155,20 @@ class TerminalFixtureMeasurementTests(unittest.TestCase):
                     self.assertTrue(log.rstrip().endswith("TODO Flow worker exited: 0"))
                 fixture.check_evidence()
 
-    def test_custom_preserves_shell_tabs_and_blocks_remaining_requests(self):
+    def test_custom_preserves_shell_tabs_without_blocking_remaining_requests(self):
         fixture = self.fixture("custom")
         fixture.measure(run_worker, True, "saturation", count=5)
         report = fixture.report()
         self.assertTrue(report["measurement_complete"], report)
-        self.assertEqual(report["completed"], 2)
-        self.assertEqual(report["created"], 2)
-        self.assertEqual(report["preserved"], 2)
-        self.assertEqual(report["blocked_requests"], 3)
+        self.assertEqual(report["completed"], 5)
+        self.assertEqual(report["created"], 5)
+        self.assertEqual(report["preserved"], 5)
+        self.assertEqual(report["blocked_requests"], 0)
         self.assertEqual(report["close_calls"], 0)
         self.assertTrue(all(row["connected"] for row in fixture.rows.values()))
         self.assertTrue(all(b["process"].returncode == 0 for b in fixture.bridges.values()))
         self.assertEqual(fixture.samples[-1]["active_worker_pids"], [])
-        self.assertEqual(fixture.samples[-1]["active_tabs"], 2)
+        self.assertEqual(fixture.samples[-1]["active_tabs"], 5)
 
     def test_headless_measures_real_overlap_without_terminal_admission(self):
         fixture = self.fixture("headless")

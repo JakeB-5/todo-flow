@@ -21,7 +21,11 @@ class CleanupTests(unittest.TestCase):
         engine = Engine(self.s)
         engine.config["cleanup_on_complete"] = auto
         engine.run(max_tasks=10)
-        self.assertEqual(self.s.track("addition")["status"], "done")
+        self.assertEqual(
+            self.s.track("addition")["status"],
+            "done",
+            encode(self.s.snapshot()["decisions"]),
+        )
         return engine
 
     def test_parallel_completion_removes_all_checkouts_and_preserves_evidence(self):

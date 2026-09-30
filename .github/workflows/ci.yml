@@ -12,18 +12,46 @@ on:
       - 'assets/**'
       - 'docs/**'
   workflow_dispatch:
+    inputs:
+      full:
+        description: Run the full Linux/macOS and Python matrix
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.changes.outputs.tests }}
+      updates: ${{ steps.changes.outputs.updates }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 2
+      - id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo 'tests=true' >> "$GITHUB_OUTPUT"
+            echo 'updates=true' >> "$GITHUB_OUTPUT"
+          else
+            if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != 0000000000000000000000000000000000000000 ]; then
+              git cat-file -e "$BASE_SHA^{commit}" || git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            fi
+            python3 scripts/ci_changes.py --base "$BASE_SHA" >> "$GITHUB_OUTPUT"
+          fi
   test:
+    needs: scope
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python: ['3.11', '3.13']
+        include: ${{ fromJSON(inputs.full && '[{"os":"ubuntu-latest","python":"3.11"},{"os":"ubuntu-latest","python":"3.13"},{"os":"macos-latest","python":"3.11"},{"os":"macos-latest","python":"3.13"}]' || '[{"os":"ubuntu-latest","python":"3.11"}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -31,12 +59,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - uses: actions/setup-node@v7.0.0
+        if: needs.scope.outputs.tests == 'true'
         with:
           node-version: '22'
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           version: '0.10.11'
       - name: Install filesystem search tool
+        if: needs.scope.outputs.tests == 'true'
         shell: bash
         run: |
           if ! command -v rg >/dev/null 2>&1; then
@@ -47,12 +77,22 @@ jobs:
               brew install ripgrep
             fi
           fi
-          rg --version
       - run: uv sync --frozen
-      - run: uv run python -m unittest discover -s tests -v
       - run: uv run ruff check src tests scripts
       - run: uv run ruff format --check src tests scripts
+      - run: uv run python -m unittest discover -s tests -v
+        if: needs.scope.outputs.tests == 'true'
       - run: node --check src/todo_flow/web/app.js
+        if: needs.scope.outputs.tests == 'true'
       - run: node --test tests/dashboard_i18n.test.cjs
-      - run: uv build --out-dir dist/update-check
-      - run: uv run python scripts/update_smoke.py --artifacts dist/update-check --root "$RUNNER_TEMP/todo-flow-update-smoke"
+        if: needs.scope.outputs.tests == 'true'
+      - run: uv build --out-dir dist/ci
+      - name: Check wheel installation
+        shell: bash
+        run: |
+          uv venv "$RUNNER_TEMP/todo-flow-install"
+          uv pip install --python "$RUNNER_TEMP/todo-flow-install/bin/python" dist/ci/*.whl
+          "$RUNNER_TEMP/todo-flow-install/bin/todo-flow" --version
+          "$RUNNER_TEMP/todo-flow-install/bin/trackrun" --version
+      - run: uv run python scripts/update_smoke.py --artifacts dist/ci --root "$RUNNER_TEMP/todo-flow-update-smoke"
+        if: needs.scope.outputs.updates == 'true' && matrix.python == '3.11'

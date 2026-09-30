@@ -188,7 +188,7 @@ class TaskLaunchHttpTests(unittest.TestCase):
                 "terminal": {"handle": "terminal-one"},
             },
         )
-        self.assertEqual(result["summaries"]["en"]["backend"], "Orca Codex session")
-        self.assertEqual(result["summaries"]["ko"]["backend"], "Orca Codex 세션")
+        self.assertEqual(result["summaries"]["en"]["backend"], "Orca Codex terminal client")
+        self.assertEqual(result["summaries"]["ko"]["backend"], "Orca Codex 터미널 클라이언트")
         self.assertNotIn("PRIVATE_", json.dumps(result))
         self.assertEqual(receipt.read_bytes(), before)

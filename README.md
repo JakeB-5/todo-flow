@@ -92,11 +92,11 @@ track that covers this request, then report the actual result and next steps.
 Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Install the published release:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.4/todo_flow-0.0.4-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.8/todo_flow-0.0.8-py3-none-any.whl
 todo-flow --version
 ```
 
-[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.4). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
+[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.8). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
 
 In the **target project**, use its real verification command, base branch and relevant file patterns. This example assumes an existing Python project with a test suite, an initial Git commit and an `origin` remote:
 
@@ -126,7 +126,7 @@ Resume a budget stop with `todo-flow --state STATE answer DECISION_ID --text 'Ap
 
 ### Declare verification inputs
 
-The source implementation supports `init --verify-identity`. Check `todo-flow init --help` on the installed engine first; the published `0.0.4` wheel is not assumed to support this option. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:
+Version `0.0.5` supports `init --verify-identity`. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:
 
 ```sh
 --verify-identity '{"version":1,"files":["/absolute/verification/verify.py","/absolute/python/bin/python3","uv.lock"],"environment":["PATH","VERIFY_MODE"],"nonce":"baseline-1"}'
@@ -170,6 +170,8 @@ The default endpoint is **`review`**, which preserves a reviewed candidate. To a
 ## For agents
 
 Read **[AGENT_INSTALL.md](AGENT_INSTALL.md)** and perform the requested installation and first-run scope. Reuse existing configuration and authorization. **Ask for the primary language if it was not specified; persist it with `init --language en|ko` and use it for new documents and reports.** Do not infer language solely from the English README.
+
+Acceptance conditions should trace to the selected outcome or an existing invariant affected by the change. Keep optional features and unrelated defects separate, and honor recorded user tradeoffs during work and review. Discovering an improvement does not authorize adding it to the current track.
 
 [Agent setup](AGENT_INSTALL.md) covers project discovery, authentication, language selection, skill installation, document review, execution and evidence-based handoff. [Skills](skills/) contain the task-specific instructions.
 
@@ -220,7 +222,7 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 **Will it merge automatically?** The default is review-only. An initialized `land` endpoint with `allow_land` permits landing, followed by triage and completion checks. Existing branch protection still applies.
 
-**How many tracks can I select?** Pass multiple IDs to `trackrun`. `--jobs` limits concurrent tasks for that driver (default: 2); it is not the number of selected tracks or a guarantee of a dedicated worker per track.
+**How many tracks can I select?** Pass multiple IDs to `trackrun`. `--jobs` limits concurrent tasks for that driver (default: 2); it is not the number of selected tracks or a guarantee of a dedicated worker per track. There is no separate terminal-count admission limit, and historical terminal records do not block new workers.
 
 **What does it cost?** TODO Flow is MIT licensed. Model usage and any external services follow your existing provider accounts and billing. Parallel work can increase model usage.
 
@@ -230,7 +232,11 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 ## Current scope
 
-**New in 0.0.4:** proposal commits preserve unrelated staged changes, verification and review check a clean checkout at the exact candidate commit, and timed-out verification stops its process group before more work proceeds. See [execution boundaries](OPERATIONS.md#review-landing-and-completion).
+**New in 0.0.8:** Activity groups current work by track, keeps long instructions in task details and preserves navigation across language changes. Identical pending obligations share one execution while retaining each parent request. Workers can propose bounded text replacements, and verification output is retained as separate log artifacts that support bounded reads.
+
+**New in 0.0.6:** native workers reuse the existing Codex login without a version allowlist or credential-file restrictions. Terminal counts and historical launch records no longer block new workers, and deferred viewer cleanup preserves completed proposals. Release-only CI avoids repeating the full runtime suite.
+
+**Added in 0.0.5:** declared verification-input identity, durable process cleanup and native Orca/Codex worker sessions. See [execution boundaries](OPERATIONS.md#review-landing-and-completion).
 
 **New in 0.0.3:** integration repairs merge the current base into the candidate checkout, expose conflict evidence by path and require new verification and independent review before landing. Interrupted repairs and decision answers retain the recorded merge. See [repair behavior](OPERATIONS.md#review-landing-and-completion).
 
@@ -238,12 +244,12 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 Completed tracks automatically clean disposable checkouts and unchanged worker terminals while retaining documents, logs, results and Git branches. Resources with user changes or unconfirmed ownership are kept with a reason. Use `--no-auto-cleanup` to retain resources for inspection; see [cleanup and retry](OPERATIONS.md#cleanup-migration-and-hooks).
 
-Latest release: **0.0.4**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
+Latest release: **0.0.8**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
 - Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.
 - Source contents and full evidence are not injected into the prompt; there is no aggregate 150,000-byte source limit on `main`. Provider context limits still apply to what a worker chooses to read. File deletion and binary edits are not supported.
-- Default worker timeout: 600 seconds. Default driver task-assignment limit: 100; remaining requests survive for the next run.
+- Workers have no default time limit. `init --worker-timeout SECONDS` opts into one; existing projects retain their configured limit (`worker_timeout: null` disables it). Cancellation and driver-loss cleanup remain active. Default driver task-assignment limit: 100; remaining requests survive for the next run.
 - No shared slot budget across drivers, separate heavy-verification queue or validated distributed-filesystem operation.
 
 ## Documentation and contributing
@@ -254,4 +260,4 @@ Report bugs or propose improvements through repository Issues; include a minimal
 
 **[MIT License](LICENSE)** · Copyright © 2026 TODO Flow contributors.
 
-Native Orca execution uses an owned managed checkout and an isolated Codex App Server session on the supported Codex CLI 0.157.1 protocol. The visible Codex client attaches to the exact server/thread after turn acceptance; read-only proposals return through the server protocol. Explicit headless remains headless. Existing Git checkouts, unverified Codex versions, unsupported authentication storage and missing review provenance retain an explicitly reported compatibility route. CLI launch evidence and the dashboard show recorded workspace, session, turn and terminal associations. Synthetic protocol/process tests are included; external model acceptance testing is not claimed.
+Native Orca execution uses an owned managed checkout and a dedicated Codex App Server session. The visible Codex client attaches to the exact server/thread after turn acceptance; read-only proposals return through the server protocol. Explicit headless remains headless. Codex versions and credential storage do not select the execution route: the adapter reuses the existing Codex login and validates actual protocol responses. Existing Git checkouts and missing review provenance retain an explicitly reported compatibility route. CLI launch evidence and the dashboard show recorded workspace, session, turn and terminal associations. Synthetic protocol/process tests are included; external model acceptance testing is not claimed.

@@ -14,7 +14,8 @@ SCHEMA = """
               id TEXT PRIMARY KEY, track TEXT NOT NULL, kind TEXT NOT NULL, purpose TEXT NOT NULL,
               status TEXT NOT NULL DEFAULT 'queued', generation INTEGER NOT NULL DEFAULT 0,
               owner TEXT, lease REAL, input_revision INTEGER, attempts INTEGER DEFAULT 0,
-              created REAL NOT NULL, updated REAL NOT NULL, dedup TEXT UNIQUE, error TEXT);
+              created REAL NOT NULL, updated REAL NOT NULL, dedup TEXT UNIQUE, error TEXT,
+              obligation_head TEXT, obligation_revision INTEGER);
             CREATE TABLE IF NOT EXISTS attempts (
               id TEXT PRIMARY KEY, task TEXT, generation INTEGER, pid INTEGER, status TEXT,
               started REAL, finished REAL, result TEXT);

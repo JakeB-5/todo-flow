@@ -2,6 +2,62 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## 0.0.8 — 2026-09-30
+
+- Group Activity by track with current work, assignment and decision waits, recent verification results, and bounded task details. Preserve full instructions, evidence links and selection across Korean/English switching and reloads; mark stale or disconnected observations as needing confirmation.
+- Merge clearly identical pending assess/work obligations only for the same track, candidate, document revision, task kind and exact purpose. Preserve each parent request atomically, including interrupted writes and cache reconstruction; completed tasks are not reused as new fulfillment evidence.
+- Support bounded `replace-v1` text proposals with exact base/file checks and durable application recovery, while preserving unrelated edits and legacy whole-file proposals.
+- Retain original verification stdout/stderr as separate artifacts with bounded reads and explicit missing, partial and completed states. Keep log evidence available through recovery and dashboard detail views.
+- Keep state/configuration formats and worker/skill protocols unchanged.
+
+## 0.0.7 — 2026-09-28
+
+- Remove the default 600-second worker deadline across native and compatibility workers and their supervisors. Explicit project limits remain supported; JSON `null` selects unlimited execution.
+- Register native worker activity in the owning Orca worktree's sidebar through a host-side status bridge. Verify the actual pane projection and retain its receipt without enabling model hooks or treating UI state as completion evidence.
+- Check native worker claims while waiting, retire unchanged viewers after confirmed cancellation cleanup, and expose concrete native failure diagnostics.
+- Avoid filesystem and Git checks for each streamed output fragment; fence complete native proposals before adoption. Periodically reconcile full history on the same connection so a missing completion notification cannot leave a finished worker waiting indefinitely. Preserve partial WebSocket frames across idle polls.
+- Cancel active native, headless and verification work through owned process supervision, preserving cancellation evidence across recovery.
+- Reclaim unchanged verifier-generated artifacts and remove confirmed landed, owned Git/Orca worktrees. Consume native viewer retirement and attributed supervisor exit evidence, while preserving uncertain or reused resources.
+- Keep agent work within the user-requested scope, report additional work separately, reuse sufficient verification evidence and retain automatic cleanup unless the user explicitly requests resource preservation.
+
+## 0.0.6 — 2026-09-28
+
+### Fixed
+
+- Remove the exact Codex CLI version gate and credential-file restrictions from native worker selection. Reuse the existing Codex login without copying credentials, while retaining read-only execution and disabling inherited MCP tools for the worker.
+- Remove terminal-count limits, capacity ledgers and project-wide historical terminal admission checks. Old launch records and ledger files no longer block new workers and remain preserved as historical evidence.
+- Preserve completed native proposals when terminal viewer cleanup is deferred. Keep process termination, exact session/HEAD checks and protection of user-owned terminals.
+
+### Changed
+
+- Remove the unused intermediate headless supervisor and tests for retired capacity restrictions. Continue cleaning each owned terminal after its worker exits.
+- Run one Linux/Python 3.11 job for normal code changes. Version-only releases run lint, package build and clean installation checks without repeating the runtime suite; dependency and updater changes retain relevant checks. The four-environment Linux/macOS × Python matrix remains available through manual dispatch.
+- Keep state/configuration formats and worker/skill protocols unchanged. Old terminal concurrency/idle settings no longer impose an additional admission limit; `--jobs` still controls driver task concurrency.
+
+## 0.0.5 — 2026-09-27
+
+### Added
+
+- Declare verification inputs with `init --verify-identity`: track selected files, environment digests and a nonce alongside exact-candidate evidence. Changed or unavailable inputs invalidate cached success; legacy evidence requires fresh verification.
+- Support native Orca-managed Codex worker sessions for the verified Codex CLI 0.157.1 protocol, with owned workspaces, isolated App Server sessions, exact thread/turn associations and fresh review provenance. Launch status and the dashboard expose the recorded mode and compatibility reason.
+- Add bounded worker-terminal capacity, durable retirement evidence and synthetic terminal/native-session measurement scripts.
+
+### Fixed
+
+- Preserve process ownership and cleanup evidence across worker/verification exit, interruption and recovery. Unknown process or terminal cleanup blocks replacement instead of allowing uncertain duplicate launches.
+- Retire owned idle Orca/tmux worker terminals with checked identity and activity, retain uncertain resources for inspection, and account for existing terminals before dispatch.
+
+### Changed
+
+- Ground planning, work, review and starter-template acceptance conditions in the selected outcome and affected invariants; preserve user tradeoffs and keep optional improvements outside required scope.
+- Document verification-input limits, native-session compatibility and this repository's initial self-hosting setup. State/configuration formats and worker/skill protocols remain unchanged.
+
+### Validation
+
+- Published `0.0.4` to `0.0.5` engine upgrade, skill update/rollback and engine rollback passed in an isolated installation; canonical state, pending work and language bindings remained unchanged.
+- Synthetic future-version update checks passed, including active-dashboard exclusion, failed-update rollback and recovery with the CLI missing. Synthetic wheels are test fixtures only.
+- Native-session coverage uses local synthetic server/CLI/process fixtures; real-model/external live acceptance for the new native route has not been performed.
+
 ## 0.0.4 — 2026-09-25
 
 ### Fixed

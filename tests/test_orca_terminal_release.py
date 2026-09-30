@@ -12,9 +12,7 @@ from unittest.mock import patch
 from todo_flow.launchers import spawn_terminal
 from todo_flow.process_inventory import ProcessInventory
 from todo_flow.process_launch import LaunchGate
-from todo_flow.terminal_capacity import reconcile_tmux_terminals
 from todo_flow.terminal_release import retire_launch
-from todo_flow.terminal_slots import TerminalSlots
 
 
 class OrcaTerminalReleaseTests(unittest.TestCase):
@@ -27,7 +25,6 @@ class OrcaTerminalReleaseTests(unittest.TestCase):
         self.inventory = ProcessInventory(self.root, "track", "attempt", "task", 1)
         self.inventory.start()
         self.identity = self.inventory.register()
-        self.slots = TerminalSlots(self.root, concurrency=2, idle_limit=1)
         self.runtime = "runtime-1"
         self.present = True
         self.ready = True
@@ -101,7 +98,7 @@ class OrcaTerminalReleaseTests(unittest.TestCase):
         elif action == "show":
             result = {"terminal": dict(self.terminal)}
         elif action == "close":
-            self.assertEqual(self.state(), "closing")
+            self.assertTrue((self.folder / "terminal-close-intent.json").exists())
             events = json.loads((self.folder / "orca-retirement.json").read_text())
             self.assertTrue(events[-1]["close_intent"])
             self.assertEqual(argv[argv.index("--terminal") + 1], "term-original")
@@ -152,8 +149,7 @@ class OrcaTerminalReleaseTests(unittest.TestCase):
         (self.folder / "stderr.log").write_text("Synthetic diagnostics\n")
 
     def state(self):
-        slot = self.launch["terminal_slot"]["slot"]
-        return self.slots.snapshot()["slots"][slot]["history"][-1]["state"]
+        return json.loads((self.folder / "terminal-retirement.json").read_text())["status"]
 
     def test_creation_identity_and_normal_retirement_preserve_logs(self):
         self.finish()
@@ -185,16 +181,16 @@ class OrcaTerminalReleaseTests(unittest.TestCase):
         before = list(self.calls)
         self.assertEqual(retire_launch(self.folder)["status"], "preserved")
         self.assertEqual(self.calls, before)
-        self.assertEqual(self.state(), "active")
+        self.assertEqual(self.state(), "preserved")
 
-    def test_delayed_pty_exit_reobserves_before_capacity_reservation(self):
+    def test_delayed_pty_exit_can_be_rechecked_by_cleanup(self):
         self.finish()
         self.ready = False
         self.assertEqual(retire_launch(self.folder)["status"], "preserved")
-        self.assertEqual(self.state(), "active")
+        self.assertEqual(self.state(), "preserved")
         self.assertNotIn("close", self.calls)
         self.ready = True
-        reconcile_tmux_terminals(self.slots)
+        retire_launch(self.folder)
         self.assertEqual(self.state(), "closed")
         self.assertEqual(self.calls.count("close"), 1)
 
@@ -202,7 +198,7 @@ class OrcaTerminalReleaseTests(unittest.TestCase):
         self.finish()
         self.lose_response = True
         self.assertEqual(retire_launch(self.folder)["status"], "preserved")
-        self.assertEqual(self.state(), "closing")
+        self.assertTrue((self.folder / "terminal-close-intent.json").exists())
         self.assertEqual(retire_launch(self.folder)["status"], "closed")
         self.assertEqual(self.calls.count("close"), 1)
         self.assertEqual(self.calls.count("create"), 1)
@@ -214,7 +210,7 @@ class OrcaTerminalReleaseTests(unittest.TestCase):
         self.remove_on_close = False
         self.assertEqual(retire_launch(self.folder)["status"], "preserved")
         self.assertEqual(retire_launch(self.folder)["status"], "preserved")
-        self.assertEqual(self.state(), "closing")
+        self.assertTrue((self.folder / "terminal-close-intent.json").exists())
         self.assertEqual(self.calls.count("close"), 1)
         self.present = False
         self.assertEqual(retire_launch(self.folder)["status"], "closed")
@@ -232,14 +228,14 @@ class OrcaTerminalReleaseTests(unittest.TestCase):
         self.present = False
         self.truncated = True
         self.assertEqual(retire_launch(self.folder)["status"], "preserved")
-        self.assertEqual(self.state(), "quarantined")
+        self.assertEqual(self.state(), "preserved")
         self.assertNotIn("close", self.calls)
 
     def test_changed_incarnation_is_preserved(self):
         self.finish()
         self.terminal["incarnationId"] = "replacement"
         self.assertEqual(retire_launch(self.folder)["status"], "preserved")
-        self.assertEqual(self.state(), "quarantined")
+        self.assertEqual(self.state(), "preserved")
         self.assertNotIn("close", self.calls)
 
     def test_changed_handle_is_preserved(self):

@@ -122,8 +122,6 @@ def main():
         "worker_protocol": 2,
         "worker_launcher": "orca",
         "worker_timeout": 30,
-        "terminal_concurrency": 2,
-        "terminal_idle_limit": 1,
     }
     save(
         output / "method.json",

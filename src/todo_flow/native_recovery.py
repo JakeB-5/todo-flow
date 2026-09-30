@@ -94,7 +94,7 @@ def recover(socket_path, *, deadline, home, folder, binding, current, implementa
         ]
         if thread.get("id") != binding.session:
             raise ValueError("Recovery returned another native thread")
-        while time.monotonic() < deadline:
+        while deadline is None or time.monotonic() < deadline:
             page = request(
                 "thread/turns/list", {"threadId": binding.session, "itemsView": "full", "limit": 2}
             )
@@ -108,7 +108,9 @@ def recover(socket_path, *, deadline, home, folder, binding, current, implementa
                 raise ValueError("Native session history is absent or has another turn")
             turn = turns[0]
             if turn.get("status") == "inProgress":
-                time.sleep(min(0.2, max(0, deadline - time.monotonic())))
+                time.sleep(
+                    0.2 if deadline is None else min(0.2, max(0, deadline - time.monotonic()))
+                )
                 continue
             proposal = decode_history_turn(
                 turn,

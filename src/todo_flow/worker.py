@@ -13,20 +13,13 @@ from .process_inventory import launch_identity
 from .supervised_process import SupervisedProcess
 from .language import output_instruction
 from .launchers import LauncherUnavailable, TerminalProcess, select_launcher, spawn_terminal
+from .change_proposal import CHANGE_SCHEMA, validate_changes
 
 SCHEMA = {
     "type": "object",
     "properties": {
         "summary": {"type": "string"},
-        "changes": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
-                "required": ["path", "content"],
-                "additionalProperties": False,
-            },
-        },
+        "changes": {"type": "array", "items": CHANGE_SCHEMA},
         "verify": {"type": "boolean"},
         "publish": {"type": "boolean"},
         "next": {
@@ -142,8 +135,22 @@ workspace using file reads and search (rg/Glob/Grep); context_patterns suggest s
 a read-access boundary. Select relevant files and ranges rather than loading every file.
 You have read-only tools. Do not write files, run mutating commands, commit, push or access the network.
 The host performs verification. Report precise paths/lines and missing information honestly.
-For changes return complete UTF-8 file content (not a diff) within writable_patterns. The runtime applies
-changes, commits, executes the configured verification command and publishes GitHub effects.
+Tie every proposed change to a selected condition or an existing invariant affected by this change.
+Complete the smallest working path that delivers that outcome, including required callers. A useful
+optional feature, unrelated observed defect or hypothetical risk does not expand this track. Record
+such observations as findings when useful; do not include them in changes or mandatory follow-up work.
+Honor recorded user decisions and accepted tradeoffs. Before requiring an extra external capability,
+identify the concrete failure of the existing supported path. Reconcile necessary scope changes using
+existing authority and the document revision process; do not invent dependencies or reopen settled choices.
+For changes use either {path,content} with complete UTF-8 content, or
+{path,format:"replace-v1",base_head,sha256,edits:[{old,new}]} for an existing UTF-8 file.
+Use the input head as base_head and the lowercase SHA-256 of the original raw file bytes as sha256.
+Each old must be nonempty and occur exactly once in the original UTF-8 bytes. All edit ranges refer
+to that same original and must not overlap; replacements are not searched by later edits. new may
+be empty. Preserve exact line endings. Do not mix content with edit fields or invent other formats.
+Paths must be normalized relative paths within writable_patterns, without aliases or symlinks.
+The host validates every item before writing and assembles full contents for merge protection.
+The runtime applies changes, commits, executes configured verification and publishes requested effects.
 Choose only useful next work; do not follow a mandatory sequence. Most small work can be completed in
 one work task. An assess task should delegate concrete implementation to work; assess does not edit.
 A work task can return changes, verify:true, publish:true, next:[{kind:review,purpose:...}].
@@ -152,13 +159,21 @@ The host has merged
 the pinned latest base into your candidate checkout. Conflict markers are in workspace files;
 the evidence lists each unmerged path and readable ancestor/candidate/base versions (a missing
 version means that side has no file). Preserve the goal and upstream changes. Resolve every
-unmerged path with complete UTF-8 content and no markers, or ask a concrete question when the
-resolution needs unsupported binary/deletion operations or a scope decision. Do not run Git merge
-yourself. The host commits both parents, re-verifies, publishes and requests a fresh independent review.
+unmerged path with complete UTF-8 content or replace-v1 edits whose assembled content has no markers,
+or ask a concrete question when the resolution needs unsupported binary/deletion operations or a
+scope decision. Do not run Git merge yourself. The host commits both parents, re-verifies, publishes
+and requests a fresh independent review.
 Use investigation or focused followup work if uncertain. A question suspends work awaiting an answer.
 Review is a FRESH READ-ONLY session: inspect goal, current files, exact diff and verification evidence;
-return verdict and EACH condition's id/verdict/evidence. Never self-approve or change files in review.
-If met, request land (when endpoint=land) or complete (endpoint=review). If unmet request work with
+return verdict and EACH registered condition's id/verdict/evidence. Use only registered IDs in conditions;
+put additional observations in findings. Never self-approve or change files in review.
+Tie required review corrections to a selected condition and demonstrated failure or missing evidence
+for that condition. Preferred designs, unrelated defects and hypothetical hardening alone do not make
+it unmet. Use optional findings for those observations and proportionate verification for the change.
+If met and mandatory current verification passes, request land (when endpoint=land) or complete
+(endpoint=review). If an unrelated pre-existing defect blocks verification, report that gate separately
+and resolve it using existing authority or scope reconciliation; do not waive it or silently require
+that unrelated repair within this track. If unmet request work with
 specific actionable findings. GitHub publishes your complete assessment as a COMMENT, not self-approval.
 After land the runtime always schedules a fresh triage worker before completion.
 A triage task is READ-ONLY: assess triage_context.sources against the exact landed base/files, required
@@ -206,11 +221,7 @@ def validate(result, kind):
         raise ValueError("Unknown result fields: " + str(unknown))
     if result.get("changes") and kind != "work":
         raise ValueError("Only a work task can propose file changes")
-    for change in result.get("changes", []):
-        if set(change) != {"path", "content"} or not all(
-            isinstance(x, str) for x in change.values()
-        ):
-            raise ValueError("Invalid change")
+    validate_changes(result.get("changes", []))
     for row in result.get("next", []):
         if (
             row.get("kind")
@@ -231,6 +242,8 @@ def codex_schema():
     schema = copy.deepcopy(SCHEMA)
 
     def strict(node):
+        for option in node.get("anyOf", []):
+            strict(option)
         if node.get("type") == "object":
             required = set(node.get("required", []))
             props = node.get("properties", {})
@@ -248,17 +261,19 @@ def codex_schema():
 
 
 def result_payload(output):
+    """Accept one JSON envelope or a complete stream ending in one result."""
     try:
         return json.loads(output)
     except json.JSONDecodeError:
-        for line in reversed(output.splitlines()):
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict) and event.get("type") == "result":
-                return event
-        raise ValueError("Worker stream ended without a result") from None
+        events = [json.loads(line) for line in output.splitlines() if line.strip()]
+        if (
+            not events
+            or any(not isinstance(event, dict) for event in events)
+            or events[-1].get("type") != "result"
+            or sum(event.get("type") == "result" for event in events) != 1
+        ):
+            raise ValueError("Worker stream must end in exactly one complete result") from None
+        return events[-1]
 
 
 def worker_error(folder, returncode):
@@ -427,6 +442,7 @@ def run_worker(config, context, task, state, heartbeat):
     env = dict(os.environ)
     env.pop("CLAUDECODE", None)
     started = time.monotonic()
+    timeout = config.get("worker_timeout")
     # Persistent stdout survives driver death. Built-in tools read the workspace; custom
     # command adapters are trusted executables and must honor the read-only contract.
     with (
@@ -443,7 +459,7 @@ def run_worker(config, context, task, state, heartbeat):
                 stderr=err,
                 cwd=context["workspace"],
                 env=env,
-                timeout=max(1, config.get("worker_timeout", 600) + 5),
+                timeout=None if timeout is None else max(1, timeout + 5),
             )
         else:
             title = f"TODO {task.get('track', 'worker')} · {task['kind']} · {task['attempt'][-8:]}"
@@ -458,7 +474,7 @@ def run_worker(config, context, task, state, heartbeat):
         try:
             while proc.poll() is None:
                 heartbeat(proc.pid)
-                if time.monotonic() - started > config.get("worker_timeout", 600):
+                if timeout is not None and time.monotonic() - started > timeout:
                     raise TimeoutError("Worker timed out; input/output are preserved")
                 time.sleep(1)
             if proc.returncode:
@@ -468,15 +484,14 @@ def run_worker(config, context, task, state, heartbeat):
                 if proc.returncode is None:
                     proc.stop()
                 if (folder / "launch.json").exists():
-                    launch = json.loads((folder / "launch.json").read_text())
-                    if "terminal_slot" in launch or "terminal_ledger" in launch:
-                        retire_launch(folder)
+                    retire_launch(folder)
             else:
                 proc.stop()
     if adapter["type"] == "codex":
         result = json.loads((folder / "final.json").read_text())
         return validate({k: v for k, v in result.items() if v is not None}, task["kind"])
-    payload = result_payload((folder / "output.json").read_text())
+    output = (folder / "output.json").read_text()
+    payload = result_payload(output) if adapter["type"] == "claude" else json.loads(output)
     if adapter["type"] == "claude":
         if payload.get("is_error"):
             raise RuntimeError("Claude failed: " + str(payload.get("result")))

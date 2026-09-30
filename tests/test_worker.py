@@ -19,7 +19,14 @@ class WorkerAdapterTests(unittest.TestCase):
         self.assertEqual(schema["properties"]["summary"], {"type": "string"})
         changes = schema["properties"]["changes"]["anyOf"]
         self.assertEqual(changes[1], {"type": "null"})
-        self.assertFalse(changes[0]["items"]["additionalProperties"])
+        variants = changes[0]["items"]["anyOf"]
+        self.assertEqual(len(variants), 2)
+        for variant in variants:
+            self.assertFalse(variant["additionalProperties"])
+            self.assertEqual(set(variant["required"]), set(variant["properties"]))
+        edits = variants[1]["properties"]["edits"]["items"]
+        self.assertFalse(edits["additionalProperties"])
+        self.assertEqual(set(edits["required"]), {"old", "new"})
 
     def test_codex_proposal_decoding_and_tool_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:

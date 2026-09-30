@@ -28,7 +28,7 @@ Check Python 3.11+, uv, Git, and the chosen authenticated Claude/Codex CLI. GitH
 For a fresh release installation, no checkout is required:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.4/todo_flow-0.0.4-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.8/todo_flow-0.0.8-py3-none-any.whl
 export PATH="$(uv tool dir --bin):$PATH"
 todo-flow --version
 trackrun --version
@@ -51,7 +51,7 @@ Version `0.0.2` adds on-demand file reads and terminal-first workers. Existing `
 
 Version `0.0.3` also connects integration repairs to the current base and requires fresh verification and independent review before landing. Upgrade the shared engine to receive this fix; see [repair behavior](OPERATIONS.md#review-landing-and-completion).
 
-Version `0.0.4` adds proposal commit isolation, exact-candidate checkout checks and verification process-group cleanup. Existing manual checkout changes are preserved and can require a recovery decision; do not reset or stage them automatically.
+Version `0.0.8` includes proposal commit isolation, exact-candidate checkout checks, declared verification-input identity, durable process cleanup, per-execution terminal cleanup without count limits and supported native Orca/Codex sessions. Workers have no default time limit; native sidebar status, active cancellation and verified owned-worktree cleanup retain their ownership boundaries. Existing manual checkout changes are preserved and can require a recovery decision; do not reset or stage them automatically.
 
 ## 3. Configure the project
 

@@ -9,7 +9,7 @@ try:
     VERSION = version("todo-flow")
 except PackageNotFoundError:
     # Copied recovery runners execute with the base interpreter.
-    VERSION = "0.0.4"
+    VERSION = "0.0.8"
 CONTRACTS = json.loads(Path(__file__).with_name("release.json").read_text())
 VERIFICATION_IDENTITY_VERSION = 1
 
@@ -90,6 +90,9 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
     if release_number(engine_version) < release_number(config.get("min_engine_version", "0.0.1")):
         raise ValueError("Project requires a newer engine")
     validate_verify_identity(config)
+    timeout = config.get("worker_timeout")
+    if timeout is not None and (type(timeout) is not int or timeout < 0):
+        raise ValueError("worker_timeout must be null (unlimited) or nonnegative seconds")
 
 
 def project_compatibility(state, contracts=CONTRACTS, engine_version=VERSION):

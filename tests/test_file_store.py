@@ -87,6 +87,73 @@ class FileStoreTests(unittest.TestCase):
         self.assertFalse(recovered.files.pending.exists())
         self.assertTrue(recovered.start(DOC["id"])["existing"])
 
+    def test_joined_followup_sources_survive_partial_commit_and_cache_rebuild(self):
+        self.s.start(DOC["id"])
+        with self.s.transaction() as c:
+            c.execute("UPDATE tracks SET head='candidate-a' WHERE id=?", (DOC["id"],))
+            self.s.enqueue(c, DOC["id"], "work", "Second parent", "second-parent")
+        first = self.s.claim("first")
+        followup = {"kind": "work", "purpose": "One pending obligation"}
+        self.s.finish(first, {"summary": "First request", "next": [followup]})
+        second = self.s.claim("second")
+        self.assertEqual(second["purpose"], "Second parent")
+        real = FileDatabase.recover
+        failed = False
+
+        def crash_once(db):
+            nonlocal failed
+            if db.pending.exists() and not failed:
+                failed = True
+                journal = json.loads(db.pending.read_text())
+                relative = "tasks/" + second["id"] + ".json"
+                from todo_flow.file_store import atomic
+
+                atomic(db.path(relative), journal["writes"][relative])
+                raise OSError("Interrupted follow-up publication")
+            return real(db)
+
+        with patch.object(FileDatabase, "recover", crash_once):
+            with self.assertRaisesRegex(OSError, "Interrupted follow-up publication"):
+                self.s.finish(second, {"summary": "Second request", "next": [followup]})
+        self.assertTrue(self.s.files.pending.exists())
+        # A normal read must complete the journal before exposing the transition.
+        recovered = self.s.snapshot()
+        self.assertFalse(self.s.files.pending.exists())
+        shutil.rmtree(self.root / ".cache")
+        restored = Store(self.root)
+        rebuilt = restored.snapshot()
+        for table in ("tasks", "results", "events"):
+            self.assertEqual(recovered[table], rebuilt[table])
+        pending = [row for row in rebuilt["tasks"] if row["status"] == "queued"]
+        self.assertEqual(len(pending), 1)
+        target = pending[0]
+        self.assertEqual(target["purpose"], followup["purpose"])
+        self.assertEqual(target["obligation_head"], "candidate-a")
+        self.assertEqual(target["obligation_revision"], 1)
+        sources = [
+            json.loads(event["body"])
+            for event in rebuilt["events"]
+            if event["type"] in ("work.requested", "work.joined")
+            and json.loads(event["body"]).get("workId") == target["id"]
+        ]
+        self.assertEqual(len(sources), 2)
+        self.assertEqual(
+            {(source["parentWorkId"], source["parentAttemptId"]) for source in sources},
+            {(first["id"], first["attempt"]), (second["id"], second["attempt"])},
+        )
+        self.assertEqual(len({source["requestKey"] for source in sources}), 2)
+        self.assertTrue(
+            all(
+                source["head"] == "candidate-a" and source["documentRevision"] == 1
+                for source in sources
+            )
+        )
+        self.assertEqual({row["task"] for row in rebuilt["results"]}, {first["id"], second["id"]})
+        claimed = restored.claim("successor")
+        self.assertEqual(claimed["id"], target["id"])
+        restored.finish(claimed, {"summary": "Handled once"})
+        self.assertIsNone(restored.claim("no-duplicate"))
+
     def test_concurrent_cli_requests_coalesce_and_no_worker_on_request_only(self):
         args = [
             sys.executable,
