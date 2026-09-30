@@ -453,7 +453,9 @@ def cleanup_track(store, track_id, dry_run=False):
                             if obsolete and (
                                 obsolete_integration.removable(store, track, path) != obsolete
                             ):
-                                raise Conflict("Original integration evidence changed before removal")
+                                raise Conflict(
+                                    "Original integration evidence changed before removal"
+                                )
                             if orca is None:
                                 argv = ["git", "worktree", "remove"]
                                 if obsolete:

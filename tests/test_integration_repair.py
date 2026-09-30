@@ -244,9 +244,7 @@ class IntegrationRepairTests(unittest.TestCase):
         self.assertNotIn("later.txt", Path(resumed["base_diff"]).read_text())
         original = obsolete_integration.read_evidence(self.s.path, record["integration"])
         self.assertEqual(original["base"], self.base)
-        self.e.apply_changes(
-            task, workspace, [{"path": "calc.py", "content": RESOLVED}], resumed
-        )
+        self.e.apply_changes(task, workspace, [{"path": "calc.py", "content": RESOLVED}], resumed)
         integration.finish_repair(self.e, task, workspace, resumed)
         evidence = obsolete_integration.read_evidence(self.s.path, record["integration"])
         self.assertEqual(evidence["observed"], original["observed"])
@@ -301,7 +299,10 @@ class IntegrationRepairTests(unittest.TestCase):
         task, _workspace = self.repair_task()
         with patch(
             "todo_flow.engine.run_worker",
-            return_value={"summary": "Resolved", "changes": [{"path": "calc.py", "content": RESOLVED}]},
+            return_value={
+                "summary": "Resolved",
+                "changes": [{"path": "calc.py", "content": RESOLVED}],
+            },
         ):
             self.e.execute(task)
         with patch("todo_flow.cleanup.cleanup_track", side_effect=OSError("Cleanup outage")):
