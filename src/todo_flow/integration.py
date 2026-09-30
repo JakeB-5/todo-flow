@@ -3,6 +3,7 @@
 import json
 import subprocess
 
+from . import obsolete_integration
 from .adapters import command
 from .store import Conflict, encode
 from .checkout import snapshot, require_snapshot
@@ -36,7 +37,13 @@ def pending(track):
 
 
 def request_repair(engine, task, integration, base, reason):
+    track = engine.store.track(task["track"])
+    conflicted = bool(unmerged(integration))
+    if conflicted:
+        # Capture before prepare fetches a newer base or clears the original landing state.
+        obsolete_integration.capture(engine.store, track, integration, base, track["head"])
     record = {
+        "obsolete_evidence": conflicted,
         "status": "integration-repair",
         "phase": "pending",
         "candidate": engine.store.track(task["track"])["head"],
@@ -188,4 +195,7 @@ def finish_repair(engine, task, workspace, record):
     head = command(["git", "rev-parse", "HEAD"], workspace)
     for parent in (record["candidate"], record["base"]):
         command(["git", "merge-base", "--is-ancestor", parent, head], workspace)
+    obsolete_integration.resolved(
+        engine.store, engine.store.track(task["track"]), workspace, record, head
+    )
     engine.update(task, head=head, landing=None, verification=None, review=None)
