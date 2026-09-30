@@ -76,7 +76,7 @@ def observe(workspace):
     }
 
 
-def capture(store, track, workspace, base, candidate):
+def capture_record(track, workspace, base, candidate):
     observed = observe(workspace)
     if (
         observed["head"] != base
@@ -85,7 +85,7 @@ def capture(store, track, workspace, base, candidate):
         or observe(workspace) != observed
     ):
         raise Conflict("Original integration changed before conflict evidence was saved")
-    record = {
+    return {
         "version": 1,
         "track": track["id"],
         "request": track["request"],
@@ -94,6 +94,12 @@ def capture(store, track, workspace, base, candidate):
         "candidate": candidate,
         "observed": observed,
     }
+
+
+def persist_capture(store, workspace, record):
+    # Never adopt a fresh observation when retrying an interrupted archive write.
+    if observe(workspace) != record["observed"]:
+        raise Conflict("Original integration changed before conflict evidence was saved")
     path = evidence_path(store.path, workspace)
     previous = read_evidence(store.path, workspace)
     if previous is not None and previous != record:

@@ -39,20 +39,43 @@ def pending(track):
 def request_repair(engine, task, integration, base, reason):
     track = engine.store.track(task["track"])
     conflicted = bool(unmerged(integration))
-    if conflicted:
-        # Capture before prepare fetches a newer base or clears the original landing state.
-        obsolete_integration.capture(engine.store, track, integration, base, track["head"])
     record = {
         "obsolete_evidence": conflicted,
         "status": "integration-repair",
-        "phase": "pending",
-        "candidate": engine.store.track(task["track"])["head"],
+        "phase": "capturing" if conflicted else "pending",
+        "candidate": track["head"],
         "base": base,
         "integration": str(integration),
         "reason": reason,
     }
+    if conflicted:
+        # Persist the original observation before attempting the separate archive write.
+        record["original_evidence"] = obsolete_integration.capture_record(
+            track, integration, base, track["head"]
+        )
     engine.update(task, landing=encode(record), review=None, verification=None)
+    record = save_original_evidence(engine, task, record)
     return followup(record)
+
+
+def save_original_evidence(engine, task, record):
+    if record["phase"] != "capturing":
+        return record
+    track = engine.store.track(task["track"])
+    original = record["original_evidence"]
+    if (
+        original["track"] != track["id"]
+        or original["request"] != track["request"]
+        or original["revision"] != track["revision"]
+        or original["candidate"] != record["candidate"]
+        or original["base"] != record["base"]
+    ):
+        raise Conflict("Original integration recovery evidence is mismatched")
+    obsolete_integration.persist_capture(engine.store, record["integration"], original)
+    record = {**record, "phase": "pending"}
+    del record["original_evidence"]
+    engine.update(task, landing=encode(record))
+    return record
 
 
 def followup(record):
@@ -73,6 +96,8 @@ def prepare(engine, task, workspace):
     record = pending(engine.store.track(task["track"]))
     if not record:
         return None
+    # Resume archive persistence before fetching a new base or touching the candidate.
+    record = save_original_evidence(engine, task, record)
     current = command(["git", "rev-parse", "HEAD"], workspace)
     merging = merge_head(workspace)
     recovered = False
