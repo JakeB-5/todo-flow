@@ -194,18 +194,148 @@ class Store:
         self.event(c, "work.requested", track, {"workId": row[0], "kind": kind, "purpose": purpose})
         return row[0]
 
-    def start(self, track, request=None):
+    @staticmethod
+    def positive_limit(value):
+        if type(value) is not int or value < 1:
+            raise ValueError("Worker attempt limits must be positive integers")
+        return value
+
+    def budget(self, c, track, worker_limit=None):
+        if not track["request"]:
+            return None
+        id_ = "budget-" + fingerprint([track["id"], track["request"]])[:24]
+        c.execute(
+            "INSERT OR IGNORE INTO budgets(id,track,request,worker_limit) VALUES(?,?,?,?)",
+            (id_, track["id"], track["request"], worker_limit),
+        )
+        return dict(c.execute("SELECT * FROM budgets WHERE id=?", (id_,)).fetchone())
+
+    def budget_details(self, c, track, budget):
+        doc = json.loads(track["document"])
+        remaining = [
+            dict(row)
+            for row in c.execute(
+                "SELECT id,kind,purpose,status FROM tasks WHERE track=? "
+                "AND status IN ('queued','running','waiting') ORDER BY created,id",
+                (track["id"],),
+            )
+        ]
+        return {
+            **budget,
+            "candidate_head": track["head"],
+            "goal": doc["goal"],
+            "required_conditions": doc["conditions"],
+            "remaining_tasks": remaining,
+        }
+
+    def budget_status(self):
+        with self.connect() as c:
+            rows = c.execute(
+                "SELECT b.* FROM budgets b JOIN tracks t ON t.id=b.track "
+                "AND t.request=b.request ORDER BY b.track"
+            ).fetchall()
+            return [
+                self.budget_details(c, self.track(row["track"], c), dict(row)) for row in rows
+            ]
+
+    def stop_for_budget(self, c, track, task, budget):
+        if not budget["decision"]:
+            decision = uid("decision")
+            budget = {**budget, "decision": decision}
+            details = self.budget_details(c, track, budget)
+            question = (
+                "Worker attempt budget exhausted. Pending obligations and candidate are preserved. "
+                "Approve additional attempts with answer --additional-worker-attempts N. "
+                + encode(details)
+            )
+            c.execute(
+                "INSERT INTO decisions VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    decision,
+                    track["id"],
+                    task["id"],
+                    question,
+                    "open",
+                    track["revision"],
+                    None,
+                    time.time(),
+                ),
+            )
+            c.execute("UPDATE budgets SET decision=? WHERE id=?", (decision, budget["id"]))
+            self.event(c, "execution.budget-exhausted", track["id"], details)
+        c.execute(
+            "UPDATE tracks SET control='paused',updated=? WHERE id=?",
+            (time.time(), track["id"]),
+        )
+
+    def extend_budget(self, c, track, decision, budget, answer, additional):
+        self.positive_limit(additional)
+        if track["request"] != budget["request"] or track["control"] == "cancelled":
+            raise Conflict("Budget decision belongs to an inactive request")
+        if budget["worker_limit"] is None:
+            raise Conflict("This request has no worker attempt limit")
+        previous_limit = budget["worker_limit"]
+        budget = {
+            **budget,
+            "worker_limit": previous_limit + additional,
+            "decision": None,
+        }
+        c.execute(
+            "UPDATE budgets SET worker_limit=?,decision=NULL WHERE id=?",
+            (budget["worker_limit"], budget["id"]),
+        )
+        c.execute(
+            "UPDATE decisions SET status='answered',answer=? WHERE id=?",
+            (answer, decision["id"]),
+        )
+        c.execute(
+            "UPDATE tracks SET control='active',updated=? WHERE id=?",
+            (time.time(), track["id"]),
+        )
+        details = self.budget_details(c, track, budget)
+        self.event(
+            c,
+            "execution.budget-extended",
+            track["id"],
+            {
+                **details,
+                "decisionId": decision["id"],
+                "previous_limit": previous_limit,
+                "additional_worker_attempts": additional,
+                "answer": answer,
+            },
+        )
+        self.event(
+            c, "decision.answered", track["id"], {"decisionId": decision["id"], "answer": answer}
+        )
+        return details
+
+    def start(self, track, request=None, worker_limit=None):
+        if worker_limit is not None:
+            self.positive_limit(worker_limit)
         with self.transaction() as c:
             t = self.track(track, c)
             if t["status"] == "done":
                 raise Conflict("Track is complete; revise the document for new scope")
             if t["control"] in ("active", "paused", "pause-requested"):
-                return {"requestId": t["request"], "existing": True, "control": t["control"]}
+                budget = self.budget(c, t)
+                if worker_limit is not None and budget["worker_limit"] != worker_limit:
+                    raise Conflict("Existing request limit is immutable; answer its budget decision")
+                return {
+                    "requestId": t["request"],
+                    "existing": True,
+                    "control": t["control"],
+                    "budget": budget,
+                }
             request = request or uid("request")
             c.execute(
                 "UPDATE tracks SET request=?,control='active',updated=? WHERE id=?",
                 (request, time.time(), track),
             )
+            t = self.track(track, c)
+            budget = self.budget(c, t, worker_limit)
+            if worker_limit is not None and budget["worker_limit"] != worker_limit:
+                raise Conflict("Reusing a request ID cannot replace its persisted limit")
             self.enqueue(
                 c,
                 track,
@@ -213,8 +343,8 @@ class Store:
                 "Read the goal and choose the next useful bounded work",
                 track + ":" + request + ":initial",
             )
-            self.event(c, "execution.accepted", track, {"requestId": request})
-        return {"requestId": request, "existing": False}
+            self.event(c, "execution.accepted", track, {"requestId": request, "budget": budget})
+        return {"requestId": request, "existing": False, "budget": budget}
 
     def control(self, track, action):
         if action not in ("pause", "resume", "cancel"):
@@ -225,6 +355,10 @@ class Store:
                 raise Conflict("Already complete")
             if action == "resume" and t["control"] not in ("paused", "pause-requested"):
                 raise Conflict("Only paused requests can resume")
+            if action == "resume":
+                budget = self.budget(c, t)
+                if budget and budget["decision"]:
+                    raise Conflict("Answer the budget decision with explicit additional worker attempts")
             active = c.execute(
                 "SELECT 1 FROM tasks WHERE track=? AND status='running'", (track,)
             ).fetchone()
@@ -247,40 +381,61 @@ class Store:
 
     def claim(self, owner, ttl=45):
         with self.transaction() as c:
-            # One mutable checkout per track. Different tracks can proceed concurrently.
-            row = c.execute(
+            # One mutable checkout per track. Budget checks share the claim transaction.
+            rows = c.execute(
                 "SELECT w.* FROM tasks w JOIN tracks t ON t.id=w.track "
                 "WHERE w.status='queued' AND t.control='active' "
                 "AND NOT EXISTS(SELECT 1 FROM tasks a WHERE a.track=w.track "
-                "AND a.status='running') ORDER BY w.created LIMIT 1"
-            ).fetchone()
-            if not row:
-                return None
-            t = self.track(row["track"], c)
-            attempt = uid("attempt")
-            generation = row["generation"] + 1
-            c.execute(
-                "UPDATE tasks SET status='running',owner=?,lease=?,generation=?,"
-                "input_revision=?,attempts=attempts+1,updated=? WHERE id=?",
-                (owner, time.time() + ttl, generation, t["revision"], time.time(), row["id"]),
-            )
-            c.execute(
-                "INSERT INTO attempts(id,task,generation,status,started) VALUES(?,?,?,?,?)",
-                (attempt, row["id"], generation, "running", time.time()),
-            )
-            self.event(
-                c,
-                "worker.claimed",
-                t["id"],
-                {"attemptId": attempt, "workId": row["id"], "owner": owner, "kind": row["kind"]},
-            )
-            return {
-                **dict(row),
-                "generation": generation,
-                "attempt": attempt,
-                "input_revision": t["revision"],
-                "owner": owner,
-            }
+                "AND a.status='running') ORDER BY w.created,w.id"
+            ).fetchall()
+            for row in rows:
+                t = self.track(row["track"], c)
+                if t["control"] != "active":
+                    continue
+                budget = self.budget(c, t)
+                # These three kinds execute host actions; every other kind invokes a worker.
+                worker_attempt = row["kind"] not in ("verify", "land", "complete")
+                if budget and worker_attempt:
+                    if (
+                        budget["worker_limit"] is not None
+                        and budget["used"] >= budget["worker_limit"]
+                    ):
+                        self.stop_for_budget(c, t, row, budget)
+                        continue
+                    c.execute("UPDATE budgets SET used=used+1 WHERE id=?", (budget["id"],))
+                    budget = {**budget, "used": budget["used"] + 1}
+                attempt = uid("attempt")
+                generation = row["generation"] + 1
+                c.execute(
+                    "UPDATE tasks SET status='running',owner=?,lease=?,generation=?,"
+                    "input_revision=?,attempts=attempts+1,updated=? WHERE id=?",
+                    (owner, time.time() + ttl, generation, t["revision"], time.time(), row["id"]),
+                )
+                c.execute(
+                    "INSERT INTO attempts(id,task,generation,status,started) VALUES(?,?,?,?,?)",
+                    (attempt, row["id"], generation, "running", time.time()),
+                )
+                self.event(
+                    c,
+                    "worker.claimed",
+                    t["id"],
+                    {
+                        "attemptId": attempt,
+                        "workId": row["id"],
+                        "owner": owner,
+                        "kind": row["kind"],
+                        "budget": budget,
+                        "worker_attempt": worker_attempt,
+                    },
+                )
+                return {
+                    **dict(row),
+                    "generation": generation,
+                    "attempt": attempt,
+                    "input_revision": t["revision"],
+                    "owner": owner,
+                }
+            return None
 
     def assert_claim(self, c, task, allow_paused=True):
         row = c.execute("SELECT * FROM tasks WHERE id=?", (task["id"],)).fetchone()
@@ -375,9 +530,11 @@ class Store:
             )
         return result_id
 
-    def answer(self, id_, answer):
+    def answer(self, id_, answer, additional_worker_attempts=None):
         if not answer.strip():
             raise ValueError("Answer must not be empty")
+        if additional_worker_attempts is not None:
+            self.positive_limit(additional_worker_attempts)
         with self.transaction() as c:
             d = c.execute("SELECT * FROM decisions WHERE id=?", (id_,)).fetchone()
             if not d or d["status"] != "open":
@@ -385,6 +542,15 @@ class Store:
             t = self.track(d["track"], c)
             if t["revision"] != d["revision"]:
                 raise Conflict("Question belongs to an old goal revision")
+            budget = c.execute("SELECT * FROM budgets WHERE decision=?", (id_,)).fetchone()
+            if budget:
+                if additional_worker_attempts is None:
+                    raise Conflict("Budget resumption requires --additional-worker-attempts N")
+                return self.extend_budget(
+                    c, t, d, dict(budget), answer, additional_worker_attempts
+                )
+            if additional_worker_attempts is not None:
+                raise Conflict("Additional attempts require an open budget decision")
             c.execute("UPDATE decisions SET status='answered',answer=? WHERE id=?", (answer, id_))
             c.execute(
                 "UPDATE tasks SET status='done' WHERE id=? AND status='waiting'", (d["task"],)
@@ -415,6 +581,7 @@ class Store:
                 "watches",
                 "findings",
                 "triages",
+                "budgets",
             )
             out = {t: [dict(r) for r in c.execute("SELECT * FROM " + t)] for t in tables}
             out["events"] = [
