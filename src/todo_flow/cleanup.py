@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import time
 
+from . import obsolete_integration
 from .adapters import command, file_lock
 from .cleanup_native import native_terminal_cleanup
 from .cleanup_orca import OrcaCleanup, owner as orca_owner
@@ -423,7 +424,14 @@ def cleanup_track(store, track_id, dry_run=False):
                             or current["branch"] != "refs/heads/" + track["branch"]
                         ):
                             raise Conflict("Candidate branch or HEAD changed after delivery")
-                        if command(["git", "status", "--porcelain", "--untracked-files=no"], path):
+                        obsolete = obsolete_integration.removable(store, track, path)
+                        if item.get("obsolete") and item["obsolete"] != obsolete:
+                            raise Conflict("Original integration evidence changed during cleanup")
+                        if obsolete:
+                            item["obsolete"] = obsolete
+                        elif command(
+                            ["git", "status", "--porcelain", "--untracked-files=no"], path
+                        ):
                             raise Conflict("Tracked user changes remain")
                         command(
                             ["git", "merge-base", "--is-ancestor", current["head"], remote_head],
@@ -442,8 +450,18 @@ def cleanup_track(store, track_id, dry_run=False):
                             if local_target(path) != current:
                                 raise Conflict("Cleanup target changed before Git removal")
                             reclaim(store.path, track_id, path, dry_run=True)
+                            if obsolete and (
+                                obsolete_integration.removable(store, track, path) != obsolete
+                            ):
+                                raise Conflict(
+                                    "Original integration evidence changed before removal"
+                                )
                             if orca is None:
-                                command(["git", "worktree", "remove", value], config["repo"])
+                                argv = ["git", "worktree", "remove"]
+                                if obsolete:
+                                    # Only the unchanged, archived and superseded merge may be dirty.
+                                    argv.append("--force")
+                                command([*argv, value], config["repo"])
                             else:
                                 orca.remove(lambda: write_json(destination, report))
                             if (
