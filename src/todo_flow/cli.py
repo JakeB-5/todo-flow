@@ -117,6 +117,11 @@ def parser():
     tr.add_argument("--request-only", action="store_true")
     tr.add_argument("--request-id")
     tr.add_argument(
+        "--worker-attempt-limit",
+        type=int,
+        help="Persist a positive per-track request limit; omitted means unlimited",
+    )
+    tr.add_argument(
         "--no-auto-cleanup",
         action="store_true",
         help="Keep completed run resources for this driver",
@@ -127,12 +132,22 @@ def parser():
     st = sub.add_parser("start")
     st.add_argument("tracks", nargs="+")
     st.add_argument("--request-id")
+    st.add_argument(
+        "--worker-attempt-limit",
+        type=int,
+        help="Persist a positive per-track request limit; omitted means unlimited",
+    )
     for name in ["pause", "resume", "cancel"]:
         c = sub.add_parser(name)
         c.add_argument("track")
     a = sub.add_parser("answer")
     a.add_argument("decision")
     a.add_argument("--text", required=True)
+    a.add_argument(
+        "--additional-worker-attempts",
+        type=int,
+        help="Approve a positive increment when answering a worker budget decision",
+    )
     run = sub.add_parser("run")
     run.add_argument("--jobs", type=int, default=2)
     run.add_argument("--max-tasks", type=int, default=100)
@@ -252,12 +267,16 @@ def dispatch(args):
             result = store.register(document, args.expected_revision)
             result["document"] = str(store.path / "tracks" / document["id"] / "track.html")
         elif args.command in ("start", "trackrun"):
+            if args.worker_attempt_limit is not None:
+                store.positive_limit(args.worker_attempt_limit)
             if args.command == "trackrun" and (args.jobs < 1 or args.max_tasks < 1):
                 raise ValueError("jobs and max-tasks must be positive")
             result = {}
             for track in args.tracks:
                 try:
-                    result[track] = store.start(track, args.request_id)
+                    result[track] = store.start(
+                        track, args.request_id, worker_limit=args.worker_attempt_limit
+                    )
                 except (ValueError, Conflict) as e:
                     result[track] = {"error": str(e)}
             if args.command == "trackrun" and not args.request_only:
@@ -267,12 +286,15 @@ def dispatch(args):
                     engine.config["worker_launcher"] = args.launcher
                 if args.no_auto_cleanup:
                     engine.config["cleanup_on_complete"] = False
-                result = {"tasks": engine.run(args.jobs, args.max_tasks)}
+                result = {
+                    "tasks": engine.run(args.jobs, args.max_tasks),
+                    "budgets": store.budget_status(),
+                }
         elif args.command in ("pause", "resume", "cancel"):
             result = store.control(args.track, args.command)
         elif args.command == "answer":
-            store.answer(args.decision, args.text)
-            result = {"answered": args.decision}
+            budget = store.answer(args.decision, args.text, args.additional_worker_attempts)
+            result = {"answered": args.decision, "budget": budget}
         elif args.command == "run":
             if args.jobs < 1 or args.max_tasks < 1:
                 raise ValueError("jobs and max-tasks must be positive")
@@ -281,7 +303,10 @@ def dispatch(args):
                 engine.config["worker_launcher"] = args.launcher
             if args.no_auto_cleanup:
                 engine.config["cleanup_on_complete"] = False
-            result = {"tasks": engine.run(args.jobs, args.max_tasks, args.daemon)}
+            result = {
+                "tasks": engine.run(args.jobs, args.max_tasks, args.daemon),
+                "budgets": store.budget_status(),
+            }
         elif args.command == "status":
             result = store.snapshot()
         elif args.command == "launch-status":

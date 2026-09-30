@@ -5,6 +5,9 @@ SCHEMA = """
               status TEXT NOT NULL DEFAULT 'open', request TEXT, control TEXT DEFAULT 'idle',
               branch TEXT, workspace TEXT, issue INTEGER, pr INTEGER, head TEXT,
               verification TEXT, review TEXT, landing TEXT, updated REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS budgets (
+              id TEXT PRIMARY KEY, track TEXT NOT NULL, request TEXT NOT NULL,
+              worker_limit INTEGER, used INTEGER NOT NULL DEFAULT 0, decision TEXT);
             CREATE TABLE IF NOT EXISTS documents (
               track TEXT, revision INTEGER, body TEXT, PRIMARY KEY(track,revision));
             CREATE TABLE IF NOT EXISTS tasks (

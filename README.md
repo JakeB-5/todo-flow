@@ -116,6 +116,14 @@ Use `--language ko` for Korean. Omitting it prompts in an interactive terminal a
 
 Open **http://127.0.0.1:8765**. Ask your agent to use the installed todo skill, review the generated document, then select and run its actual ID. Setup is complete when the dashboard opens, the registered document renders and the requested first run reaches its configured endpoint. [Detailed setup and recovery](AGENT_INSTALL.md).
 
+### Request worker attempt limits
+
+For an explicitly bounded request, use `trackrun TRACK_ID --worker-attempt-limit 10` or `todo-flow --state STATE start TRACK_ID --worker-attempt-limit 10`. The positive limit applies separately to each selected track's request. Omitting it retains the existing unlimited request policy. `--max-tasks` still defaults to 100 and limits tasks handled by one driver invocation; restarting that driver does not reset a request's worker limit.
+
+Assessment, implementation, independent review, triage and watch attempts reserve one attempt atomically at claim time. Failed or interrupted attempts remain charged, including failures before worker launch. Host verification, landing and completion tasks do not consume worker attempts. Files in `budgets/` preserve the limit and cumulative usage; `status`, driver output, decisions and budget events expose usage, candidate HEAD and remaining tasks. A budget stop preserves results and pending obligations and does not mean the goal is complete.
+
+Resume a budget stop with `todo-flow --state STATE answer DECISION_ID --text 'Approve additional attempts' --additional-worker-attempts 5`, then restart `todo-flow --state STATE run` if needed. The positive increment extends the existing total limit without clearing usage or replacing pending work. A plain answer, `pause`/`resume`, or repeating `start`/`trackrun` cannot grant extra attempts. Use the CLI for budget approval; ordinary dashboard answers remain available for other decisions.
+
 ### Declare verification inputs
 
 Version `0.0.5` supports `init --verify-identity`. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:

@@ -22,6 +22,7 @@ from .release import VERSION, check_catalog, check_config
 TABLES = (
     "config",
     "tracks",
+    "budgets",
     "documents",
     "tasks",
     "attempts",
