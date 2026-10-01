@@ -41,7 +41,7 @@ Adjusted source changes per day increased **4.52× from June to September**; rec
 
 ![TODO Flow cycle: todo registers plans, trackpicks recommends tracks for your selection, trackrun executes selected IDs, and watchlist reassesses conditional observations. Actionable follow-ups return to todo.](assets/workflow/cycle-en.svg)
 
-**`todo` → `trackpicks` → `trackrun` → `watchlist` → `todo`.** Register a reviewable plan, choose the work, execute selected tracks, and reassess what needs attention. You can also select tracks directly in the dashboard. `trackpicks` recommends work; it does not start workers.
+**`todo` → `trackpicks` → `trackrun` → `watchlist` → `todo`.** Register a reviewable plan, choose the work, execute selected tracks, and reassess what needs attention. You can also select tracks directly in the dashboard. Only tracks eligible for a new execution request have enabled checkboxes. Tracks marked **Requested**, **Paused**, or **Pause requested** cannot be selected again. Open a track title to inspect its details; use **Resume** there to continue paused work. `trackpicks` recommends work; it does not start workers.
 
 `trackrun` stops at review by default. With landing authorized, it continues through landing and triage, including reassessment of that track's open watches. Use `watchlist` for explicit reassessment; actionable findings return to an existing or new TODO. New follow-up tracks await your selection. These are entry points into shared project state, not mandatory phases for every track.
 
