@@ -110,6 +110,15 @@ class VerificationEffectBoundaryTests(unittest.TestCase):
                 record["ok"] = False
             elif kind == "partial":
                 record["scope"] = "partial"
+            elif kind in ("outcome-inconclusive", "outcome-failed"):
+                record["outcome"] = kind.removeprefix("outcome-")
+                record["reason"] = "Explicit non-pass must override legacy ok=true"
+            elif kind == "cancelled":
+                record["cancelled"] = True
+            elif kind == "incomplete":
+                record["complete"] = False
+            elif kind == "check-inconclusive":
+                record["checks"][-1]["outcome"] = "inconclusive"
             else:
                 raise AssertionError("Unknown mutation: " + kind)
             engine.update(task, verification=encode(record))
@@ -144,6 +153,11 @@ class VerificationEffectBoundaryTests(unittest.TestCase):
             "failed",
             "partial",
             "policy",
+            "outcome-inconclusive",
+            "outcome-failed",
+            "cancelled",
+            "incomplete",
+            "check-inconclusive",
         ):
             with self.subTest(kind=kind), self.candidate() as candidate:
                 engine, task, workspace, runner = candidate

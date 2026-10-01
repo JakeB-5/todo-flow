@@ -134,7 +134,7 @@ For new state, add this argument to your `init` command to run explicitly select
 
 This is an argument, not a standalone command. Install the example tools first or replace these argv arrays with checks available in your project. Commands run in order in the candidate workspace, without an implicit shell, using the verifier environment and `--verify-timeout` for each command. The first failure or timeout stops verification; cancellation stops the supervised process and prevents later commands. All checks must pass before the unchanged full verifier runs. Preflight success alone never grants verification success or landing eligibility.
 
-Omitting the option or using `[]` preserves the existing execution path. Verification records include each attempted check's stage, argv and log reference; a failure also reaches the existing repair-work handoff. The ordered list participates in verification identity, so changing it invalidates previous success. Declare external check scripts and other relevant inputs using `--verify-identity` as described below. Existing state cannot be reconfigured with `init`; the same configuration migration limitation described below applies.
+Omitting the option or using `[]` preserves the existing execution path. Verification records include each attempted check's stage, argv and log reference; an explicit requirement failure reaches repair work, while an inconclusive execution reaches diagnosis. The ordered list participates in verification identity, so changing it invalidates previous success. Declare external check scripts and other relevant inputs using `--verify-identity` as described below. Existing state cannot be reconfigured with `init`; the same configuration migration limitation described below applies.
 
 ### Select intermediate verification checks
 
@@ -143,6 +143,22 @@ For new state, add `--verify-related '[["uv","run","python","-m","unittest","tes
 Intermediate change proposals run these related checks after configured preflight checks. Each command uses the candidate workspace, captured verifier environment and verification timeout, with the same cancellation and failure handling. A partial success supplies feedback only. A worker's `verify:true`, publication request, or review/land/complete follow-up requires the unchanged full `verify` command. Explicit verification tasks, recovered proposals and integration verification also require full verification. Preflight runs before either selected path; related checks do not replace any part of the configured full verifier.
 
 Omitting `verify_related` or setting it to `[]` preserves full verification after each change. Records bind scope and the ordered related-check policy to verification identity; partial results cannot satisfy a full cache lookup or an effect gate. Policy changes invalidate prior evidence. Legacy full records with matching supported identity remain valid when no related policy is configured; records without identity still require fresh verification. Declare external related-check scripts through `--verify-identity` too. No wall-clock speedup is promised: the local regression fixture compares two intermediate changes and one final candidate, reducing full calls from three to one while still detecting a final defect.
+
+### Verification outcomes
+
+Verification records retain `ok` and add `outcome` (`passed`, `failed`, or `inconclusive`) and `reason`. Only `passed` with `ok:true` can supply success, subject to the existing scope, clean HEAD, input identity, process and independent-review gates. Explicit non-pass, cancellation, incomplete evidence or a non-passing recorded check cannot be overridden by `ok:true`.
+
+A verifier may report a result in its **last stdout line**, using a JSON object followed by the literal suffix ` TODO_FLOW_RESULT_V1`:
+
+```text
+{"outcome":"failed","reason":"add(2, 3) returned 6; expected 5"} TODO_FLOW_RESULT_V1
+```
+
+The whole line must fit in 4096 UTF-8 bytes; `reason` must be a nonempty string. Normal logs may precede it. A malformed marked line is inconclusive. The verifier is responsible for distinguishing a checked requirement violation (`failed`) from an environment/check failure (`inconclusive`); the host does not infer that distinction from `AssertionError`, installation diagnostics or other exception text. A declared failure may accompany a nonzero exit, but does not make its log receipt complete. A declared pass still requires zero exit, complete output and confirmed normal process termination. Timeouts and leftover processes take precedence over declarations.
+
+Compatibility is explicit: an unmarked command with zero exit retains its previous success behavior under all existing barriers. An unmarked nonzero exit still has `ok:false`, now classified as `inconclusive` because an exit code alone does not prove a requirement violation. Historical boolean records are not rewritten: `ok:true` remains eligible only with matching supported identity and the other existing gates; `ok:false` remains non-passing and is shown/routed as inconclusive unless an explicit outcome establishes a requirement failure. Missing or unknown structured outcomes cannot grant success.
+
+Both explicit verify tasks and verification after proposals route `failed` to requirement repair and `inconclusive` to assessment of the recorded stage, logs and environment. Diagnosis preserves the candidate and requests verification of the same HEAD after authorized recovery, or a concrete decision when recovery is unclear. It does not authorize automatic dependency installation or speculative product edits. Inconclusive integration verification preserves candidate evidence and asks for a recovery decision instead of initiating a product repair. A non-passing result is never cached as success, so environment recovery can be checked without a product commit.
 
 ### Declare verification inputs
 

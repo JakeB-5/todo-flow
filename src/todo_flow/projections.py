@@ -22,7 +22,9 @@ SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
 # Legacy/free-form purposes remain available through task(), never sliced into summaries.
 TASK_SUMMARY = """id,track,kind,status,owner,lease,updated,
  CASE WHEN kind='work' AND substr(purpose,1,18)='Fix verification: '
- THEN 'verification-repair' ELSE NULL END AS intent"""
+ THEN 'verification-repair'
+ WHEN kind='assess' AND substr(purpose,1,23)='Diagnose verification: '
+ THEN 'verification-diagnosis' ELSE NULL END AS intent"""
 TASK_ORDER = (
     "CASE status WHEN 'running' THEN 0 WHEN 'waiting' THEN 1 "
     "WHEN 'queued' THEN 2 ELSE 3 END,created,id"
@@ -268,6 +270,9 @@ class Dashboard:
                   COALESCE(a.uncertain,0) AS uncertain,
                   COALESCE(d.decisions,0) AS decisions,
                   json_extract(t.verification,'$.ok') AS verificationOk,
+                  json_extract(t.verification,'$.outcome') AS verificationOutcome,
+                  json_extract(t.verification,'$.complete') AS verificationComplete,
+                  json_extract(t.verification,'$.cancelled') AS verificationCancelled,
                   json_extract(t.verification,'$.at') AS verificationAt,
                   CASE WHEN a.running>0 THEN 'running'
                     WHEN a.waiting>0 OR d.decisions>0 THEN 'waiting'

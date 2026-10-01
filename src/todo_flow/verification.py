@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import time
 
+from .verification_outcomes import VerificationOutcomeError, read_result
+
 
 class VerificationCleanupError(Exception):
     """Stop the task when process termination cannot be confirmed."""
@@ -186,6 +188,11 @@ def run_supervised(argv, workspace, timeout, identity, env=None, *, check=None):
             raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err)
         if event["evidence"].get("completion") == "leader-exited-with-descendants":
             raise RuntimeError("Verification left background processes; the group was terminated")
+        result = read_result(out)
+        if result is not None and result["outcome"] != "passed":
+            # A declared failure can explain a nonzero exit, but never grants
+            # success or upgrades the log receipt's completeness.
+            raise VerificationOutcomeError(result["outcome"], result["reason"])
         if code:
             raise RuntimeError(f"{argv[0]} failed ({code}): {err[-3000:]} {out[-1000:]}")
         if not summary["complete"]:

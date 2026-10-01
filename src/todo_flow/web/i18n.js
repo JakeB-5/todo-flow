@@ -3,6 +3,8 @@ const koreanMessages = {
   "{tracks} tracks / {tasks} active tasks": "트랙 {tracks}개 / 활성 작업 {tasks}개",
   "Failed": "실패",
   "Passed": "통과",
+  "Inconclusive": "판정 불가",
+  "Diagnose the check and reverify the same candidate after recovery.": "검사 원인을 진단하고 복구 후 같은 후보를 재검증합니다.",
   "Execution needs checking": "실행 확인 필요",
   "{count} active tasks": "활성 작업 {count}개",
   "Current task": "현재 작업",
