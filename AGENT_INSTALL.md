@@ -92,6 +92,45 @@ todo-flow --state "$FLOW_STATE" serve --port 8765
 
 The installer preserves existing directories and records language/state in each installed skill's `project.json`. It inherits the initialized project language. Standalone installation supports `--language en|ko`; an explicit value conflicting with an initialized project is rejected. Do not replace an entire skills directory to resolve one conflict. For an existing installation, use `update-skills --target PATH --dry-run`, review conflicts, then apply only within the requested update scope. See [UPDATES.md](UPDATES.md) for manifest adoption and rollback.
 
+### Coexist with occupied skill names
+
+Without conflicts, keep all nine existing names: `todo`, `track-picks`, `trackrun`, `track-run`, `watchlist`, `track-work`, `track-review`, `track-land` and `track-triage`. Aliases are available only for an occupied canonical name that is not already owned by this TODO Flow installation. Check that `todo-flow install-skills --help` lists `--alias`; an older release may require a source build containing this feature through the authorized installation/update workflow.
+
+Inspect the target first. The following example assumes another workflow occupies exactly `todo`, `track-picks`, `track-run` and `watchlist`, and all four proposed aliases are unused. Include only aliases for actual conflicts. Use `.agents/skills` for Codex or `.claude/skills` for Claude:
+
+```sh
+FLOW_SKILLS="$FLOW_PROJECT/.claude/skills"
+# Choose this separate STATE before initialization if another tool owns todo/.
+FLOW_STATE="$FLOW_PROJECT/todo-flow-state"
+todo-flow --state "$FLOW_STATE" install-skills --target "$FLOW_SKILLS" \
+  --alias todo=flow-todo \
+  --alias track-picks=flow-track-picks \
+  --alias track-run=flow-track-run \
+  --alias watchlist=flow-watchlist
+```
+
+For an initialized TODO Flow project, retain its existing STATE instead. For a new project, run step 3 with the chosen separate STATE before installing. Do not initialize over another tool's state. The installer does not import that tool's `project.json` as TODO Flow context.
+
+An occupied alias causes the whole installation to fail before changing skill files. The error identifies the role and entrypoint; choose an unused alias or a separate target supported by the agent. Preserve existing files and symlinks. Do not use `--adopt` to claim another workflow; adoption is only for a matching legacy TODO Flow bundle. Do not rename roles that have no collision.
+
+Check the returned `entrypoints` map (canonical role → installed name), `state` and `language`, then read each installed name's `SKILL.md` and adjacent `project.json`. In the example, ask the agent to use `flow-todo`, `flow-track-picks` or `flow-watchlist`; the original names still belong to the other workflow. `flow-track-run` links to the unchanged `trackrun` skill. The installed role table links all nine TODO Flow roles to their actual entrypoints. For Claude, verify the names in a session opened on the target project; if discovery has not refreshed, open a new session or explicitly read `.claude/skills/flow-todo/SKILL.md`.
+
+Aliases do not change shell commands. Continue to use `todo-flow --state "$FLOW_STATE" ...` and `trackrun --state "$FLOW_STATE" ACTUAL_TRACK_ID`. Keep the installation manifests: updates reuse the saved mapping without repeating `--alias`.
+
+```sh
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS" --dry-run
+# After reviewing the plan and resolving any conflicts:
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
+# Only when an interrupted update is reported:
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS" --recover
+# To undo a completed update, use its actual returned backup ID:
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS" --rollback BACKUP_ID
+```
+
+Local edits are preserved when the bundled file has not changed; simultaneous local and bundled changes abort the entire update for reconciliation. Rollback refuses later edits rather than discarding them. Recovery and rollback restore the owned files, mapping and context from the backup; they do not manage the other workflow. Unknown manifest formats are rejected; do not remove manifests to bypass this check.
+
+The disposable regression fixture in `tests/test_skill_coexistence_bundle.py` checks the real nine-skill bundle under both agent paths, installed frontmatter, relative links, template bytes, STATE and CLI examples. This is filesystem discovery evidence, not proof that a live Claude session selected or executed a skill. Actual Claude discovery and model invocation must be reported separately; no live model invocation is required or implied by this fixture.
+
 Run the dashboard in a persistent terminal/process. If a port is occupied, use a free one without killing an unrelated server. Verify the real URL, project and default language. The display switch is browser-local and project-specific; it does not change worker language or translate historical documents.
 
 If the current agent session does not discover newly installed skills, read the installed `SKILL.md` directly and explain whether a new session is needed for discovery.
