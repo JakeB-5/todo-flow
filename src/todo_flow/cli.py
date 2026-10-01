@@ -49,6 +49,8 @@ def initialize(args):
         config["verify_identity"] = json.loads(args.verify_identity)
     if args.verify_preflight is not None:
         config["verify_preflight"] = json.loads(args.verify_preflight)
+    if args.verify_related is not None:
+        config["verify_related"] = json.loads(args.verify_related)
     check_config(config)
     store = Store(args.state or repo / "todo")
     store.configure(config)
@@ -71,6 +73,10 @@ def parser():
     i.add_argument(
         "--verify-preflight",
         help="Optional JSON array of argv arrays, run in order before the full verifier",
+    )
+    i.add_argument(
+        "--verify-related",
+        help="Optional JSON array of argv arrays for intermediate changes only",
     )
     i.add_argument(
         "--verify-identity",

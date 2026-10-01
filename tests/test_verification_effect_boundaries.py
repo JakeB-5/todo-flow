@@ -96,6 +96,8 @@ class VerificationEffectBoundaryTests(unittest.TestCase):
             command(["git", "commit", "--allow-empty", "-m", "Concurrent head"], workspace)
         elif kind == "missing-evidence":
             engine.update(task, verification=None)
+        elif kind == "policy":
+            engine.config["verify_related"] = [[sys.executable, "-c", "pass"]]
         else:
             record = json.loads(engine.store.track(task["track"])["verification"])
             if kind == "legacy":
@@ -106,6 +108,8 @@ class VerificationEffectBoundaryTests(unittest.TestCase):
                 record["tree"] = "0" * 40
             elif kind == "failed":
                 record["ok"] = False
+            elif kind == "partial":
+                record["scope"] = "partial"
             else:
                 raise AssertionError("Unknown mutation: " + kind)
             engine.update(task, verification=encode(record))
@@ -138,15 +142,27 @@ class VerificationEffectBoundaryTests(unittest.TestCase):
             "unsupported",
             "tree",
             "failed",
+            "partial",
+            "policy",
         ):
             with self.subTest(kind=kind), self.candidate() as candidate:
                 engine, task, workspace, runner = candidate
                 self.change(kind, *candidate)
                 with self.effects(engine) as (push, remote):
-                    with self.assertRaises(Conflict):
-                        engine.gate(task)
-                    with self.assertRaises(Conflict):
-                        engine.publish(task, workspace, test_flow.DOC)
+                    review = {
+                        "summary": "Attempt approval with invalid verification",
+                        "verdict": "met",
+                        "conditions": [{"id": "sum", "verdict": "met", "evidence": "Fixture"}],
+                    }
+                    for action in (
+                        lambda: engine.gate(task),
+                        lambda: engine.publish(task, workspace, test_flow.DOC),
+                        lambda: engine.record_review(task, review),
+                        lambda: engine.land(task),
+                        lambda: engine.complete(task),
+                    ):
+                        with self.assertRaises(Conflict):
+                            action()
                 push.assert_not_called()
                 remote.pr.assert_not_called()
 
