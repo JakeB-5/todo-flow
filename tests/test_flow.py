@@ -536,7 +536,9 @@ class IntegrationTests(unittest.TestCase):
         )
         task = self.s.claim("reviewer")
         e = Engine(self.s)
-        e.ensure_workspace(task)
+        e.config["verify"] = [sys.executable, "-c", "print('review fixture evidence')"]
+        workspace = e.ensure_workspace(task)
+        self.assertTrue(e.verify(task, workspace)["ok"])
         result = {
             "summary": "met plus scope observation",
             "verdict": "met",

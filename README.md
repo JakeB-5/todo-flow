@@ -136,6 +136,14 @@ This is an argument, not a standalone command. Install the example tools first o
 
 Omitting the option or using `[]` preserves the existing execution path. Verification records include each attempted check's stage, argv and log reference; a failure also reaches the existing repair-work handoff. The ordered list participates in verification identity, so changing it invalidates previous success. Declare external check scripts and other relevant inputs using `--verify-identity` as described below. Existing state cannot be reconfigured with `init`; the same configuration migration limitation described below applies.
 
+### Select intermediate verification checks
+
+For new state, add `--verify-related '[["uv","run","python","-m","unittest","tests.test_calc"]]'` to `init`, replacing the example with checks supported by your project. The ordered argv arrays are stored as `verify_related`; there is no automatic impact analysis. As with preflight, existing state cannot be reconfigured using `init`.
+
+Intermediate change proposals run these related checks after configured preflight checks. Each command uses the candidate workspace, captured verifier environment and verification timeout, with the same cancellation and failure handling. A partial success supplies feedback only. A worker's `verify:true`, publication request, or review/land/complete follow-up requires the unchanged full `verify` command. Explicit verification tasks, recovered proposals and integration verification also require full verification. Preflight runs before either selected path; related checks do not replace any part of the configured full verifier.
+
+Omitting `verify_related` or setting it to `[]` preserves full verification after each change. Records bind scope and the ordered related-check policy to verification identity; partial results cannot satisfy a full cache lookup or an effect gate. Policy changes invalidate prior evidence. Legacy full records with matching supported identity remain valid when no related policy is configured; records without identity still require fresh verification. Declare external related-check scripts through `--verify-identity` too. No wall-clock speedup is promised: the local regression fixture compares two intermediate changes and one final candidate, reducing full calls from three to one while still detecting a final defect.
+
 ### Declare verification inputs
 
 Version `0.0.5` supports `init --verify-identity`. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:

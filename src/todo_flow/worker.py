@@ -156,6 +156,10 @@ The runtime applies changes, commits, executes configured verification and publi
 Choose only useful next work; do not follow a mandatory sequence. Most small work can be completed in
 one work task. An assess task should delegate concrete implementation to work; assess does not edit.
 A work task can return changes, verify:true, publish:true, next:[{kind:review,purpose:...}].
+verify:true requests final full verification. With configured verify_related checks, intermediate
+changes without verify/publish or a review/land/complete follow-up run only related checks (after
+configured preflight). Partial success cannot authorize publication, review, landing or completion.
+Request final verification when the candidate is ready; do not split finished work to use staging.
 When paths.integration_repair is present, read it and its base_diff path before proposing a repair.
 The host has merged
 the pinned latest base into your candidate checkout. Conflict markers are in workspace files;

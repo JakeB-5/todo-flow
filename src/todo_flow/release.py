@@ -16,9 +16,18 @@ VERIFICATION_IDENTITY_VERSION = 1
 
 def validate_verify_preflight(config):
     """Return ordered, detached argv arrays; absence preserves existing behavior."""
-    checks = config.get("verify_preflight", [])
+    return _validate_verify_checks(config, "verify_preflight")
+
+
+def validate_verify_related(config):
+    """Explicit intermediate checks; an empty list keeps full verification."""
+    return _validate_verify_checks(config, "verify_related")
+
+
+def _validate_verify_checks(config, field):
+    checks = config.get(field, [])
     if not isinstance(checks, list):
-        raise ValueError("verify_preflight must be a JSON array of argv arrays")
+        raise ValueError(f"{field} must be a JSON array of argv arrays")
     for argv in checks:
         if (
             not isinstance(argv, list)
@@ -26,7 +35,7 @@ def validate_verify_preflight(config):
             or any(not isinstance(arg, str) or "\0" in arg for arg in argv)
             or not argv[0]
         ):
-            raise ValueError("verify_preflight commands must be nonempty argv arrays")
+            raise ValueError(f"{field} commands must be nonempty argv arrays")
     return [list(argv) for argv in checks]
 
 
@@ -107,6 +116,7 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
         raise ValueError("Project requires a newer engine")
     validate_verify_identity(config)
     validate_verify_preflight(config)
+    validate_verify_related(config)
     timeout = config.get("worker_timeout")
     if timeout is not None and (type(timeout) is not int or timeout < 0):
         raise ValueError("worker_timeout must be null (unlimited) or nonnegative seconds")
