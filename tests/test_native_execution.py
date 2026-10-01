@@ -13,6 +13,7 @@ from todo_flow.managed_workspace import receipt_path
 from todo_flow.native_worker import preflight
 from todo_flow.process_barrier import ProcessBarrier
 from todo_flow.worker import codex_schema, run_worker
+from todo_flow.worker_stop import worker_stop_summary
 from todo_flow.workspace_creation import WorkspaceCreationGate
 
 
@@ -232,6 +233,14 @@ class NativeExecutionTests(unittest.TestCase):
         self.prepare()
         result = self.execute()
         self.assertEqual(result["summary"], "합성 native worker")
+        summary = worker_stop_summary(self.s.path, self.task["track"], self.task["attempt"])
+        row = next(row for row in summary["executions"] if row["proposal"] is not None)
+        self.assertTrue(row["process"]["started"])
+        self.assertTrue(row["process"]["group_exit_confirmed"])
+        self.assertEqual(row["proposal"]["status"], "valid")
+        self.assertTrue(row["proposal"]["validated"])
+        self.assertEqual(row["receipts"]["native"]["record"]["status"], "complete")
+        self.assertIsNone(row["goal_success"])
         self.assertEqual(result["changes"][0]["content"], "# 한글 제안\n" * 20000)
         self.assertEqual((self.workspace / "calc.py").read_bytes(), self.before_source)
         folder = self.s.path / "attempts" / self.task["attempt"]
