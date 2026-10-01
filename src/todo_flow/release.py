@@ -16,9 +16,18 @@ VERIFICATION_IDENTITY_VERSION = 1
 
 def validate_verify_preflight(config):
     """Return ordered, detached argv arrays; absence preserves existing behavior."""
-    checks = config.get("verify_preflight", [])
+    return _validate_verify_checks(config, "verify_preflight")
+
+
+def validate_verify_related(config):
+    """Explicit intermediate checks; an empty list keeps full verification."""
+    return _validate_verify_checks(config, "verify_related")
+
+
+def _validate_verify_checks(config, field):
+    checks = config.get(field, [])
     if not isinstance(checks, list):
-        raise ValueError("verify_preflight must be a JSON array of argv arrays")
+        raise ValueError(f"{field} must be a JSON array of argv arrays")
     for argv in checks:
         if (
             not isinstance(argv, list)
@@ -26,7 +35,7 @@ def validate_verify_preflight(config):
             or any(not isinstance(arg, str) or "\0" in arg for arg in argv)
             or not argv[0]
         ):
-            raise ValueError("verify_preflight commands must be nonempty argv arrays")
+            raise ValueError(f"{field} commands must be nonempty argv arrays")
     return [list(argv) for argv in checks]
 
 
@@ -107,6 +116,7 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
         raise ValueError("Project requires a newer engine")
     validate_verify_identity(config)
     validate_verify_preflight(config)
+    validate_verify_related(config)
     timeout = config.get("worker_timeout")
     if timeout is not None and (type(timeout) is not int or timeout < 0):
         raise ValueError("worker_timeout must be null (unlimited) or nonnegative seconds")
@@ -118,25 +128,17 @@ def project_compatibility(state, contracts=CONTRACTS, engine_version=VERSION):
     catalog = state / ".catalog.json"
     if not catalog.exists():
         result.update(initialized=False)
-        if (state / "state.sqlite").exists():
-            result["issues"].append("Legacy SQLite state requires migrate-files")
-    else:
-        result["initialized"] = True
+        return result
+    result["initialized"] = True
+    try:
+        check_catalog(json.loads(catalog.read_text()), contracts, engine_version)
+    except (ValueError, OSError) as error:
+        result["issues"].append(str(error))
+    config = state / "config" / "1.json"
+    if config.exists():
         try:
-            data = json.loads(catalog.read_text())
-            check_catalog(data, contracts, engine_version)
-            result["stateFormat"] = data["format"]
-            config_path = state / "config/1.json"
-            if config_path.exists():
-                config = json.loads(config_path.read_text())["body"]
-                check_config(config, contracts, engine_version)
-                result["configFormat"] = config.get("schema_version", 1)
-                result["workerProtocol"] = config.get("worker_protocol", 1)
-        except (ValueError, KeyError, TypeError) as error:
+            check_config(json.loads(config.read_text())["body"], contracts, engine_version)
+        except (ValueError, OSError, KeyError) as error:
             result["issues"].append(str(error))
-    if (state / ".pending.json").exists():
-        result["issues"].append(
-            "Pending state transaction: run status with the current compatible engine first"
-        )
     result["compatible"] = not result["issues"]
     return result

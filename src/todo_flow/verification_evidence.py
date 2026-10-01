@@ -27,6 +27,7 @@ def require_current(config, workspace, expected_head, evidence):
     if (
         not isinstance(evidence, dict)
         or evidence.get("ok") is not True
+        or evidence.get("scope", "full") != "full"
         or evidence.get("head") != head
         or evidence.get("tree") != tree
         or evidence.get("command") != config.get("verify")
