@@ -128,17 +128,25 @@ def project_compatibility(state, contracts=CONTRACTS, engine_version=VERSION):
     catalog = state / ".catalog.json"
     if not catalog.exists():
         result.update(initialized=False)
-        return result
-    result["initialized"] = True
-    try:
-        check_catalog(json.loads(catalog.read_text()), contracts, engine_version)
-    except (ValueError, OSError) as error:
-        result["issues"].append(str(error))
-    config = state / "config" / "1.json"
-    if config.exists():
+        if (state / "state.sqlite").exists():
+            result["issues"].append("Legacy SQLite state requires migrate-files")
+    else:
+        result["initialized"] = True
         try:
-            check_config(json.loads(config.read_text())["body"], contracts, engine_version)
-        except (ValueError, OSError, KeyError) as error:
+            data = json.loads(catalog.read_text())
+            check_catalog(data, contracts, engine_version)
+            result["stateFormat"] = data["format"]
+            config_path = state / "config/1.json"
+            if config_path.exists():
+                config = json.loads(config_path.read_text())["body"]
+                check_config(config, contracts, engine_version)
+                result["configFormat"] = config.get("schema_version", 1)
+                result["workerProtocol"] = config.get("worker_protocol", 1)
+        except (ValueError, KeyError, TypeError) as error:
             result["issues"].append(str(error))
+    if (state / ".pending.json").exists():
+        result["issues"].append(
+            "Pending state transaction: run status with the current compatible engine first"
+        )
     result["compatible"] = not result["issues"]
     return result
