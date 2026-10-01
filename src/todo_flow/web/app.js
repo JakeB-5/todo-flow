@@ -163,6 +163,13 @@ function renderDecisions(data) {
   const expanded=new Set([...document.querySelectorAll('#decisions details[open]')].map(x=>x.dataset.decision));
   $('decisions').innerHTML=data.items.length?`<div class="section-heading"><h2>${tr("Your decisions")}</h2><span class="subtle">${number(data.total)}</span></div>`+data.items.map(d=>`<details class="decision-card" data-decision="${esc(d.id)}" ${expanded.has(d.id)?'open':''}><summary>◇ ${esc(d.title)}</summary><p>${esc(d.question)}</p><textarea data-draft="${esc(d.id)}" id="answer-${esc(d.id)}" aria-label="${esc(d.title)}${tr(" \u2014 decision answer")}" placeholder="${tr("Write your answer and reasoning.")}">${esc(drafts.get(d.id)||'')}</textarea><button class="primary" data-answer="${esc(d.id)}">${tr("Record answer")}</button></details>`).join(''):'';
 }
+function verificationLabel(t) {
+  if(t.verificationCancelled===1||t.verificationComplete===0)return tr("Inconclusive");
+  if(t.verificationOutcome==='failed'&&t.verificationOk===0)return tr("Failed");
+  if(t.verificationOk===1&&(t.verificationOutcome==null||t.verificationOutcome==='passed'))return tr("Passed");
+  if(t.verificationOutcome!=null||t.verificationOk!=null)return tr("Inconclusive");
+  return tr("No record");
+}
 function renderActivity(data) {
   activityData=data;
   const r=route(), track=r.query.get('track');
@@ -170,7 +177,7 @@ function renderActivity(data) {
   const html=data.items.map(t=>{
     const w=t.current, uncertain=!activityConnected||t.uncertain>0;
     const state=uncertain?'unknown':t.status;
-    const recent=t.verificationOk===0?tr("Failed"):t.verificationOk===1?tr("Passed"):tr("No record");
+    const recent=verificationLabel(t);
     return `<section class="activity-track"><a class="work-track" href="#track/${encodeURIComponent(t.id)}">${esc(t.title)}</a>
       <div class="work-meta">${badge(state,uncertain?tr("Execution needs checking"):undefined)} ${['paused','pause-requested'].includes(t.control)?badge(t.control):''}
       <span>${tr('{count} active tasks',{count:number(t.taskCount)})}</span></div>
@@ -188,6 +195,7 @@ function renderActivity(data) {
 }
 function taskDescription(w) {
   if(w.intent==='verification-repair')return tr("Fix the recorded verification failure.");
+  if(w.intent==='verification-diagnosis')return tr("Diagnose the check and reverify the same candidate after recovery.");
   const descriptions={
     assess:tr("Assess the track against its conditions."),
     work:tr("Implement or investigate the track."),

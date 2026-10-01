@@ -7,7 +7,7 @@ Ownership and independent review remain the caller's responsibility.
 
 import json
 
-from . import verification_identity
+from . import verification_identity, verification_outcomes
 from .adapters import command
 from .checkout import require_clean
 from .store import Conflict, fingerprint
@@ -26,7 +26,7 @@ def require_current(config, workspace, expected_head, evidence):
             raise Conflict("Current verification evidence is invalid") from error
     if (
         not isinstance(evidence, dict)
-        or evidence.get("ok") is not True
+        or not verification_outcomes.passed(evidence)
         or evidence.get("scope", "full") != "full"
         or evidence.get("head") != head
         or evidence.get("tree") != tree

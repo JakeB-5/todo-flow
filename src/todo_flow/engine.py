@@ -14,7 +14,7 @@ from .worker import run_worker
 from . import proposal_application
 from .maintenance import guarded
 from . import integration as integration_repair
-from . import condition_evidence, verification_identity, verification_logs
+from . import condition_evidence, verification_identity, verification_logs, verification_outcomes
 from .verification_log_view import log_view
 from .checkout import require_clean
 from .verification_evidence import require_current
@@ -146,7 +146,7 @@ class Engine:
             same_identity = verification_identity.matches(prior.get("identity"), identity)
             if (
                 prior.get("key") == key
-                and prior.get("ok")
+                and verification_outcomes.passed(prior)
                 and prior.get("head") == head
                 and prior.get("tree") == tree
                 and prior.get("command") == self.config["verify"]
@@ -160,6 +160,7 @@ class Engine:
         started = time.time()
         log_reference = None
         checks = []
+        outcome, reason = "inconclusive", "Verification did not finish"
         try:
             before = verification_identity.capture(self.config, workspace, environment, scope=scope)
             if not verification_identity.matches(identity, before):
@@ -197,9 +198,16 @@ class Engine:
                     launch_identity=execution,
                     check=lambda: self.check_claim(task),
                 )
-                check.update(ok=True, output=output[-12000:], error=None)
+                check.update(
+                    ok=True,
+                    outcome="passed",
+                    reason="Command completed successfully",
+                    output=output[-12000:],
+                    error=None,
+                )
             # Success applies only to the recorded scope; effect gates require full.
             ok, error = True, None
+            outcome, reason = "passed", "All selected checks passed"
         except (Conflict, ProcessBarrierError):
             # Stale claims and uncertain cleanup cannot become verification results.
             raise
@@ -210,22 +218,33 @@ class Engine:
             verification_identity.VerificationIdentityError,
         ) as e:
             output, ok, error = str(e), False, type(e).__name__
+            outcome = (
+                e.outcome
+                if isinstance(e, verification_outcomes.VerificationOutcomeError)
+                else "inconclusive"
+            )
+            reason = str(e)
             if checks and not checks[-1]["ok"]:
-                checks[-1].update(output=output[-12000:], error=error)
+                checks[-1].update(
+                    outcome=outcome, reason=reason, output=output[-12000:], error=error
+                )
                 output = checks[-1]["stage"] + " failed: " + output[-10000:]
         try:
             after = verification_identity.capture(self.config, workspace, environment, scope=scope)
             if not verification_identity.matches(identity, after):
                 output = (output + "\nVerification inputs changed during execution").strip()
                 ok, error = False, "VerificationIdentityError"
+                outcome, reason = "inconclusive", "Verification inputs changed during execution"
         except verification_identity.VerificationIdentityError as e:
             output = (output + "\n" + str(e)).strip()
             ok, error = False, type(e).__name__
+            outcome, reason = "inconclusive", str(e)
         try:
             require_clean(workspace, head)
         except Conflict as e:
             output = (output + "\n" + str(e)).strip()
             ok, error = False, str(e)
+            outcome, reason = "inconclusive", str(e)
         record = {
             "head": head,
             "tree": tree,
@@ -236,6 +255,8 @@ class Engine:
             "logReference": log_reference,
             "checks": checks,
             "ok": ok,
+            "outcome": outcome,
+            "reason": reason,
             "output": output[-12000:],
             "error": error,
             "at": started,
@@ -426,7 +447,22 @@ class Engine:
             # Combined verification belongs to the integration, not the candidate head.
             combined = verification
             self.update(task, verification=t["verification"])
-            if not combined["ok"]:
+            if not verification_outcomes.passed(combined):
+                if verification_outcomes.outcome(combined) == "inconclusive":
+                    detail = combined.get("reason") or combined.get("output", "")
+                    return {
+                        "summary": "Combined verification inconclusive: " + detail,
+                        "question": "Combined verification could not establish a product result. "
+                        "Candidate HEAD "
+                        + t["head"]
+                        + " and its review are preserved. Inspect integration "
+                        + str(integration)
+                        + " and verification evidence in attempts/"
+                        + task["attempt"]
+                        + "/verification.json. Which environment/check recovery is authorized "
+                        "before retrying landing for this candidate? Cause: "
+                        + detail,
+                    }
                 return integration_repair.request_repair(
                     self,
                     task,
@@ -595,16 +631,8 @@ class Engine:
                     result = self.complete(task)
                 elif task["kind"] == "verify":
                     v = self.verify(task, workspace)
-                    result = {
-                        "summary": "Verification " + ("passed" if v["ok"] else "failed"),
-                        "next": [
-                            {
-                                "kind": "review" if v["ok"] else "work",
-                                "purpose": "Assess current goal" if v["ok"] else v["output"],
-                            }
-                        ],
-                    }
-                    if v["ok"]:
+                    result = verification_outcomes.followup(v)
+                    if verification_outcomes.passed(v):
                         self.publish(task, workspace, doc)
                 else:
                     repair = (
@@ -683,13 +711,8 @@ class Engine:
                         v = self.verify(
                             task, workspace, scope="full" if final_requested else "partial"
                         )
-                        if not v["ok"]:
-                            result = {
-                                "summary": "Verification failed after proposal: " + v["output"],
-                                "next": [
-                                    {"kind": "work", "purpose": "Fix verification: " + v["output"]}
-                                ],
-                            }
+                        if not verification_outcomes.passed(v):
+                            result = verification_outcomes.followup(v)
                         elif result.get("publish"):
                             self.publish(task, workspace, doc)
                     if task["kind"] == "review":
