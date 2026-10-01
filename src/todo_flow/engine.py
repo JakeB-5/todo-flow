@@ -14,7 +14,7 @@ from .worker import run_worker
 from . import proposal_application
 from .maintenance import guarded
 from . import integration as integration_repair
-from . import verification_identity, verification_logs
+from . import condition_evidence, verification_identity, verification_logs
 from .verification_log_view import log_view
 from .checkout import require_clean
 from .verification_evidence import require_current
@@ -296,7 +296,8 @@ class Engine:
                 t["id"],
                 json.loads(t["verification"]) if t["verification"] else None,
             ),
-            "review": json.loads(t["review"]) if t["review"] else None,
+            "evidence_artifacts": condition_evidence.available(self.store.path, t),
+            "review": condition_evidence.review_view(self.store.path, t),
             "landing": json.loads(t["landing"]) if t["landing"] else None,
             "recent_results": [
                 json.loads(r["body"])
@@ -339,6 +340,7 @@ class Engine:
             raise ValueError("Contradictory review")
         if verdict == "met":
             require_current(self.config, t["workspace"], t["head"], t["verification"])
+        condition_evidence.require_rows(self.store.path, t, rows)
         review = {
             "head": t["head"],
             "documentRevision": t["revision"],
@@ -368,6 +370,14 @@ class Engine:
         ):
             raise Conflict("Current independent review is missing or not met")
         require_current(self.config, t["workspace"], t["head"], t["verification"])
+        try:
+            condition_evidence.require_rows(
+                self.store.path,
+                t,
+                review.get("conditions", []) + review.get("additional_assessments", []),
+            )
+        except ValueError as error:
+            raise Conflict(str(error)) from error
         return t
 
     def land(self, task):

@@ -14,6 +14,7 @@ from .supervised_process import SupervisedProcess
 from .language import output_instruction
 from .launchers import LauncherUnavailable, TerminalProcess, select_launcher, spawn_terminal
 from .change_proposal import CHANGE_SCHEMA, validate_changes
+from .condition_evidence import REFERENCE_SCHEMA
 
 SCHEMA = {
     "type": "object",
@@ -56,6 +57,7 @@ SCHEMA = {
                     "id": {"type": "string"},
                     "verdict": {"type": "string", "enum": ["met", "unmet", "cannot-assess"]},
                     "evidence": {"type": "string"},
+                    "evidenceRefs": {"type": "array", "items": REFERENCE_SCHEMA},
                 },
                 "required": ["id", "verdict", "evidence"],
                 "additionalProperties": False,
@@ -171,6 +173,13 @@ Use investigation or focused followup work if uncertain. A question suspends wor
 Review is a FRESH READ-ONLY session: inspect goal, current files, exact diff and verification evidence;
 return verdict and EACH registered condition's id/verdict/evidence. Use only registered IDs in conditions;
 put additional observations in findings. Never self-approve or change files in review.
+Optional conditions[].evidenceRefs may explicitly bind a machine artifact to that condition.
+Read paths.evidence_artifacts for available sealed verification artifacts; copy an entry unchanged
+and add conditionId matching the condition row. Keep the evidence prose explaining relevance.
+References are checked against the current revision, HEAD, recorded execution, path and SHA-256.
+Missing/null/empty evidenceRefs means prose-only, including legacy evidence strings. The host's
+review view reports evidenceIntegrity as prose-only, integrity-checked or invalid. Integrity proves
+byte provenance only, never semantic correctness or that a condition is met. Judge those separately.
 Tie required review corrections to a selected condition and demonstrated failure or missing evidence
 for that condition. Preferred designs, unrelated defects and hypothetical hardening alone do not make
 it unmet. Use optional findings for those observations and proportionate verification for the change.

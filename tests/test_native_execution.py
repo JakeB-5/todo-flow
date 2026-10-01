@@ -541,7 +541,14 @@ class NativeExecutionTests(unittest.TestCase):
         proposal.update(
             summary="Synthetic independent review",
             verdict="met",
-            conditions=[{"id": "sum", "verdict": "met", "evidence": "Synthetic fixture only"}],
+            conditions=[
+                {
+                    "id": "sum",
+                    "verdict": "met",
+                    "evidence": "Synthetic fixture only",
+                    "evidenceRefs": None,
+                }
+            ],
         )
         (self.fixture / "proposal.json").write_text(json.dumps(proposal))
         result = self.execute()
