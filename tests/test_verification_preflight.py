@@ -79,7 +79,17 @@ class VerificationPreflightTests(unittest.TestCase):
         self.assertFalse(failed["ok"])
         self.assertEqual(failed["command"], engine.config["verify_preflight"][1])
         self.assertEqual(record["logReference"], failed["logReference"])
-        self.assertTrue(verification_logs.describe(self.s.path, record["logReference"])["complete"])
+        logs = verification_logs.describe(self.s.path, record["logReference"])
+        # Failed producers retain their bytes without claiming complete output.
+        self.assertEqual(logs["format"], "file-backed-v1")
+        self.assertFalse(logs["complete"])
+        self.assertEqual(logs["phase"], "partial")
+        self.assertEqual(logs["termination"]["state"], "confirmed")
+        self.assertEqual(logs["termination"]["returncode"], 1)
+        self.assertIn("format fixture error", logs["streams"]["stderr"]["text"])
+        stderr = verification_logs.read_range(self.s.path, record["logReference"], "stderr")
+        self.assertEqual(stderr["text"], "format fixture error\n")
+        self.assertFalse(stderr["truncated"])
         self.assertEqual(json.loads(self.s.track("addition")["verification"]), record)
         path = self.s.path / "attempts" / task["attempt"] / "verification.json"
         self.assertEqual(json.loads(path.read_text()), record)
