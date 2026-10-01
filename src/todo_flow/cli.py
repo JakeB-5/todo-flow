@@ -60,6 +60,9 @@ def parser():
     p.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     p.add_argument("--state", help="Project state directory (default: todo)")
     sub = p.add_subparsers(dest="command", required=True)
+    stop = sub.add_parser("worker-stop", help="Read process and proposal evidence for one attempt")
+    stop.add_argument("track")
+    stop.add_argument("attempt")
     i = sub.add_parser("init")
     i.add_argument("--repo", required=True)
     i.add_argument("--github")
@@ -249,6 +252,15 @@ def dispatch(args):
                     adopt=getattr(args, "adopt", False),
                 )
             print(encode(result))
+            return
+        if args.command == "worker-stop":
+            from .worker_stop import worker_stop_summary
+
+            print(
+                encode(
+                    worker_stop_summary(args.state or Path.cwd() / "todo", args.track, args.attempt)
+                )
+            )
             return
         store = Store(args.state or Path.cwd() / "todo")
         store.config()

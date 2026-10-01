@@ -11,7 +11,6 @@ import time
 from .launchers import orca_result
 from .maintenance import write_json
 from .managed_workspace import receipt_path
-from .process_inventory import launch_identity
 from .store import Store
 from .supervised_process import SupervisedProcess
 from .workspace_creation import WorkspaceCreationGate, _write_exclusive
@@ -102,14 +101,14 @@ def preflight(config, context, task, state, launcher):
     }, "native_supported"
 
 
-def run_native(config, context, task, state, folder, launcher, on_pid):
+def run_native(config, context, task, state, folder, launcher, on_pid, observation):
     supported, reason = preflight(config, context, task, state, launcher)
     selection = {**launcher.get("selection", {}), "reason": reason, "native_ready": bool(supported)}
     launcher["selection"] = selection
     write_json(folder / "launch.json", {**launcher, "status": "selected"})
     if supported is None:
         return None
-    identity = launch_identity(state, task)
+    identity = observation.launch(state)
     # Per-task intent spans replacement attempts: uncertain delivery is never
     # hidden by creating a second server/thread or switching to codex exec.
     intent = Path(state) / ("native-task-" + task["id"] + ".json")
@@ -227,6 +226,7 @@ def run_native(config, context, task, state, folder, launcher, on_pid):
             "selection": selection,
         },
     )
-    from .worker import validate
-
-    return validate(json.loads((folder / "native-proposal.json").read_text()), task["kind"])
+    observation.phase = "decoding"
+    return observation.validate(
+        json.loads((folder / "native-proposal.json").read_text()), task["kind"]
+    )

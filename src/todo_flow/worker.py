@@ -9,7 +9,7 @@ from pathlib import Path
 from .store import encode
 from .maintenance import write_json
 from .terminal_release import retire_launch
-from .process_inventory import launch_identity
+from .worker_stop import WorkerObservation
 from .supervised_process import SupervisedProcess
 from .language import output_instruction
 from .launchers import LauncherUnavailable, TerminalProcess, select_launcher, spawn_terminal
@@ -320,6 +320,11 @@ def worker_input(context, folder):
 
 
 def run_worker(config, context, task, state, heartbeat):
+    with WorkerObservation(task) as observation:
+        return _run_worker(config, context, task, state, heartbeat, observation)
+
+
+def _run_worker(config, context, task, state, heartbeat, observation):
     # Delivery uncertainty belongs to the task, regardless of the replacement
     # attempt's adapter, launcher or current native capability. Do not parse an
     # existing intent: even a malformed file or dangling symlink must block replay.
@@ -436,7 +441,7 @@ def run_worker(config, context, task, state, heartbeat):
     if adapter["type"] == "codex" and launcher["backend"] == "orca":
         from .native_worker import run_native
 
-        native = run_native(config, context, task, state, folder, launcher, heartbeat)
+        native = run_native(config, context, task, state, folder, launcher, heartbeat, observation)
         if native is not None:
             return native
     env = dict(os.environ)
@@ -453,7 +458,7 @@ def run_worker(config, context, task, state, heartbeat):
         if launcher["backend"] == "headless":
             proc = SupervisedProcess(
                 args,
-                identity=launch_identity(state, task),
+                identity=observation.launch(state),
                 stdin=inp,
                 stdout=out,
                 stderr=err,
@@ -469,7 +474,7 @@ def run_worker(config, context, task, state, heartbeat):
                 context["workspace"],
                 folder,
                 title,
-                launch_identity=launch_identity(state, task),
+                launch_identity=observation.launch(state),
             )
         try:
             while proc.poll() is None:
@@ -487,13 +492,17 @@ def run_worker(config, context, task, state, heartbeat):
                     retire_launch(folder)
             else:
                 proc.stop()
+    observation.phase = "decoding"
     if adapter["type"] == "codex":
         result = json.loads((folder / "final.json").read_text())
-        return validate({k: v for k, v in result.items() if v is not None}, task["kind"])
+        if isinstance(result, dict):
+            result = {k: v for k, v in result.items() if v is not None}
+        return observation.validate(result, task["kind"])
     output = (folder / "output.json").read_text()
     payload = result_payload(output) if adapter["type"] == "claude" else json.loads(output)
     if adapter["type"] == "claude":
         if payload.get("is_error"):
+            observation.phase = "provider"
             raise RuntimeError("Claude failed: " + str(payload.get("result")))
         result = payload.get("structured_output")
         if result is None:
@@ -503,4 +512,4 @@ def run_worker(config, context, task, state, heartbeat):
             result = json.loads(text)
     else:
         result = payload
-    return validate(result, task["kind"])
+    return observation.validate(result, task["kind"])
