@@ -107,6 +107,34 @@ Claude 세션에는 `.claude/skills`를 사용합니다. 스킬은 프로젝트 
 
 **http://127.0.0.1:8765**에서 대시보드를 확인하세요. 문서가 등록·렌더되고 첫 실행이 설정된 종료점에 도달했는지까지 확인합니다.
 
+### 다른 워크플로우와 공존 설치
+
+충돌이 없으면 9개 스킬의 기존 이름과 호출을 그대로 유지합니다. Codex는 `.agents/skills`, Claude는 `.claude/skills`에 설치합니다. `todo-flow install-skills --help`에서 `--alias` 지원을 확인하세요. 이전 릴리스에는 이 기능이 포함된 승인된 업데이트나 소스 빌드가 필요할 수 있습니다.
+
+다른 워크플로우가 실제로 점유한 이름에만 별칭을 지정합니다. 아래 예시는 `todo`, `track-picks`, `track-run`, `watchlist`가 점유되어 있고 네 별칭은 비어 있다고 가정합니다.
+
+```sh
+FLOW_STATE=/absolute/my-project/todo-flow-state
+FLOW_SKILLS=/absolute/my-project/.claude/skills
+todo-flow --state "$FLOW_STATE" install-skills --target "$FLOW_SKILLS" \
+  --alias todo=flow-todo --alias track-picks=flow-track-picks \
+  --alias track-run=flow-track-run --alias watchlist=flow-watchlist
+```
+
+이미 초기화한 TODO Flow 프로젝트는 기존 STATE를 유지하세요. 다른 도구가 `todo/`를 소유하면 초기화 전에 별도 STATE를 정하고 앞의 `init` 명령에도 `--state "$FLOW_STATE"`를 지정합니다. 다른 도구의 상태 위에 초기화하거나 `--adopt`로 그 스킬을 가져오지 마세요. 별칭도 점유되어 있으면 전체 스킬 설치를 중단하므로 비어 있는 별칭이나 에이전트가 지원하는 별도 설치 경로를 선택합니다. 기존 파일·링크를 보존하며 충돌하지 않은 역할의 이름은 바꾸지 않습니다.
+
+설치 보고의 `entrypoints`(정식 역할 → 설치된 이름), `state`, `language`와 각 스킬의 `project.json`을 확인하세요. 예시에서는 에이전트에게 `flow-todo`, `flow-track-picks`, `flow-track-run`, `flow-watchlist` 사용을 요청합니다. 원래 점유된 이름은 기존 워크플로우를 계속 가리킵니다. `trackrun`과 내부 역할 이름은 유지되며 설치된 역할 연결표가 실제 TODO Flow 진입점을 안내합니다. 셸 명령은 계속 `todo-flow`, `trackrun`입니다. 별도 STATE 실행에는 `trackrun --state "$FLOW_STATE" ACTUAL_TRACK_ID`를 사용하세요.
+
+업데이트는 별칭을 다시 지정하지 않고 저장된 매핑을 사용합니다.
+
+```sh
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS" --dry-run
+# 계획을 확인하고 충돌을 해결한 뒤 적용합니다.
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
+```
+
+배포본 파일이 바뀌지 않았으면 로컬 수정을 보존하며 양쪽에서 변경했으면 전체 업데이트를 중단합니다. 설치 manifest를 유지하세요. `--recover`, `--rollback BACKUP_ID` 사용은 [공존 설치·복구·롤백 안내](AGENT_INSTALL.md#coexist-with-occupied-skill-names)를 참고하세요. 임시 프로젝트 번들 테스트는 파일 배치·메타데이터·링크를 검사합니다. 실제 Claude 세션의 발견·모델 호출은 별도 검증이며 이 테스트에서는 수행하지 않습니다. 현재 세션이 설치 결과를 반영하지 않았다면 새 세션을 열거나 설치된 `SKILL.md`를 명시적으로 읽으세요.
+
 ### 요청별 워커 시도 한도
 
 명시적으로 실행을 제한하려면 `trackrun TRACK_ID --worker-attempt-limit 10` 또는 `todo-flow --state STATE start TRACK_ID --worker-attempt-limit 10`을 사용합니다. 양의 정수 한도는 선정한 각 트랙의 요청에 따로 적용됩니다. 생략하면 기존 요청 무제한 정책을 유지합니다. `--max-tasks`는 여전히 기본값 100이며 한 드라이버 실행이 처리하는 작업 수만 제한합니다. 드라이버 재시작은 요청의 워커 한도를 초기화하지 않습니다.

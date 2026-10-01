@@ -62,13 +62,151 @@ def payloads(source=None):
     return result
 
 
-def manifest(files, version=VERSION):
-    return {
-        "format": 1,
+def manifest(files, version=VERSION, entrypoints=None):
+    result = {
+        "format": 2 if entrypoints else 1,
         "engine_version": version,
         "skill_protocol": 1,
         "files": {name: digest(data) for name, data in files.items()},
     }
+    if entrypoints:
+        result["entrypoints"] = entrypoints
+    return result
+
+
+def skill_name(value):
+    return isinstance(value, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", value)
+
+
+def parse_aliases(values):
+    aliases = {}
+    for value in values:
+        role, separator, name = value.partition("=")
+        if not separator or not skill_name(role) or not skill_name(name) or role in aliases:
+            raise ValueError("Use each --alias ROLE=NAME once, with lowercase skill names")
+        aliases[role] = name
+    return aliases
+
+
+def installations(target):
+    """Validate ownership before reading context or planning managed writes."""
+    records, entrypoints = {}, None
+    for path in sorted(Path(target).glob("*/" + MANIFEST)):
+        name = path.parent.name
+        record = json.loads(safe_path(path.parent, MANIFEST).read_text())
+        if (
+            not skill_name(name)
+            or not isinstance(record, dict)
+            or (
+                record.get("format") not in (1, 2)
+                or record.get("skill_protocol") not in CONTRACTS["skill_protocols"]
+            )
+        ):
+            raise ValueError(f"Unsupported skill installation format/protocol: {name}")
+        files = record.get("files")
+        if not isinstance(files, dict) or any(
+            not isinstance(relative, str)
+            or relative in (MANIFEST, "project.json")
+            or not isinstance(value, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", value)
+            for relative, value in files.items()
+        ):
+            raise ValueError(f"Invalid skill file manifest: {name}")
+        for relative in files:
+            safe_path(path.parent, relative)
+        if record["format"] == 2:
+            mapping = record.get("entrypoints")
+            if (
+                not isinstance(mapping, dict)
+                or not mapping
+                or any(not skill_name(k) or not skill_name(v) for k, v in mapping.items())
+                or len(set(mapping.values())) != len(mapping)
+                or any(k != v and v in mapping for k, v in mapping.items())
+                or name not in mapping.values()
+            ):
+                raise ValueError(f"Invalid skill entrypoint mapping: {name}")
+            if entrypoints is not None and entrypoints != mapping:
+                raise ValueError("Installed skill entrypoint mappings disagree; recover the update")
+            entrypoints = mapping
+        elif "entrypoints" in record:
+            raise ValueError(f"Unsupported skill entrypoint format: {name}")
+        records[name] = record
+    mapping = dict(entrypoints or {})
+    for name, record in records.items():
+        if record["format"] == 1:
+            if name in mapping.values() and mapping.get(name) != name:
+                raise ValueError(f"Skill ownership disagrees with entrypoint mapping: {name}")
+            if name in mapping and mapping[name] != name:
+                raise ValueError(f"Duplicate installed role: {name}")
+            mapping[name] = name
+    return records, mapping
+
+
+def project_contexts(target, *, recover=False):
+    target = Path(target).resolve()
+    pending = pending_path(target)
+    if recover and pending.exists():
+        # An interrupted update can contain different generations of the mapping.
+        # Recover against its durable receipt, not partially replaced manifests.
+        identifier = json.loads(pending.read_text())["id"]
+        if not isinstance(identifier, str) or not re.fullmatch(r"[a-f0-9]{32}", identifier):
+            raise ValueError("Invalid skill backup ID")
+        receipt = json.loads((home() / "skill-updates" / identifier / "receipt.json").read_text())
+        if receipt["target"] != str(target):
+            raise ValueError("Backup belongs to a different target")
+        return [{"state": receipt["state"], "language": receipt.get("language", "en")}]
+    records, _ = installations(target)
+    contexts = []
+    for name in records:
+        path = safe_path(target / name, "project.json")
+        if path.exists():
+            contexts.append(json.loads(path.read_text()))
+    return contexts
+
+
+def rendered_payloads(bundled, entrypoints):
+    """Render skill references while preserving shell commands and bundled assets."""
+    aliases = {role: name for role, name in entrypoints.items() if role != name}
+    if not aliases:
+        return bundled
+    words = re.compile(
+        r"(?<![a-zA-Z0-9_/-])("
+        + "|".join(re.escape(role) for role in sorted(aliases, key=len, reverse=True))
+        + r")(?![a-zA-Z0-9_/-])"
+    )
+    result = {}
+    for role, files in bundled.items():
+        text = files["SKILL.md"].decode("utf-8")
+        parts = re.split(r"(```[\s\S]*?```|`[^`\n]+`)", text)
+        for i, part in enumerate(parts):
+            if i % 2:
+                # A standalone skill reference is distinct from a command example.
+                # Even standalone `trackrun` denotes the installed CLI executable.
+                for canonical, name in aliases.items():
+                    if canonical != "trackrun" and part == "`" + canonical + "`":
+                        parts[i] = "`" + name + "`"
+                        break
+                continue
+            part = words.sub(lambda match: aliases[match[0]], part)
+            parts[i] = re.sub(
+                r"\.\./([a-z0-9-]+)/",
+                lambda match: "../" + entrypoints.get(match[1], match[1]) + "/",
+                part,
+            )
+        text = "".join(parts)
+        rows = "\n".join(
+            f"- {canonical} → [{entrypoints[canonical]}](../{entrypoints[canonical]}/SKILL.md)"
+            for canonical in sorted(bundled)
+        )
+        text += (
+            "\n## Installed TODO Flow roles\n\n"
+            "Canonical roles resolve to the entrypoints below in this installation. "
+            "Read the linked skill to invoke that role; use its adjacent `project.json` "
+            "for STATE and language. Shell commands `trackrun` and `todo-flow` "
+            "keep their names; pass `--state` for a separate STATE.\n\n" + rows + "\n"
+        )
+        result[role] = {**files, "SKILL.md": text.encode("utf-8")}
+    return result
 
 
 def signature(folder):
@@ -93,24 +231,58 @@ def pending_path(target):
     return home() / "skill-targets" / project_key(target) / "pending.json"
 
 
-def plan(target, source=None, adopt=False, version=VERSION):
+def plan(target, source=None, adopt=False, version=VERSION, *, aliases=None, install=False):
     target = Path(target).resolve()
     if target == Path(source or bundle()).resolve():
         raise ValueError("Target the installed project skills, not the bundled source directory")
     updates, conflicts, preserved, actions = {}, [], [], []
     versions = {}
     bundled = payloads(source)
-    retired = {p.parent.name for p in target.glob("*/" + MANIFEST)} - set(bundled)
-    for name in sorted(set(bundled) | retired):
-        files = bundled.get(name, {})
+    records, saved = installations(target)
+    entrypoints = {role: role for role in bundled}
+    entrypoints.update(saved)
+    aliases = aliases or {}
+    if aliases and (not install or adopt):
+        raise ValueError("--alias is only supported for a new, conflicting installation")
+    for role, name in aliases.items():
+        if role not in bundled or not skill_name(name) or name in entrypoints:
+            raise ValueError(f"Invalid alias {role}={name}; choose a distinct, unused skill name")
+        occupied = target / role
+        if role in saved or not (occupied.exists() or occupied.is_symlink()):
+            raise ValueError(f"{role}: aliases require an occupied, unowned canonical entrypoint")
+        entrypoints[role] = name
+    if len(set(entrypoints.values())) != len(entrypoints):
+        raise ValueError("Skill aliases must have distinct entrypoints")
+    for role in bundled:
+        if role in entrypoints.values() and entrypoints[role] != role:
+            raise ValueError(f"{role}: a saved alias now collides with a bundled role")
+    mapped = any(role != name for role, name in entrypoints.items())
+    rendered = rendered_payloads(bundled, entrypoints)
+    retired = set(records) - {entrypoints[role] for role in bundled}
+    desired = {entrypoints[role]: files for role, files in rendered.items()}
+    desired.update({name: {} for name in retired})
+    for name, files in sorted(desired.items()):
         folder = target / name
         changes = {}
-        record = safe_path(folder, MANIFEST)
-        if folder.exists():
-            if not record.exists():
-                if not adopt:
+        occupied = folder.exists() or folder.is_symlink()
+        if install and occupied:
+            role = next(role for role, entry in entrypoints.items() if entry == name)
+            conflicts.append(
+                f"{role}: entrypoint {name} is occupied; "
+                + (
+                    "use update-skills for this TODO Flow installation"
+                    if name in records
+                    else f"choose an unused --alias {role}=NAME or a separate --target"
+                )
+            )
+            continue
+        if occupied:
+            if name not in records:
+                if not adopt or mapped or not folder.is_dir() or folder.is_symlink():
                     conflicts.append(
-                        f"{name}: no installation manifest; use --adopt only with the matching original bundle"
+                        f"{name}: no installation manifest; preserve this entrypoint. "
+                        "Use install-skills --alias ROLE=NAME for a new conflicting install; "
+                        "use --adopt only with the matching original bundle"
                     )
                     continue
                 previous = {path: digest(data) for path, data in files.items()}
@@ -121,22 +293,9 @@ def plan(target, source=None, adopt=False, version=VERSION):
                             f"{name}/{path}: legacy content differs; cannot infer its baseline"
                         )
             else:
-                installed = json.loads(record.read_text())
-                if (
-                    installed.get("format") != 1
-                    or installed.get("skill_protocol") not in CONTRACTS["skill_protocols"]
-                ):
-                    raise ValueError(f"Unsupported skill installation format/protocol: {name}")
+                installed = records[name]
                 versions[name] = installed.get("engine_version")
-                previous = installed.get("files")
-                if not isinstance(previous, dict) or any(
-                    not isinstance(path, str)
-                    or path in (MANIFEST, "project.json")
-                    or not isinstance(value, str)
-                    or not re.fullmatch(r"[a-f0-9]{64}", value)
-                    for path, value in previous.items()
-                ):
-                    raise ValueError(f"Invalid skill file manifest: {name}")
+                previous = installed["files"]
             for path in sorted(set(previous) | set(files)):
                 local = safe_path(folder, path)
                 current = digest(local.read_bytes()) if local.is_file() else None
@@ -162,10 +321,12 @@ def plan(target, source=None, adopt=False, version=VERSION):
         else:
             changes = dict(files)
             actions.append({"skill": name, "action": "install"})
-        changes[MANIFEST] = (json.dumps(manifest(files, version), indent=2) + "\n").encode()
+        metadata = manifest(files, version, entrypoints if mapped else None)
+        changes[MANIFEST] = (json.dumps(metadata, indent=2) + "\n").encode()
         updates[name] = changes
     return {
         "target": str(target),
+        "entrypoints": entrypoints,
         "installedVersions": versions,
         "retired": sorted(retired),
         "version": version,
@@ -201,6 +362,7 @@ def transact(target, state, updates, report, language, *, install=False):
         "id": identifier,
         "target": str(target),
         "state": str(state),
+        "language": language,
         "version": report["version"],
         "phase": "prepared",
         "before": {name: signature(target / name) for name in updates},
@@ -255,6 +417,7 @@ def update(
     install=False,
     source=None,
     version=VERSION,
+    aliases=None,
 ):
     target, state = Path(target).resolve(), Path(state).resolve()
     with (
@@ -270,11 +433,8 @@ def update(
         if not compatibility["compatible"]:
             raise ValueError("; ".join(compatibility["issues"]))
         require_quiet_state(state)
-        if install and any((target / name).exists() for name in payloads(source)):
-            raise ValueError(
-                "Skill already exists; use update-skills to review and apply a safe update"
-            )
-        report, updates = plan(target, source, adopt, version)
+        report, updates = plan(target, source, adopt, version, aliases=aliases, install=install)
+        report.update({"state": str(state), "language": language})
         if dry_run:
             return {**report, "dryRun": True}
         if report["conflicts"]:

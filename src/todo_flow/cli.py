@@ -196,6 +196,13 @@ def parser():
     install = sub.add_parser("install-skills")
     install.add_argument("--target", required=True)
     install.add_argument(
+        "--alias",
+        action="append",
+        default=[],
+        metavar="ROLE=NAME",
+        help="Use an unused entrypoint only for an occupied, unowned skill role; repeat as needed",
+    )
+    install.add_argument(
         "--language",
         choices=["en", "ko"],
         help="Use the project language, or choose one for standalone skills",
@@ -256,6 +263,7 @@ def dispatch(args):
                     install=args.command == "install-skills",
                     dry_run=getattr(args, "dry_run", False),
                     adopt=getattr(args, "adopt", False),
+                    aliases=skill_updates.parse_aliases(getattr(args, "alias", [])),
                 )
             print(encode(result))
             return
@@ -463,8 +471,10 @@ def dispatch(args):
 
 
 def skill_context(args):
+    from .skill_updates import project_contexts
+
     target = Path(args.target).resolve()
-    contexts = [json.loads(p.read_text()) for p in target.glob("*/project.json")]
+    contexts = project_contexts(target, recover=getattr(args, "recover", False))
     inferred_states = {c["state"] for c in contexts if c.get("state")}
     if args.state:
         state = Path(args.state).resolve()

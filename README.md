@@ -116,6 +116,34 @@ Use `--language ko` for Korean. Omitting it prompts in an interactive terminal a
 
 Open **http://127.0.0.1:8765**. Ask your agent to use the installed todo skill, review the generated document, then select and run its actual ID. Setup is complete when the dashboard opens, the registered document renders and the requested first run reaches its configured endpoint. [Detailed setup and recovery](AGENT_INSTALL.md).
 
+### Coexist with another workflow
+
+Without collisions, all nine skill names and existing calls stay unchanged. Use `.agents/skills` for Codex and `.claude/skills` for Claude. Check `todo-flow install-skills --help` for `--alias`; older releases may need an authorized update or source build containing this feature.
+
+Use aliases only for names actually occupied by another workflow. This example assumes `todo`, `track-picks`, `track-run` and `watchlist` are occupied and the four aliases are unused:
+
+```sh
+FLOW_STATE=/absolute/my-project/todo-flow-state
+FLOW_SKILLS=/absolute/my-project/.claude/skills
+todo-flow --state "$FLOW_STATE" install-skills --target "$FLOW_SKILLS" \
+  --alias todo=flow-todo --alias track-picks=flow-track-picks \
+  --alias track-run=flow-track-run --alias watchlist=flow-watchlist
+```
+
+Retain the existing STATE for an initialized TODO Flow project. If another tool owns `todo/`, choose a separate STATE before initialization and pass `--state "$FLOW_STATE"` to the earlier `init` command. Do not initialize over the other tool's state or use `--adopt` to claim its skills. An occupied alias aborts the whole skill installation; choose an unused alias or a separate supported target. Existing files and links are preserved, and unoccupied roles keep their names.
+
+Check the installation report's `entrypoints` (canonical role → installed name), `state` and `language`, plus each installed `project.json`. In this example, ask the agent to use `flow-todo`, `flow-track-picks`, `flow-track-run` or `flow-watchlist`; original occupied names still invoke the other workflow. `trackrun` and the internal roles retain their names, and every installed role table links to the actual TODO Flow entrypoints. Shell commands remain `todo-flow` and `trackrun`; use `trackrun --state "$FLOW_STATE" ACTUAL_TRACK_ID` for the separate STATE.
+
+Updates reuse the saved mapping without repeating aliases:
+
+```sh
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS" --dry-run
+# Review the plan and resolve conflicts before applying:
+todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
+```
+
+Local edits are preserved when the upstream file is unchanged; simultaneous changes stop the whole update. Keep installation manifests. See [coexistence, recovery and rollback](AGENT_INSTALL.md#coexist-with-occupied-skill-names) for `--recover` and `--rollback BACKUP_ID`. The disposable bundle tests check filesystem layout, metadata and links. Actual Claude session discovery and model invocation are separate checks; these tests do not perform them. If a session has not refreshed, open a new session or explicitly read the installed `SKILL.md`.
+
 ### Request worker attempt limits
 
 For an explicitly bounded request, use `trackrun TRACK_ID --worker-attempt-limit 10` or `todo-flow --state STATE start TRACK_ID --worker-attempt-limit 10`. The positive limit applies separately to each selected track's request. Omitting it retains the existing unlimited request policy. `--max-tasks` still defaults to 100 and limits tasks handled by one driver invocation; restarting that driver does not reset a request's worker limit.
@@ -278,7 +306,7 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 **New in 0.0.3:** integration repairs merge the current base into the candidate checkout, expose conflict evidence by path and require new verification and independent review before landing. Interrupted repairs and decision answers retain the recorded merge. See [repair behavior](OPERATIONS.md#review-landing-and-completion).
 
-**New in 0.0.2:** workers read project files on demand, and `trackrun` prefers visible terminal logs through Orca, a configured terminal launcher or tmux. No available terminal means headless execution; `--launcher headless` explicitly selects it. The published `0.0.1` wheel still uses the earlier snapshot/headless implementation. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers).
+**New in 0.0.0.2:** workers read project files on demand, and `trackrun` prefers visible terminal logs through Orca, a configured terminal launcher or tmux. No available terminal means headless execution; `--launcher headless` explicitly selects it. The published `0.0.1` wheel still uses the earlier snapshot/headless implementation. See [worker execution](OPERATIONS.md#worker-context-and-terminal-launchers).
 
 Completed tracks automatically clean disposable checkouts and unchanged worker terminals while retaining documents, logs, results and Git branches. Resources with user changes or unconfirmed ownership are kept with a reason. Use `--no-auto-cleanup` to retain resources for inspection; see [cleanup and retry](OPERATIONS.md#cleanup-migration-and-hooks).
 
