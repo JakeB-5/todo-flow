@@ -11,6 +11,37 @@ import uuid
 from .process_barrier import ProcessBarrierError
 
 
+def check_worker_results(value):
+    results = value.get("worker_results")
+    if results is None:
+        return
+    if (
+        not isinstance(results, dict)
+        or type(results.get("version")) is not int
+        or results["version"] != 1
+        or not isinstance(results.get("executions"), dict)
+    ):
+        raise ValueError("Unsupported worker observation format")
+    for execution, observation in results["executions"].items():
+        if (
+            execution not in value["executions"]
+            or not isinstance(observation, dict)
+            or observation.get("phase") not in ("execution", "decoding", "provider", "validation")
+            or observation.get("status") not in ("valid", "error")
+            or any(
+                observation.get(key) is not None and type(observation[key]) is not bool
+                for key in ("parsed", "validated")
+            )
+        ):
+            raise ValueError("Invalid or misattributed worker observation")
+        if observation["status"] == "valid" and (
+            not value["executions"][execution]
+            or observation.get("parsed") is not True
+            or observation.get("validated") is not True
+        ):
+            raise ValueError("Valid proposal requires a prepared execution and validation")
+
+
 class ProcessInventory:
     def __init__(self, directory, track, attempt, task=None, generation=None):
         self.directory = Path(directory)
@@ -42,6 +73,7 @@ class ProcessInventory:
                     raise ValueError("Invalid execution inventory")
             if self.claim["task"] is not None and value.get("claim") != self.claim:
                 raise ValueError("Inventory belongs to another claim")
+            check_worker_results(value)
             return value
         except (OSError, ValueError, TypeError, AttributeError) as error:
             raise ProcessBarrierError(
@@ -108,6 +140,25 @@ class ProcessInventory:
             if value["state"] != "open" or execution not in value["executions"]:
                 raise ProcessBarrierError("Launch no longer belongs to an open attempt")
             value["executions"][execution] = True
+            self.write(value)
+
+    def observe_worker(self, execution, observation):
+        """Attach proposal evidence; this never confirms process or track success."""
+        with self.locked():
+            value = self.read()
+            if value["state"] != "open" or execution not in value["executions"]:
+                raise ProcessBarrierError("Worker observation belongs to a fenced execution")
+            results = value.setdefault("worker_results", {"version": 1, "executions": {}})
+            previous = results["executions"].get(execution)
+            if previous is not None:
+                if previous == observation:
+                    return
+                raise ProcessBarrierError("Cannot replace an execution's worker observation")
+            results["executions"][execution] = observation
+            try:
+                check_worker_results(value)
+            except ValueError as error:
+                raise ProcessBarrierError(str(error)) from error
             self.write(value)
 
 
