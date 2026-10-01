@@ -94,9 +94,13 @@ def installations(target):
     for path in sorted(Path(target).glob("*/" + MANIFEST)):
         name = path.parent.name
         record = json.loads(safe_path(path.parent, MANIFEST).read_text())
-        if not skill_name(name) or not isinstance(record, dict) or (
-            record.get("format") not in (1, 2)
-            or record.get("skill_protocol") not in CONTRACTS["skill_protocols"]
+        if (
+            not skill_name(name)
+            or not isinstance(record, dict)
+            or (
+                record.get("format") not in (1, 2)
+                or record.get("skill_protocol") not in CONTRACTS["skill_protocols"]
+            )
         ):
             raise ValueError(f"Unsupported skill installation format/protocol: {name}")
         files = record.get("files")
@@ -191,8 +195,7 @@ def rendered_payloads(bundled, entrypoints):
             )
         text = "".join(parts)
         rows = "\n".join(
-            f"- {canonical} → [{entrypoints[canonical]}]"
-            f"(../{entrypoints[canonical]}/SKILL.md)"
+            f"- {canonical} → [{entrypoints[canonical]}](../{entrypoints[canonical]}/SKILL.md)"
             for canonical in sorted(bundled)
         )
         text += (
