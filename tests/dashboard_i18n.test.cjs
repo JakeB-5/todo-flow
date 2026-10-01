@@ -311,7 +311,7 @@ function activityEnvironment() {
     updated:1,intent:'verification-repair'};
   const data={items:[
     {id:'alpha',title:'Alpha',taskCount:2,running:1,queued:1,waiting:0,uncertain:0,
-      decisions:0,status:'running',verificationOk:0,current},
+      decisions:0,status:'running',verificationOk:0,verificationOutcome:'failed',current},
     {id:'beta',title:'Beta',taskCount:1,running:0,queued:0,waiting:1,uncertain:0,
       decisions:1,status:'waiting',verificationOk:null,
       current:{id:'three',kind:'work',status:'waiting',intent:null}}
@@ -372,6 +372,25 @@ test('activity uses bounded routes and restores track, task and page context fro
     assert.equal(e.context.location.hash,hash);
     assert.equal(e.run('currentTask'),'one');
     assert.ok(e.html('taskInspector').includes('검증 실패 😀'));
+  }
+});
+
+test('activity distinguishes legacy nonpass from explicit requirement failure in both languages',async()=>{
+  for(const [locale,inconclusive,failed] of [
+    ['en','Inconclusive','Failed'],['ko','판정 불가','실패']
+  ]) {
+    const e=activityEnvironment();
+    e.run('saveDisplayLanguage('+JSON.stringify(locale)+')');
+    const track=e.data.items[0];
+    delete track.verificationOutcome;
+    await e.load();
+    const prefix=locale==='en'?'Recent verification':'최근 검증 결과';
+    assert.ok(e.html('work').includes(prefix+' · '+inconclusive));
+    assert.ok(!e.html('work').includes(prefix+' · '+failed));
+    track.verificationOutcome='failed';
+    await e.load();
+    assert.ok(e.html('work').includes(prefix+' · '+failed));
+    assert.ok(!e.html('work').includes(prefix+' · '+inconclusive));
   }
 });
 
