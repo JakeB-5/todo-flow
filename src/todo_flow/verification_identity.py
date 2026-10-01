@@ -18,7 +18,11 @@ import os
 import stat
 from pathlib import Path
 
-from .release import VERIFICATION_IDENTITY_VERSION, validate_verify_identity
+from .release import (
+    VERIFICATION_IDENTITY_VERSION,
+    validate_verify_identity,
+    validate_verify_preflight,
+)
 
 VERSION = VERIFICATION_IDENTITY_VERSION
 
@@ -100,6 +104,10 @@ def capture(config, workspace, environ=None):
     to the older HEAD/argv-only cache when capture fails.
     """
     declaration = validate(config)
+    try:
+        preflight = validate_verify_preflight(config)
+    except ValueError as error:
+        raise VerificationIdentityError(str(error)) from error
     argv = config.get("verify")
     if (
         not isinstance(argv, list)
@@ -122,6 +130,8 @@ def capture(config, workspace, environ=None):
     return {
         "version": VERSION,
         "command": list(argv),
+        # Preserve identities for existing configurations with no preflight.
+        **({"preflight": preflight} if preflight else {}),
         "timeout": timeout,
         "files": files,
         "environment": [

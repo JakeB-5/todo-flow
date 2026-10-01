@@ -157,32 +157,54 @@ class Engine:
         log.mkdir(parents=True, exist_ok=True)
         started = time.time()
         log_reference = None
+        checks = []
         try:
             before = verification_identity.capture(self.config, workspace, environment)
             if not verification_identity.matches(identity, before):
                 raise verification_identity.VerificationIdentityError(
                     "Verification inputs changed before execution"
                 )
-            execution = launch_identity(self.store.path, task)
-            log_reference = verification_logs.reference(execution)
-            output = run_verification(
-                self.config["verify"],
-                workspace,
-                timeout=self.config.get("verify_timeout", 180),
-                env=environment,
-                launch_identity=execution,
-                check=lambda: self.check_claim(task),
-            )
+            commands = [
+                (f"preflight-{index}", argv)
+                for index, argv in enumerate(identity.get("preflight", []), start=1)
+            ]
+            commands.append(("final", identity["command"]))
+            for stage, argv in commands:
+                self.check_claim(task)
+                self.process_barrier(task["track"]).require_clear()
+                execution = launch_identity(self.store.path, task)
+                log_reference = verification_logs.reference(execution)
+                check = {
+                    "stage": stage,
+                    "command": argv,
+                    "logReference": log_reference,
+                    "ok": False,
+                }
+                checks.append(check)
+                output = run_verification(
+                    argv,
+                    workspace,
+                    timeout=self.config.get("verify_timeout", 180),
+                    env=environment,
+                    launch_identity=execution,
+                    check=lambda: self.check_claim(task),
+                )
+                check.update(ok=True, output=output[-12000:], error=None)
+            # Only completion of the full verifier can grant success.
             ok, error = True, None
         except (Conflict, ProcessBarrierError):
             # Stale claims and uncertain cleanup cannot become verification results.
             raise
         except (
             RuntimeError,
+            OSError,
             subprocess.TimeoutExpired,
             verification_identity.VerificationIdentityError,
         ) as e:
             output, ok, error = str(e), False, type(e).__name__
+            if checks and not checks[-1]["ok"]:
+                checks[-1].update(output=output[-12000:], error=error)
+                output = checks[-1]["stage"] + " failed: " + output[-10000:]
         try:
             after = verification_identity.capture(self.config, workspace, environment)
             if not verification_identity.matches(identity, after):
@@ -203,6 +225,7 @@ class Engine:
             "command": self.config["verify"],
             "identity": identity,
             "logReference": log_reference,
+            "checks": checks,
             "ok": ok,
             "output": output[-12000:],
             "error": error,
