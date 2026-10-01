@@ -23,8 +23,7 @@ class VerificationPreflightTests(unittest.TestCase):
         source = (
             "from pathlib import Path\n"
             f"with Path({str(marker)!r}).open('a') as stream:\n"
-            f"    stream.write({label!r} + '\\n')\n"
-            + suffix
+            f"    stream.write({label!r} + '\\n')\n" + suffix
         )
         return [sys.executable, "-c", source]
 
@@ -34,8 +33,7 @@ class VerificationPreflightTests(unittest.TestCase):
     def test_order_full_execution_unique_logs_and_cache(self):
         engine, task, workspace = self.verifier()
         self.runner.write_text(
-            self.source
-            + f"assert Path({str(self.root / 'preflight-order.txt')!r})"
+            self.source + f"assert Path({str(self.root / 'preflight-order.txt')!r})"
             ".read_text().splitlines() == ['syntax', 'format']\n"
         )
         engine.config["verify_preflight"] = [
