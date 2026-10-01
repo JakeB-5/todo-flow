@@ -163,9 +163,7 @@ class OutcomeExecutionTests(unittest.TestCase):
                             self.assertIn("same candidate", pending["purpose"])
                             view = Dashboard(fixture.s).activity()["items"][0]
                             self.assertEqual(view["verificationOutcome"], status)
-                            self.assertEqual(
-                                view["current"]["intent"], "verification-diagnosis"
-                            )
+                            self.assertEqual(view["current"]["intent"], "verification-diagnosis")
                     finally:
                         fixture.tearDown()
 
@@ -173,6 +171,7 @@ class OutcomeExecutionTests(unittest.TestCase):
         fixture = integration_tests.IntegrationRepairTests()
         fixture.setUp()
         try:
+
             def unavailable(argv, workspace, *args, **kwargs):
                 if "integrations" in workspace.parts:
                     raise RuntimeError("Fixture installer unavailable")

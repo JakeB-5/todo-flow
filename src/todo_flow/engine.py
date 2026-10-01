@@ -460,8 +460,7 @@ class Engine:
                         + " and verification evidence in attempts/"
                         + task["attempt"]
                         + "/verification.json. Which environment/check recovery is authorized "
-                        "before retrying landing for this candidate? Cause: "
-                        + detail,
+                        "before retrying landing for this candidate? Cause: " + detail,
                     }
                 return integration_repair.request_repair(
                     self,
