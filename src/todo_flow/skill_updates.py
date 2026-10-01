@@ -170,7 +170,7 @@ def rendered_payloads(bundled, entrypoints):
     if not aliases:
         return bundled
     words = re.compile(
-        r"(?<![a-zA-Z0-9_/-])(" 
+        r"(?<![a-zA-Z0-9_/-])("
         + "|".join(re.escape(role) for role in sorted(aliases, key=len, reverse=True))
         + r")(?![a-zA-Z0-9_/-])"
     )
