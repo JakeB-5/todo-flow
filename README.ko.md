@@ -10,9 +10,9 @@
 
 [![MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#현재-범위)
 
-## 32초로 보는 TODO Flow
+## 37초로 보는 TODO Flow
 
-https://github.com/user-attachments/assets/dc5edeed-3c93-486d-936b-33da4cc4aac1
+https://github.com/user-attachments/assets/bb7d4605-90cd-4e4c-8374-7d22495a0e8a
 
 *트랙 선정부터 병렬 작업, 세션 인계, 검증·리뷰와 반영까지 보여주는 모션 인포그래픽입니다.*
 
