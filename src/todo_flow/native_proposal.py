@@ -109,6 +109,7 @@ def _check_schema(value, schema, path="$"):
             "array": list,
             "string": str,
             "boolean": bool,
+            "integer": int,
             "null": type(None),
         }.get(schema["type"])
         if expected is None or type(value) is not expected:

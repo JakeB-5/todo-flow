@@ -87,6 +87,52 @@ class NativeProposalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.decode(json.dumps({"summary": "missing nullable properties"}))
 
+    def test_review_evidence_references_survive_native_decoding(self):
+        self.binding = replace(self.binding, kind="review")
+        implementers = frozenset({("local", "implementation-session")})
+        reference = {
+            "version": 1,
+            "conditionId": "sum",
+            "documentRevision": 3,
+            "head": self.binding.head,
+            "logReference": {
+                "version": 1,
+                "track": "addition",
+                "attempt": "verification-attempt",
+                "execution": "verification-execution",
+                "manifest": "/state/logs/logs.json",
+            },
+            "stream": "stdout",
+            "path": "/state/logs/stdout.log",
+            "sha256": "b" * 64,
+        }
+        condition = {
+            "id": "sum",
+            "verdict": "met",
+            "evidence": "Synthetic transport fixture; integrity is checked by the engine",
+            "evidenceRefs": None,
+        }
+        self.proposal.update(verdict="met", conditions=[condition])
+        for references in (None, [], [reference]):
+            with self.subTest(references=references):
+                condition["evidenceRefs"] = references
+                result = self.decode(
+                    json.dumps(self.proposal), implementation_sessions=implementers
+                )
+                self.assertEqual(result["conditions"], [condition])
+        for owner, key in (
+            (reference, "version"),
+            (reference, "documentRevision"),
+            (reference["logReference"], "version"),
+        ):
+            original = owner[key]
+            for invalid in (True, False, "1", 1.5, None):
+                with self.subTest(field=key, invalid=invalid):
+                    owner[key] = invalid
+                    with self.assertRaises(ValueError):
+                        self.decode(json.dumps(self.proposal), implementation_sessions=implementers)
+            owner[key] = original
+
     def test_every_attribution_change_is_rejected(self):
         replacements = {
             "attempt": "attempt-two",

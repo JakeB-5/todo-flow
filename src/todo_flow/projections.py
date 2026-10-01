@@ -4,6 +4,7 @@ import json
 import time
 import hashlib
 
+from . import condition_evidence
 from .launch_display import describe_launch, read_launch
 from .verification_log_view import log_view, read_log_range
 
@@ -199,9 +200,11 @@ class Dashboard:
             "format": presentation["format"] if presentation else "markdown",
             "assets": len(presentation.get("assets", [])) if presentation else 0,
         }
+        # Recheck explicit references before displaying a current integrity assertion.
+        review = condition_evidence.review_view(self.store.path, t)
         # Heavy evidence is fetched only on demand, never shipped with a list or the initial detail.
         for key in ("verification", "review", "landing"):
-            value = json.loads(t[key]) if t[key] else None
+            value = review if key == "review" else json.loads(t[key]) if t[key] else None
             t[key] = (
                 {
                     k: value[k]
@@ -224,9 +227,15 @@ class Dashboard:
             else:
                 logs = log_view(self.store.path, id_, value)
                 if value is not None or logs["latestExecution"] is not None:
-                    value = {**(value or {}), "logs": logs}
+                    value = {
+                        **(value or {}),
+                        "logs": logs,
+                        "evidenceArtifacts": condition_evidence.available(self.store.path, t),
+                    }
         elif params:
             raise ValueError("Log ranges require verification evidence")
+        elif kind == "review":
+            value = condition_evidence.review_view(self.store.path, t)
         return {"track": id_, "kind": kind, "value": value}
 
     def activity(self, limit=25, offset=0):
