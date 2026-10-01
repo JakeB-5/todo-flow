@@ -92,9 +92,7 @@ class StagedVerificationTests(unittest.TestCase):
         engine.config["verify_related"].append([sys.executable, "-c", "pass"])
         record = engine.verify(task, workspace, scope="partial")
         self.assertFalse(record["ok"])
-        self.assertEqual(
-            [row["stage"] for row in record["checks"]], ["preflight-1", "related-1"]
-        )
+        self.assertEqual([row["stage"] for row in record["checks"]], ["preflight-1", "related-1"])
         self.assertIn("related defect", record["output"])
         self.assertFalse(self.counter.exists())
         self.assertEqual(record["logReference"], record["checks"][-1]["logReference"])

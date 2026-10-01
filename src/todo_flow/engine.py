@@ -137,9 +137,7 @@ class Engine:
         head = require_clean(workspace)
         tree = command(["git", "rev-parse", "HEAD^{tree}"], workspace)
         environment = verification_identity.execution_environment()
-        identity = verification_identity.capture(
-            self.config, workspace, environment, scope=scope
-        )
+        identity = verification_identity.capture(self.config, workspace, environment, scope=scope)
         scope = identity.get("scope", "full")
         key = fingerprint([tree, self.config["verify"]])
         prior = self.store.track(task["track"])["verification"]
@@ -163,9 +161,7 @@ class Engine:
         log_reference = None
         checks = []
         try:
-            before = verification_identity.capture(
-                self.config, workspace, environment, scope=scope
-            )
+            before = verification_identity.capture(self.config, workspace, environment, scope=scope)
             if not verification_identity.matches(identity, before):
                 raise verification_identity.VerificationIdentityError(
                     "Verification inputs changed before execution"
@@ -218,9 +214,7 @@ class Engine:
                 checks[-1].update(output=output[-12000:], error=error)
                 output = checks[-1]["stage"] + " failed: " + output[-10000:]
         try:
-            after = verification_identity.capture(
-                self.config, workspace, environment, scope=scope
-            )
+            after = verification_identity.capture(self.config, workspace, environment, scope=scope)
             if not verification_identity.matches(identity, after):
                 output = (output + "\nVerification inputs changed during execution").strip()
                 ok, error = False, "VerificationIdentityError"
