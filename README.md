@@ -124,6 +124,18 @@ Assessment, implementation, independent review, triage and watch attempts reserv
 
 Resume a budget stop with `todo-flow --state STATE answer DECISION_ID --text 'Approve additional attempts' --additional-worker-attempts 5`, then restart `todo-flow --state STATE run` if needed. The positive increment extends the existing total limit without clearing usage or replacing pending work. A plain answer, `pause`/`resume`, or repeating `start`/`trackrun` cannot grant extra attempts. Use the CLI for budget approval; ordinary dashboard answers remain available for other decisions.
 
+### Run optional verification preflight checks
+
+For new state, add this argument to your `init` command to run explicitly selected cheap checks before the existing `--verify` command:
+
+```sh
+--verify-preflight '[["uv","run","ruff","check","src","tests"],["uv","run","ruff","format","--check","src","tests"]]'
+```
+
+This is an argument, not a standalone command. Install the example tools first or replace these argv arrays with checks available in your project. Commands run in order in the candidate workspace, without an implicit shell, using the verifier environment and `--verify-timeout` for each command. The first failure or timeout stops verification; cancellation stops the supervised process and prevents later commands. All checks must pass before the unchanged full verifier runs. Preflight success alone never grants verification success or landing eligibility.
+
+Omitting the option or using `[]` preserves the existing execution path. Verification records include each attempted check's stage, argv and log reference; a failure also reaches the existing repair-work handoff. The ordered list participates in verification identity, so changing it invalidates previous success. Declare external check scripts and other relevant inputs using `--verify-identity` as described below. Existing state cannot be reconfigured with `init`; the same configuration migration limitation described below applies.
+
 ### Declare verification inputs
 
 Version `0.0.5` supports `init --verify-identity`. For **new state**, add an argument like this to your real `init` command, replacing the example paths with existing inputs used by your verifier:

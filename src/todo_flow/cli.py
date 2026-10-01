@@ -47,6 +47,8 @@ def initialize(args):
     }
     if args.verify_identity is not None:
         config["verify_identity"] = json.loads(args.verify_identity)
+    if args.verify_preflight is not None:
+        config["verify_preflight"] = json.loads(args.verify_preflight)
     check_config(config)
     store = Store(args.state or repo / "todo")
     store.configure(config)
@@ -63,6 +65,10 @@ def parser():
     i.add_argument("--github")
     i.add_argument("--base", default="main")
     i.add_argument("--verify", required=True, help="JSON command argv, never a shell string")
+    i.add_argument(
+        "--verify-preflight",
+        help="Optional JSON array of argv arrays, run in order before the full verifier",
+    )
     i.add_argument(
         "--verify-identity",
         help="JSON declaration with version=1, files, environment variable names, and nonce",

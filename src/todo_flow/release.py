@@ -14,6 +14,22 @@ CONTRACTS = json.loads(Path(__file__).with_name("release.json").read_text())
 VERIFICATION_IDENTITY_VERSION = 1
 
 
+def validate_verify_preflight(config):
+    """Return ordered, detached argv arrays; absence preserves existing behavior."""
+    checks = config.get("verify_preflight", [])
+    if not isinstance(checks, list):
+        raise ValueError("verify_preflight must be a JSON array of argv arrays")
+    for argv in checks:
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or any(not isinstance(arg, str) or "\0" in arg for arg in argv)
+            or not argv[0]
+        ):
+            raise ValueError("verify_preflight commands must be nonempty argv arrays")
+    return [list(argv) for argv in checks]
+
+
 def validate_verify_identity(config):
     """Validate declarations without observing files or environment values.
 
@@ -90,6 +106,7 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
     if release_number(engine_version) < release_number(config.get("min_engine_version", "0.0.1")):
         raise ValueError("Project requires a newer engine")
     validate_verify_identity(config)
+    validate_verify_preflight(config)
     timeout = config.get("worker_timeout")
     if timeout is not None and (type(timeout) is not int or timeout < 0):
         raise ValueError("worker_timeout must be null (unlimited) or nonnegative seconds")
