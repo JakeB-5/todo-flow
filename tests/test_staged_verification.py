@@ -174,7 +174,7 @@ class StagedVerificationCostTests(unittest.TestCase):
                 + "namespace = {}\n"
                 + "exec(Path('calc.py').read_text(), namespace)\n"
                 + "if namespace['add'](2, 3) != 5:\n"
-                + "    print('{\"outcome\":\"failed\",'
+                + "    print('{\"outcome\":\"failed\",'"
                 " '\"reason\":\"final behavior defect\"} TODO_FLOW_RESULT_V1')\n"
                 + "assert namespace['add'](2, 3) == 5, 'final behavior defect'\n"
             )

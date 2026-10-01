@@ -39,7 +39,7 @@ class IntegrationRepairTests(unittest.TestCase):
                 "        try:\n"
                 "            with self.assertRaises(TypeError):\n                add('2', '3')\n"
                 "        except AssertionError:\n"
-                "            print('{\"outcome\":\"failed\",'
+                "            print('{\"outcome\":\"failed\",'"
                 " '\"reason\":\"Numeric operands required\"} TODO_FLOW_RESULT_V1')\n"
                 "            raise\n"
             )
