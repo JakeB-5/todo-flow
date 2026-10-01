@@ -4,12 +4,37 @@ Neither a zero return code nor a valid proposal establishes track completion.
 This view is never consumed as cleanup, claim, adoption, or landing authority.
 """
 
+from functools import wraps
 import json
 from pathlib import Path
 import re
 
 from .process_barrier import ProcessBarrier, ProcessBarrierError
 from .process_inventory import ProcessInventory, launch_identity
+
+
+def observe_run(function):
+    """Persist the parsing outcome against only the execution launched by this call."""
+
+    @wraps(function)
+    def observed(config, context, task, state, *args, **kwargs):
+        observation = {"phase": "execution", "parsed": None, "validated": None}
+        try:
+            result = function(config, context, task, state, *args, observation=observation, **kwargs)
+        except BaseException as error:
+            observation.update(
+                status="error", error={"type": type(error).__name__, "message": str(error)}
+            )
+            try:
+                save_observation(state, task, observation)
+            except (OSError, ProcessBarrierError) as receipt_error:
+                # Preserve cancellation/cleanup diagnostics when an old claim is fenced.
+                error.add_note(f"Worker observation was not saved: {receipt_error}")
+            raise
+        save_observation(state, task, observation)
+        return result
+
+    return observed
 
 
 def observe_launch(state, task, observation):
@@ -21,7 +46,7 @@ def observe_launch(state, task, observation):
 def validate_proposal(result, kind, observation):
     from .worker import validate
 
-    observation.update(phase="validation", parsed=True)
+    observation.update(phase="validation", parsed=True, validated=False)
     result = validate(result, kind)
     observation.update(validated=True, status="valid")
     return result
