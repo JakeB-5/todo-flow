@@ -130,9 +130,7 @@ class NativeProposalTests(unittest.TestCase):
                 with self.subTest(field=key, invalid=invalid):
                     owner[key] = invalid
                     with self.assertRaises(ValueError):
-                        self.decode(
-                            json.dumps(self.proposal), implementation_sessions=implementers
-                        )
+                        self.decode(json.dumps(self.proposal), implementation_sessions=implementers)
             owner[key] = original
 
     def test_every_attribution_change_is_rejected(self):
