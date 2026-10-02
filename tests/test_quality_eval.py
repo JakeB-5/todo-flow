@@ -96,9 +96,7 @@ class QualityEvaluationTests(unittest.TestCase):
         )
 
     def test_skipped_payload_cannot_supply_quality_observations(self):
-        self.responses["responses"]["not-run"].update(
-            found_defects=[], approved=True, rework=5
-        )
+        self.responses["responses"]["not-run"].update(found_defects=[], approved=True, rework=5)
         row = self.replay()["rows"][3]
         self.assertEqual(row["status"], "skipped")
         self.assertIsNone(row["metrics"]["missed_defects"])

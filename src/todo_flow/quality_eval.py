@@ -78,9 +78,7 @@ def _score(response, defects):
 def _aggregate(rows):
     result = {}
     for metric in METRICS:
-        values = [
-            row["metrics"][metric] for row in rows if row["metrics"][metric] is not None
-        ]
+        values = [row["metrics"][metric] for row in rows if row["metrics"][metric] is not None]
         result[metric] = {
             "observed_total": sum(values) if values else None,
             "observed_cases": len(values),
@@ -103,9 +101,7 @@ def replay(cases_path, responses_path, expectations_path):
         "responses": response_source,
         "expectations": expectation_source,
     }
-    if any(
-        document.get("fixture_id") != fixture["id"] for document in (responses, expectations)
-    ):
+    if any(document.get("fixture_id") != fixture["id"] for document in (responses, expectations)):
         raise ValueError("응답과 기대값의 fixture_id가 사례 id와 일치해야 합니다.")
     cases = fixture["cases"]
     recorded = responses["responses"]
