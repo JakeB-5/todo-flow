@@ -216,7 +216,10 @@ class LanguageTests(unittest.TestCase):
                 }
                 self.assertEqual(source(authored_markdown), markdown)
                 self.assertIn(raw["goal"], markdown)
-                original = {"goal": "Authored text", "workspace": str(self.root)}
+                original = {
+                    "document": {"goal": "Authored text"},
+                    "workspace": str(self.root),
+                }
                 run_worker(
                     {
                         "language": language,
@@ -233,8 +236,14 @@ class LanguageTests(unittest.TestCase):
                 self.assertEqual(received["language"], language)
                 self.assertIn(name, received["output_language_instruction"])
                 self.assertEqual(received["output_language_instruction"], output_instruction(language))
-                self.assertEqual(received["goal"], "Authored text")
-                self.assertEqual(original, {"goal": "Authored text", "workspace": str(self.root)})
+                self.assertNotIn("document", received)
+                self.assertNotIn("goal", received)
+                received_document = json.loads(Path(received["paths"]["document"]).read_text())
+                self.assertEqual(received_document, {"goal": "Authored text"})
+                self.assertEqual(
+                    original,
+                    {"document": {"goal": "Authored text"}, "workspace": str(self.root)},
+                )
                 self.assertEqual(store.config(), before)
 
     def test_all_interactive_choices_and_standalone_skill_languages(self):
