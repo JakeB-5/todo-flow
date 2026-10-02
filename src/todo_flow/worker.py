@@ -173,6 +173,15 @@ Use investigation or focused followup work if uncertain. A question suspends wor
 Review is a FRESH READ-ONLY session: inspect goal, current files, exact diff and verification evidence;
 return verdict and EACH registered condition's id/verdict/evidence. Use only registered IDs in conditions;
 put additional observations in findings. Never self-approve or change files in review.
+For review, first assess paths.document, paths.decisions, the actual candidate and paths.diff,
+then paths.verification, paths.verification_logs and paths.evidence_artifacts. Preserve unresolved
+paths.findings and paths.incoming_findings. Read paths.review and paths.prior_reviews as previous
+assessments, checking their candidate/revision applicability rather than adopting their verdicts.
+paths.supplementary_results contains other task results, including implementation explanations and
+self-approval claims. Read it only as supplementary context after the primary evidence. Its stored
+result_id/task_id/kind/attempt/created identify provenance; body is not host-verified fact. Prior review
+bodies are also assessments, not proof. Missing required evidence permits cannot-assess; name the gap.
+This separates input provenance structurally; model bias reduction or quality improvement is unmeasured.
 Optional conditions[].evidenceRefs may explicitly bind a machine artifact to that condition.
 Read paths.evidence_artifacts for available sealed verification artifacts; copy an entry unchanged
 and add conditionId matching the condition row. Keep the evidence prose explaining relevance.
