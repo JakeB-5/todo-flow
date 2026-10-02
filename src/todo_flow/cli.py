@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .adapters import command
 from .engine import Engine
-from .language import select_language
+from .language import LANGUAGES, select_language
 from .release import VERSION, CONTRACTS, check_config, project_compatibility
 from .maintenance import runtime_guard
 from .store import Conflict, Store, encode, fingerprint
@@ -112,7 +112,7 @@ def parser():
     i.add_argument("--verify-timeout", type=int, default=180)
     i.add_argument(
         "--language",
-        choices=["en", "ko"],
+        choices=list(LANGUAGES),
         help="Primary language; prompts in a terminal, otherwise defaults to en",
     )
     r = sub.add_parser("register", help="Agent-only track registration; no dashboard authoring")
@@ -187,7 +187,7 @@ def parser():
     sub.add_parser("status")
     launch = sub.add_parser("launch-status", help="Read the latest task launcher selection")
     launch.add_argument("task")
-    launch.add_argument("--language", choices=["en", "ko"], help="Default: project language")
+    launch.add_argument("--language", choices=list(LANGUAGES), help="Default: project language")
     sub.add_parser("picks")
     sub.add_parser("doctor")
     sub.add_parser("reconcile")
@@ -213,7 +213,7 @@ def parser():
     )
     install.add_argument(
         "--language",
-        choices=["en", "ko"],
+        choices=list(LANGUAGES),
         help="Use the project language, or choose one for standalone skills",
     )
     update = sub.add_parser("update-skills", help="Plan/apply a safe project skill update")

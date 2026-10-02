@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import re
 
+from .launch_locales import MESSAGES
+
 
 BACKENDS = {
     "orca": ("Orca terminal (command worker)", "Orca 터미널(명령 워커)"),
@@ -89,30 +91,33 @@ STATUSES = {
 
 def describe_launch(record, language="en"):
     """Translate only runtime labels; preserve unknown codes without guessing."""
-    index = int(language == "ko")
+    def text(english, korean):
+        if language in ("ja", "zh-CN"):
+            return MESSAGES.get(english, (english, english))[int(language == "zh-CN")]
+        return korean if language == "ko" else english
 
     def label(mapping, value):
-        return mapping[value][index] if value in mapping else str(value)
+        return text(*mapping[value]) if value in mapping else str(value)
 
     selection = record.get("selection") or {}
     backend = record.get("backend")
     sidebar = record.get("sidebar") or {}
     sidebar_confirmed = isinstance(sidebar, dict) and sidebar.get("status") == "confirmed"
-    unknown = ("Not recorded", "기록 없음")[index]
+    unknown = text("Not recorded", "기록 없음")
     return {
         "requested": selection.get("requested") or unknown,
         "backend": (
-            ("Orca Codex sidebar session", "Orca Codex 사이드바 세션")[index]
+            text("Orca Codex sidebar session", "Orca Codex 사이드바 세션")
             if sidebar_confirmed
-            else ("Orca Codex terminal client", "Orca Codex 터미널 클라이언트")[index]
+            else text("Orca Codex terminal client", "Orca Codex 터미널 클라이언트")
         )
         if record.get("execution_mode") == "orca-native"
         else label(BACKENDS, backend)
         if backend
-        else ("No backend selected", "선택된 backend 없음")[index],
+        else text("No backend selected", "선택된 backend 없음"),
         "reason": label(REASONS, selection["reason"]) if selection.get("reason") else unknown,
         "status": label(STATUSES, record["status"]) if record.get("status") else unknown,
-        "native": (
+        "native": text(
             "Host-owned App Server; sidebar lifecycle is projected by the host."
             if selection.get("native_ready")
             else "Compatibility worker route selected."
@@ -123,19 +128,19 @@ def describe_launch(record, language="en"):
             else "호환 워커 경로 선택됨."
             if backend
             else "Native 세션 선택 기록 없음.",
-        )[index],
-        "validation": (
+        ),
+        "validation": text(
             "Real-model and external live tests for this integration have not been performed.",
             "이 통합의 실제 모델 및 외부 live 시험은 미실시입니다.",
-        )[index],
-        "process": (
+        ),
+        "process": text(
             "Selection and terminal acceptance do not prove worker start or completion.",
             "선택 및 터미널 요청 수락은 워커 시작이나 완료의 근거가 아닙니다.",
-        )[index],
+        ),
         "sidebar": (
-            ("Sidebar session observed", "사이드바 세션 표시 확인됨")[index]
+            text("Sidebar session observed", "사이드바 세션 표시 확인됨")
             if sidebar_confirmed
-            else ("Sidebar session not confirmed", "사이드바 세션 표시 미확인")[index]
+            else text("Sidebar session not confirmed", "사이드바 세션 표시 미확인")
         ),
     }
 

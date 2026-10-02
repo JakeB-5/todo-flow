@@ -23,15 +23,36 @@ KOREAN_SECTIONS = {
     "evidence": "문제와 근거",
     "design": "접근과 결정",
 }
+LOCALIZED_SECTIONS = {
+    "en": SECTIONS,
+    "ko": KOREAN_SECTIONS,
+    "ja": {
+        "goal": "目標",
+        "scope": "対象範囲",
+        "evidence": "問題と根拠",
+        "design": "方針と判断",
+    },
+    "zh-CN": {
+        "goal": "目标",
+        "scope": "范围",
+        "evidence": "问题与依据",
+        "design": "方案与决策",
+    },
+}
+CONDITION_LABELS = {
+    "en": ("Acceptance conditions", "Expected result", "Verification method"),
+    "ko": ("완료 조건", "확인할 결과", "검증 방법"),
+    "ja": ("完了条件", "期待する結果", "検証方法"),
+    "zh-CN": ("验收条件", "预期结果", "验证方法"),
+}
 
 
 def render(doc):
     metadata = {k: v for k, v in doc.items() if k not in SECTIONS}
     header = json.dumps(metadata, ensure_ascii=False, indent=2)
     parts = ["---\n" + header + "\n---\n"]
-    for key, title in SECTIONS.items():
-        if doc.get("language") == "ko":
-            title = KOREAN_SECTIONS[key]
+    sections = LOCALIZED_SECTIONS.get(doc.get("language"), SECTIONS)
+    for key, title in sections.items():
         if key in doc:
             # JSON values other than prose remain supported by legacy documents.
             value = doc[key]
@@ -174,12 +195,10 @@ def assets_for(doc):
 def render_html(doc):
     if mode(doc) == "html":
         return source(doc)
-    language = "ko" if doc.get("language") == "ko" else "en"
-    heading, result_label, method_label = (
-        ("완료 조건", "확인할 결과", "검증 방법")
-        if language == "ko"
-        else ("Acceptance conditions", "Expected result", "Verification method")
-    )
+    language = doc.get("language", "en")
+    if language not in LOCALIZED_SECTIONS:
+        language = "en"
+    heading, result_label, method_label = CONDITION_LABELS[language]
     text = source(doc).split("\n---\n", 1)[1]
     body = MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"]).render(text)
     conditions = "".join(

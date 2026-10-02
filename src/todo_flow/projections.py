@@ -5,6 +5,7 @@ import time
 import hashlib
 
 from . import condition_evidence
+from .language import LANGUAGES
 from .launch_display import describe_launch, read_launch
 from .verification_log_view import log_view, read_log_range
 
@@ -390,7 +391,7 @@ class Dashboard:
                 "evidence": launch["evidence"],
                 "summaries": {
                     language: describe_launch(launch["record"] or {}, language)
-                    for language in ("en", "ko")
+                    for language in LANGUAGES
                 },
             },
         }

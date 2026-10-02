@@ -49,13 +49,23 @@ test('invalid preference falls back to project language; invalid project languag
   e.run("useProjectLanguage({key:'b',language:'unsupported'})");
   assert.equal(e.document.documentElement.lang,'en');
 });
-test('all static accessible messages and literal UI messages have Korean translations',()=>{
+test('all static accessible messages and literal UI messages have translations',()=>{
   const e=environment();
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
   const messages=[...html.matchAll(/data-i18n(?:-aria-label|-title|-placeholder)?="([^"]+)"/g)].map(x=>x[1].replaceAll('&#x27;',"'").replaceAll('&amp;','&'));
   for(const match of app.matchAll(/tr\(("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g)) messages.push(vm.runInNewContext(match[1]));
-  for(const message of messages) assert.ok(e.run('Object.hasOwn(koreanMessages,'+JSON.stringify(message)+')'),message);
+  const placeholders=text=>[...text.matchAll(/\{(\w+)\}/g)].map(match=>match[1]).sort();
+  for(const locale of ['ko','ja','zh-CN']) {
+    const catalog=e.run('catalogs['+JSON.stringify(locale)+']');
+    assert.deepEqual(Object.keys(catalog).sort(),Object.keys(e.run('koreanMessages')).sort());
+    for(const message of messages) assert.ok(Object.hasOwn(catalog,message),locale+': '+message);
+    for(const [message,translation] of Object.entries(catalog)) {
+      assert.equal(typeof translation,'string',locale+': '+message);
+      assert.ok(translation.length,locale+': '+message);
+      assert.deepEqual(placeholders(translation),placeholders(message),locale+': '+message);
+    }
+  }
 });
 test('focused decision drafts survive a language change and ordinary polling does not replace them',()=>{
   const e=environment();
@@ -79,6 +89,74 @@ test('focused decision drafts survive a language change and ordinary polling doe
   assert.ok(decisions.innerHTML.includes('Keep &lt;draft&gt; unchanged'));
   assert.ok(decisions.innerHTML.includes('data-decision="d1" open'));
   assert.ok(decisions.innerHTML.includes('Authored title'));
+});
+
+test('all four locales update accessible attributes and preserve English fallback',()=>{
+  const e=environment();
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const selector=html.match(/<select id="language"[\s\S]*?<\/select>/)[0];
+  assert.deepEqual([...selector.matchAll(/<option value="([^"]+)"/g)].map(x=>x[1]),['en','ko','ja','zh-CN']);
+  const title={dataset:{i18n:'Current state'},textContent:''};
+  const attributes={};
+  const control={
+    getAttribute(name){return {'data-i18n-aria-label':'Dashboard language','data-i18n-title':'Refresh','data-i18n-placeholder':'Write your answer and reasoning.'}[name];},
+    setAttribute(name,value){attributes[name]=value;}
+  };
+  const languageSelect={value:''};
+  e.document.getElementById=()=>languageSelect;
+  e.document.querySelectorAll=query=>query==='[data-i18n]'?[title]:[control];
+  for(const [locale,state,label,refresh,placeholder,selection,tag] of [
+    ['en','Current state','Dashboard language','Refresh','Write your answer and reasoning.','2 tracks selected','en-US'],
+    ['ko','현재 상황','대시보드 언어','새로고침','판단 근거와 답변을 남겨주세요.','2개 트랙 선택','ko-KR'],
+    ['ja','現在の状態','ダッシュボードの言語','更新','回答と判断理由を入力してください。','トラック 2 件を選択','ja-JP'],
+    ['zh-CN','当前状态','仪表板语言','刷新','请输入答复及理由。','已选择 2 个跟踪项','zh-CN']
+  ]) {
+    e.run('applyLanguage('+JSON.stringify(locale)+')');
+    assert.equal(e.document.documentElement.lang,locale);
+    assert.equal(languageSelect.value,locale);
+    assert.equal(title.textContent,state);
+    assert.equal(attributes['aria-label'],label);
+    assert.equal(attributes.title,refresh);
+    assert.equal(attributes.placeholder,placeholder);
+    assert.equal(e.run("tr('{count} tracks selected',{count:2})"),selection);
+    assert.ok(e.run("tr('Select {title}',{title:'Authored <title>'})").includes('Authored <title>'));
+    assert.equal(e.run("tr('Unknown message {id}',{id:'original'})"),'Unknown message original');
+    assert.equal(e.run("tr('constructor')"),'constructor');
+    assert.equal(e.run('localeTag()'),tag);
+  }
+  for(const invalid of ['unsupported','constructor','__proto__']) {
+    e.run('applyLanguage('+JSON.stringify(invalid)+')');
+    assert.equal(e.document.documentElement.lang,'en');
+    assert.equal(title.textContent,'Current state');
+  }
+});
+
+test('each locale has isolated project preferences, reload and disabled-storage behavior',()=>{
+  for(const locale of ['en','ko','ja','zh-CN']) {
+    const e=environment();
+    const project={key:'project-a',language:locale};
+    const before=JSON.stringify(project);
+    e.context.project=project;
+    e.run('useProjectLanguage(project)');
+    assert.equal(e.document.documentElement.lang,locale);
+    const override=locale==='ja'?'zh-CN':'ja';
+    e.run('saveDisplayLanguage('+JSON.stringify(override)+')');
+    e.run('useProjectLanguage({key:"project-b",language:'+JSON.stringify(locale)+'})');
+    assert.equal(e.document.documentElement.lang,locale);
+    e.run('useProjectLanguage(project)');
+    assert.equal(e.document.documentElement.lang,override);
+    e.run("languageProject='';useProjectLanguage(project)");
+    assert.equal(e.document.documentElement.lang,override);
+    assert.equal(JSON.stringify(project),before);
+    e.memory.set('todo-flow.language.project-a','constructor');
+    e.run("languageProject='';useProjectLanguage(project)");
+    assert.equal(e.document.documentElement.lang,locale);
+    const blocked=environment({storageFails:true});
+    blocked.run('useProjectLanguage('+JSON.stringify(project)+')');
+    assert.equal(blocked.document.documentElement.lang,locale);
+    blocked.run('saveDisplayLanguage('+JSON.stringify(override)+')');
+    assert.equal(blocked.document.documentElement.lang,override);
+  }
 });
 
 // Synthetic task API responses only: no browser, server or model is started.
@@ -343,6 +421,68 @@ function activityEnvironment() {
   return {...e,elements,requests,data,purpose,handlers,disconnect(){disconnected=true;},
     html:id=>elements.get(id)?.innerHTML||'',load:()=>e.run('loadRoute()')};
 }
+
+test('four-language switches retain navigation, selections, drafts and authored text',async()=>{
+  const e=activityEnvironment();
+  const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+  e.run(app.slice(app.indexOf('function selectionUI('),app.indexOf('function renderList(')));
+  e.run("selected.set('alpha','Authored title');listing={items:[{id:'alpha',selectable:true}]};drafts.set('d1','Keep <draft> unchanged');");
+  const original=JSON.stringify(e.data);
+  const hash=e.context.location.hash;
+  const decision={items:[{id:'d1',title:'Authored title',question:'Authored question'}],total:1};
+  e.context.decisionFixture=decision;
+  e.document.querySelectorAll=selector=>selector==='#decisions details[open]'?[{dataset:{decision:'d1'}}]:[];
+  for(const [locale,tag] of [['en','en-US'],['ko','ko-KR'],['ja','ja-JP'],['zh-CN','zh-CN']]) {
+    e.run('saveDisplayLanguage('+JSON.stringify(locale)+')');
+    await e.load();
+    e.run('selectionUI();renderDecisions(decisionFixture)');
+    assert.equal(e.context.location.hash,hash);
+    assert.equal(e.run('currentTask'),'one');
+    assert.equal(e.run("selected.get('alpha')"),'Authored title');
+    assert.equal(e.elements.get('selectPage').checked,true);
+    assert.equal(e.elements.get('start').disabled,false);
+    assert.equal(e.elements.get('selectionHint').textContent,'Authored title');
+    assert.ok(e.html('decisions').includes('Keep &lt;draft&gt; unchanged'));
+    assert.ok(e.html('decisions').includes('data-decision="d1" open'));
+    assert.ok(e.html('decisions').includes('Authored question'));
+    assert.ok(e.html('decisions').includes(e.run("tr('Write your answer and reasoning.')")));
+    assert.ok(e.html('taskInspector').includes('検証')||e.html('taskInspector').includes('검증 실패 😀'));
+    assert.ok(e.html('taskInspector').includes('&lt;authored&gt;'));
+    assert.equal(e.run('number(1234567.5)'),Number(1234567.5).toLocaleString(tag));
+    assert.equal(e.run('date(1700000000,true)'),new Date(1700000000000).toLocaleString(tag,{}));
+    assert.equal(JSON.stringify(e.data),original);
+    e.document.activeElement={closest:()=>true};
+    e.elements.get('decisions').innerHTML='Typing now';
+    e.run('renderDecisions(decisionFixture)');
+    assert.equal(e.html('decisions'),'Typing now');
+  }
+});
+
+test('Japanese and Chinese launch summaries render safely with legacy English fallback',async()=>{
+  for(const [locale,status,missing,broken] of [
+    ['ja','ターミナル要求は受理されました。ワーカー開始の証拠ではありません','起動の根拠なし','起動の根拠を読み取れません'],
+    ['zh-CN','终端请求已接受，但尚无工作进程启动的证据','无启动依据','无法读取启动依据']
+  ]) {
+    const e=inspectorEnvironment();
+    e.run('saveDisplayLanguage('+JSON.stringify(locale)+')');
+    const launch=launchFixture();
+    launch.summaries[locale]={requested:'auto',backend:'<native>',reason:'Authored & reason',status};
+    const response=taskFixture('one',launch);
+    const before=JSON.stringify(response);
+    const pending=e.inspect('one');
+    e.requests.at(-1).resolve(response);
+    await pending;
+    assert.ok(e.html().includes(status));
+    assert.ok(e.html().includes('&lt;native&gt;'));
+    assert.ok(e.html().includes('Authored &amp; reason'));
+    assert.ok(e.html().includes('Authored purpose one'));
+    assert.ok(!e.html().includes('<native>'));
+    assert.equal(JSON.stringify(response),before);
+    assert.ok(e.panel(null).includes(missing));
+    assert.ok(e.panel({evidence:'unreadable'}).includes(broken));
+    assert.ok(e.panel(launchFixture()).includes(launchFixture().summaries.en.status));
+  }
+});
 
 test('activity uses bounded routes and restores track, task and page context from the URL',async()=>{
   for(const locale of ['en','ko']) {
