@@ -53,7 +53,9 @@ class ReviewContextProvenanceTests(unittest.TestCase):
             ],
         }
         self.store.snapshot.return_value = self.snapshot
-        self.add_result("review-old", "review", 1, {"summary": "EARLIER_REVIEW", "verdict": "unmet"})
+        self.add_result(
+            "review-old", "review", 1, {"summary": "EARLIER_REVIEW", "verdict": "unmet"}
+        )
         for index in range(8):
             self.add_result(
                 f"work-{index}",
@@ -143,7 +145,12 @@ class ReviewContextProvenanceTests(unittest.TestCase):
         data = worker_input(context, folder)
         self.assertEqual(data["task"]["attempt"], "fresh-attempt")
         self.assertNotIn("recent_results", data["paths"])
-        for sentinel in ("AUTHOR_SELF_APPROVAL", "AUTHOR_SOURCE_BODY", "EARLIER_REVIEW", "CANDIDATE_DIFF"):
+        for sentinel in (
+            "AUTHOR_SELF_APPROVAL",
+            "AUTHOR_SOURCE_BODY",
+            "EARLIER_REVIEW",
+            "CANDIDATE_DIFF",
+        ):
             self.assertNotIn(sentinel, json.dumps(data))
         for key in (
             "document",
@@ -169,7 +176,9 @@ class ReviewContextProvenanceTests(unittest.TestCase):
         self.assertIsNone(context["verification"])
         self.assertIsNone(context["review"])
         self.assertEqual(context["evidence_artifacts"], [])
-        self.assertEqual(context["supplementary_results"][-1]["body"]["summary"], "AUTHOR_SELF_APPROVAL")
+        self.assertEqual(
+            context["supplementary_results"][-1]["body"]["summary"], "AUTHOR_SELF_APPROVAL"
+        )
 
     def test_nonreview_recent_results_contract_is_preserved(self):
         context = self.context("work")
