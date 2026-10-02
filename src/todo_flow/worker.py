@@ -343,6 +343,10 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     # existing intent: even a malformed file or dangling symlink must block replay.
     if task.get("id") and os.path.lexists(Path(state) / ("native-task-" + task["id"] + ".json")):
         raise FileExistsError("Native task intent already exists; reconcile before retrying")
+    from .worker_routing import apply, validate_adapter
+
+    config = apply(config, task.get("worker_selection"))
+    validate_adapter(config["worker"])
     adapter = config["worker"]
     if adapter["type"] == "command" and config.get("worker_protocol", 1) != 2:
         raise ValueError(
@@ -358,6 +362,18 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     instructions = INSTRUCTIONS + "\n" + output_instruction(language)
     folder = Path(state).resolve() / "attempts" / task["attempt"]
     folder.mkdir(parents=True, exist_ok=True)
+    write_json(
+        folder / "worker-selection.json",
+        {
+            "selection": task.get("worker_selection"),
+            "selected": {
+                "provider": adapter["type"],
+                "model": adapter.get("model"),
+                "effort": adapter.get("effort"),
+            },
+            "provider_confirmed": None,
+        },
+    )
     context = worker_input(context, folder)
     (folder / "input.json").write_text(encode(context))
     if adapter["type"] == "claude":
@@ -385,6 +401,8 @@ def _run_worker(config, context, task, state, heartbeat, observation):
         ]
         if adapter.get("model"):
             args += ["--model", adapter["model"]]
+        if adapter.get("effort"):
+            args += ["--effort", adapter["effort"]]
     elif adapter["type"] == "codex":
         (folder / "schema.json").write_text(encode(codex_schema()))
         (folder / "input.json").write_text(
@@ -431,6 +449,8 @@ def _run_worker(config, context, task, state, heartbeat, observation):
             args += ["--disable", feature]
         if adapter.get("model"):
             args += ["--model", adapter["model"]]
+        if adapter.get("effort"):
+            args += ["-c", "model_reasoning_effort=" + json.dumps(adapter["effort"])]
     elif adapter["type"] == "command":
         args = adapter["argv"]
     else:

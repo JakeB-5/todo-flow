@@ -262,6 +262,38 @@ class NativeExecutionTests(unittest.TestCase):
         ]
         self.assertEqual(sum(request["method"] == "turn/start" for request in requests), 1)
 
+    def test_role_selection_reaches_native_thread_and_turn_without_false_confirmation(self):
+        from todo_flow.worker_routing import request, resolve
+
+        self.prepare()
+        routing = request(
+            None,
+            {"worker": {"type": "codex", "model": "gpt-6.1-sol", "effort": "high"}},
+            {},
+            mode="codex-only",
+        )
+        routing["requestId"] = "native-routing"
+        self.task["worker_selection"] = resolve(routing, "work")
+        self.config["worker"] = {"type": "claude", "model": "must-not-run"}
+        self.execute()
+        requests = [
+            json.loads(line) for line in (self.fixture / "requests.jsonl").read_text().splitlines()
+        ]
+        thread = next(row["params"] for row in requests if row["method"] == "thread/start")
+        turn = next(row["params"] for row in requests if row["method"] == "turn/start")
+        self.assertEqual(thread["model"], "gpt-6.1-sol")
+        self.assertEqual(thread["config"]["model_reasoning_effort"], "high")
+        self.assertEqual(turn["model"], "gpt-6.1-sol")
+        self.assertEqual(turn["effort"], "high")
+        folder = self.s.path / "attempts" / self.task["attempt"]
+        record = json.loads((folder / "native-session.json").read_text())
+        self.assertEqual(record["selected"], {"model": "gpt-6.1-sol", "effort": "high"})
+        self.assertIsNone(record["model"])
+        self.assertEqual(record["provider_confirmed"], {"model": None, "effort": None})
+        selection = json.loads((folder / "worker-selection.json").read_text())
+        self.assertEqual(selection["selected"]["provider"], "codex")
+        self.assertEqual(selection["provider_confirmed"], record["provider_confirmed"])
+
     def test_thousands_of_deltas_do_not_delay_complete_proposal_adoption(self):
         self.prepare()
         self.config["worker_timeout"] = 8

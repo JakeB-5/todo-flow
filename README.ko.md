@@ -135,6 +135,12 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 
 배포본 파일이 바뀌지 않았으면 로컬 수정을 보존하며 양쪽에서 변경했으면 전체 업데이트를 중단합니다. 설치 manifest를 유지하세요. `--recover`, `--rollback BACKUP_ID` 사용은 [공존 설치·복구·롤백 안내](AGENT_INSTALL.md#coexist-with-occupied-skill-names)를 참고하세요. 임시 프로젝트 번들 테스트는 파일 배치·메타데이터·링크를 검사합니다. 실제 Claude 세션의 발견·모델 호출은 별도 검증이며 이 테스트에서는 수행하지 않습니다. 현재 세션이 설치 결과를 반영하지 않았다면 새 세션을 열거나 설치된 `SKILL.md`를 명시적으로 읽으세요.
 
+### 요청별 워커 라우팅
+
+트랙의 `workerPlan`에 필요한 역할별 `provider`, `model`, 추론 `effort`, 선정 근거 `basis`를 기록합니다. 실행에는 `trackrun TRACK_ID --worker-mode auto`, `--worker-mode codex-only`, `--worker-mode claude-only`를 사용합니다. `--worker-roles FILE.json`으로 역할별 명시 선택을 전달할 수 있습니다. [선정 가이드와 전체 예제](skills/todo/worker-routing.md)를 참고하세요. 전용 모드에는 허용된 공급자의 역할 선택 또는 프로젝트 기본값/프로필이 필요하며, 기존 권장값이 충돌해도 금지된 공급자를 실행하지 않습니다.
+
+요청별 스냅샷은 `--request-only`, 드라이버 재시작, 일시정지/재개, repair/재시도에도 유지됩니다. 옵션을 생략한 반복 요청은 선택을 보존하고, 명시적 재선정은 이후 새 attempt에만 적용됩니다. 프로젝트 기본값·기존 영수증·불확실한 launch는 변경하지 않습니다. 계획과 새 라우팅 옵션이 없는 기존 트랙은 단일/custom adapter를 유지합니다. `worker-selection.json`의 선택값과 native 영수증의 공급자 확인값을 구분하며, 응답이 없으면 확인값은 null입니다. 등록은 역할을 권장할 뿐 실행하지 않습니다. 최상위 트랙 `effort`는 계속 공수 추정입니다.
+
 ### 요청별 워커 시도 한도
 
 명시적으로 실행을 제한하려면 `trackrun TRACK_ID --worker-attempt-limit 10` 또는 `todo-flow --state STATE start TRACK_ID --worker-attempt-limit 10`을 사용합니다. 양의 정수 한도는 선정한 각 트랙의 요청에 따로 적용됩니다. 생략하면 기존 요청 무제한 정책을 유지합니다. `--max-tasks`는 여전히 기본값 100이며 한 드라이버 실행이 처리하는 작업 수만 제한합니다. 드라이버 재시작은 요청의 워커 한도를 초기화하지 않습니다.

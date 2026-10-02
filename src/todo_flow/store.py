@@ -87,6 +87,9 @@ class Store:
         from .documents import validate_presentation
 
         validate_presentation(doc)
+        from .worker_routing import plan
+
+        plan(doc.get("workerPlan"))
         required = ("id", "title", "goal", "scope", "evidence", "conditions")
         if any(not doc.get(k) for k in required):
             raise ValueError("Document requires: " + ", ".join(required))
@@ -357,7 +360,60 @@ class Store:
         )
         return details
 
-    def start(self, track, request=None, worker_limit=None):
+    def routing(self, c, track, mode=None, selections=None):
+        """Request snapshots live in canonical events, in the caller's transaction."""
+        from .worker_routing import request as routing_request
+
+        previous = None
+        for row in c.execute(
+            "SELECT body FROM events WHERE track=? AND type='execution.routing' ORDER BY seq DESC",
+            (track["id"],),
+        ):
+            candidate = json.loads(row[0])
+            if candidate["requestId"] == track["request"]:
+                previous = candidate
+                break
+        if previous is not None and mode is None and selections is None:
+            return previous
+        row = c.execute("SELECT body FROM config WHERE id=1").fetchone()
+        config = json.loads(row[0]) if row else {}
+        document = json.loads(track["document"])
+        if (
+            previous is None
+            and mode is None
+            and selections is None
+            and not document.get("workerPlan")
+            and not config.get("worker_profiles")
+        ):
+            # Preserve legacy single/custom adapter behavior until routing is selected.
+            return None
+        current = {
+            **routing_request(previous, config, document, mode, selections),
+            "requestId": track["request"],
+        }
+        if current != previous:
+            self.event(c, "execution.routing", track["id"], current)
+        return current
+
+    def select_worker(self, c, track, kind):
+        from .worker_routing import resolve
+
+        routing = self.routing(c, track)
+        if routing is None:
+            return None
+        try:
+            return resolve(routing, kind)
+        except ValueError as error:
+            # Claim once and let the host open a decision without launching a provider.
+            return {
+                "version": 1,
+                "mode": routing["mode"],
+                "role": kind,
+                "requestId": routing["requestId"],
+                "error": str(error),
+            }
+
+    def start(self, track, request=None, worker_limit=None, worker_mode=None, worker_roles=None):
         if worker_limit is not None:
             self.positive_limit(worker_limit)
         with self.transaction() as c:
@@ -370,11 +426,13 @@ class Store:
                     raise Conflict(
                         "Existing request limit is immutable; answer its budget decision"
                     )
+                routing = self.routing(c, t, worker_mode, worker_roles)
                 return {
                     "requestId": t["request"],
                     "existing": True,
                     "control": t["control"],
                     "budget": budget,
+                    "routing": routing,
                 }
             request = request or uid("request")
             c.execute(
@@ -382,6 +440,7 @@ class Store:
                 (request, time.time(), track),
             )
             t = self.track(track, c)
+            routing = self.routing(c, t, worker_mode, worker_roles)
             budget = self.budget(c, t, worker_limit)
             if worker_limit is not None and budget["worker_limit"] != worker_limit:
                 raise Conflict("Reusing a request ID cannot replace its persisted limit")
@@ -393,7 +452,7 @@ class Store:
                 track + ":" + request + ":initial",
             )
             self.event(c, "execution.accepted", track, {"requestId": request, "budget": budget})
-        return {"requestId": request, "existing": False, "budget": budget}
+        return {"requestId": request, "existing": False, "budget": budget, "routing": routing}
 
     def control(self, track, action):
         if action not in ("pause", "resume", "cancel"):
@@ -462,6 +521,7 @@ class Store:
                         continue
                     c.execute("UPDATE budgets SET used=used+1 WHERE id=?", (budget["id"],))
                     budget = {**budget, "used": budget["used"] + 1}
+                selection = self.select_worker(c, t, row["kind"]) if worker_attempt else None
                 attempt = uid("attempt")
                 generation = row["generation"] + 1
                 c.execute(
@@ -484,6 +544,7 @@ class Store:
                         "kind": row["kind"],
                         "budget": budget,
                         "worker_attempt": worker_attempt,
+                        "worker_selection": selection,
                     },
                 )
                 return {
@@ -492,6 +553,7 @@ class Store:
                     "attempt": attempt,
                     "input_revision": t["revision"],
                     "owner": owner,
+                    "worker_selection": selection,
                 }
             return None
 

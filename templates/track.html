@@ -46,15 +46,40 @@ body{max-width:1100px;margin:32px auto;padding:0 24px;color:#243a31;background:#
       "note": "Investigation evidence and overlap decision"
     }
   ],
-  "routingAdvice": {
-    "tier": "M",
-    "basis": "Advisory assessment of work and scope. Model selection belongs to project configuration."
+  "workerPlan": {
+    "version": 1,
+    "roles": {
+      "assess": {
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "low",
+        "basis": "Bounded requirement and overlap assessment; raise for unresolved architecture."
+      },
+      "work": {
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "basis": "Implementation across known callers with focused tests."
+      },
+      "review": {
+        "provider": "claude",
+        "model": "claude-opus-4-6",
+        "effort": "high",
+        "basis": "Independent examination of invariants and verification evidence."
+      },
+      "triage": {
+        "provider": "claude",
+        "model": "claude-sonnet-4-6",
+        "effort": "medium",
+        "basis": "Evidence-based disposition and duplicate search after landing."
+      }
+    }
   }
 }</script></head><body><header><small>replace-with-track-id</small><h1>Track title</h1></header><h2>Goal</h2>
 <!-- todo-flow:goal -->
 <p>Observable result the user wants</p>
 <!-- /todo-flow:goal -->
-<h2>Scope</h2>
+<section><h2>Worker plan</h2><p>Example: assess with Codex / gpt-6.1-sol / low; work with Codex / gpt-6.1-sol / medium; independent review with Claude / claude-opus-4-6 / high; post-landing triage with Claude / claude-sonnet-4-6 / medium. Adapt the roles, models, reasoning effort and basis in workerPlan to the actual scope, account availability and today’s user constraints. Omit unused roles; add watch only when needed. The top-level effort field estimates work, not model reasoning.</p></section><h2>Scope</h2>
 <!-- todo-flow:scope -->
 <p>Included work and explicit exclusions</p>
 <!-- /todo-flow:scope -->

@@ -6,8 +6,10 @@ ROLES = ("assess", "work", "review", "triage", "watch")
 MODES = ("auto", "codex-only", "claude-only")
 PROVIDERS = ("codex", "claude")
 
-# Conservative, locally inspected support snapshot, 2026-10-02. See the bundled
-# todo worker-routing guide. Unknown combinations stop instead of dropping effort.
+# Local support snapshot, 2026-10-02: Codex models_cache.json (client 0.159.2)
+# and Claude Code 2.1.287 embedded runtime.effort_levels. See the bundled
+# skills/todo/worker-routing.md for provenance and account-availability limits.
+# Unknown combinations stop instead of dropping effort.
 CODEX_EFFORTS = {
     "gpt-6.1-sol": ("low", "medium", "high", "xhigh", "max"),
     "gpt-6-astra": ("low", "medium", "high", "xhigh", "max"),
@@ -34,7 +36,6 @@ CLAUDE_EFFORTS = {
             "claude-opus-5-5",
             "claude-fable-5",
             "claude-fable-5-1",
-            "claude-mythos-5",
         )
     },
 }
