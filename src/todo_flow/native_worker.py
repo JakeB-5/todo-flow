@@ -133,6 +133,7 @@ def run_native(config, context, task, state, folder, launcher, on_pid, observati
         "execution": identity["execution"],
         "process_identity": identity,
         "model": config["worker"].get("model"),
+        "effort": config["worker"].get("effort"),
         "timeout": config.get("worker_timeout"),
         "title": f"TODO {task['track']} · {task['kind']} · {task['attempt'][-8:]}",
     }
@@ -224,6 +225,14 @@ def run_native(config, context, task, state, folder, launcher, on_pid, observati
             "terminal": record["terminal"],
             "worktree": supported["worktree"],
             "selection": selection,
+        },
+    )
+    selection_path = folder / "worker-selection.json"
+    write_json(
+        selection_path,
+        {
+            **json.loads(selection_path.read_text()),
+            "provider_confirmed": record.get("provider_confirmed"),
         },
     )
     observation.phase = "decoding"

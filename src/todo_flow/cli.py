@@ -152,6 +152,15 @@ def parser():
         type=int,
         help="Persist a positive per-track request limit; omitted means unlimited",
     )
+    for execution_parser in (tr, st):
+        execution_parser.add_argument(
+            "--worker-mode",
+            choices=("auto", "codex-only", "claude-only"),
+            help="Persist this request's provider boundary; omission preserves its selection",
+        )
+        execution_parser.add_argument(
+            "--worker-roles", type=Path, help="JSON file of role -> provider/model/effort/basis"
+        )
     for name in ["pause", "resume", "cancel"]:
         c = sub.add_parser(name)
         c.add_argument("track")
@@ -303,11 +312,18 @@ def dispatch(args):
                 store.positive_limit(args.worker_attempt_limit)
             if args.command == "trackrun" and (args.jobs < 1 or args.max_tasks < 1):
                 raise ValueError("jobs and max-tasks must be positive")
+            worker_roles = (
+                json.loads(args.worker_roles.read_text()) if args.worker_roles is not None else None
+            )
             result = {}
             for track in args.tracks:
                 try:
                     result[track] = store.start(
-                        track, args.request_id, worker_limit=args.worker_attempt_limit
+                        track,
+                        args.request_id,
+                        worker_limit=args.worker_attempt_limit,
+                        worker_mode=args.worker_mode,
+                        worker_roles=worker_roles,
                     )
                 except (ValueError, Conflict) as e:
                     result[track] = {"error": str(e)}

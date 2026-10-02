@@ -144,6 +144,12 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 
 Local edits are preserved when the upstream file is unchanged; simultaneous changes stop the whole update. Keep installation manifests. See [coexistence, recovery and rollback](AGENT_INSTALL.md#coexist-with-occupied-skill-names) for `--recover` and `--rollback BACKUP_ID`. The disposable bundle tests check filesystem layout, metadata and links. Actual Claude session discovery and model invocation are separate checks; these tests do not perform them. If a session has not refreshed, open a new session or explicitly read the installed `SKILL.md`.
 
+### Request worker routing
+
+Record role-specific `provider`, `model`, reasoning `effort` and `basis` in a track’s `workerPlan`. Run `trackrun TRACK_ID --worker-mode auto`, `--worker-mode codex-only`, or `--worker-mode claude-only`. `--worker-roles FILE.json` supplies explicit role overrides; see the [selection guide and complete examples](skills/todo/worker-routing.md). Only modes require an allowed role selection or project default/profile; an incompatible recommendation never authorizes the other provider.
+
+Routing snapshots persist per request, including `--request-only`, driver restart, pause/resume and repair/retry. Repeating start without routing options preserves selections; explicit reselection applies only to future attempts. It does not change project defaults, old receipts or an uncertain launch. Legacy tracks with no plan or routing options retain their single/custom adapter. `worker-selection.json` records selected values; native receipts separately record provider-confirmed values, which may be null. Registration recommends roles; it does not execute them. Top-level track `effort` still estimates work.
+
 ### Request worker attempt limits
 
 For an explicitly bounded request, use `trackrun TRACK_ID --worker-attempt-limit 10` or `todo-flow --state STATE start TRACK_ID --worker-attempt-limit 10`. The positive limit applies separately to each selected track's request. Omitting it retains the existing unlimited request policy. `--max-tasks` still defaults to 100 and limits tasks handled by one driver invocation; restarting that driver does not reset a request's worker limit.

@@ -273,6 +273,10 @@ def run(spec):
             request = connection.start_thread(spec["workspace"])
             if spec.get("model"):
                 request["params"]["model"] = spec["model"]
+            if spec.get("effort"):
+                request["params"].setdefault("config", {})["model_reasoning_effort"] = spec[
+                    "effort"
+                ]
             send(client, request)
             while connection.state != "thread-ready":
                 message = client.receive()
@@ -290,11 +294,21 @@ def run(spec):
             save(
                 "thread-created",
                 session=connection.thread_id,
-                model=response.get("model") or spec.get("model"),
+                model=response.get("model"),
+                selected={"model": spec.get("model"), "effort": spec.get("effort")},
+                provider_confirmed={
+                    "model": response.get("model"),
+                    "effort": response.get("reasoningEffort"),
+                },
                 transcript=response.get("thread", {}).get("path"),
             )
             client.deadline = deadline
-            send(client, connection.start_turn(spec["workspace"], Path(spec["input"]).read_text()))
+            turn_request = connection.start_turn(spec["workspace"], Path(spec["input"]).read_text())
+            if spec.get("model"):
+                turn_request["params"]["model"] = spec["model"]
+            if spec.get("effort"):
+                turn_request["params"]["effort"] = spec["effort"]
+            send(client, turn_request)
             while connection.state != "binding-pending":
                 connection.receive(client.receive())
             binding = NativeProposalBinding(

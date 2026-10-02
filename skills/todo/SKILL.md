@@ -31,6 +31,10 @@ Choose the smallest complete change that delivers the outcome. Check an existing
 
 Separate work that can proceed now from work awaiting a product decision or external dependency. Shared filenames alone do not prohibit parallel tracks. Never move unmet acceptance conditions to Watch to declare success.
 
+## Select workers for the required roles
+
+Use the [worker routing guide](worker-routing.md) to record `workerPlan: {version: 1, roles: {...}}` in the document metadata and explain the choices in the visible plan. Each needed role has `provider`, `model`, `effort` and a concrete `basis`; model/effort may be null to request provider defaults. Consider assess, work, independent review and post-landing triage; include watch only when the selected work needs it. Omit unused roles. Top-level `effort` remains the work estimate, not reasoning effort. Revisit choices when revising the plan, using complexity, risk, uncertainty, user token constraints and the current day’s evidence. Do not assert cross-provider effort equivalence or account availability from a model name. Registration recommends; execution mode and explicit request selections constrain actual launches.
+
 ## Register and verify
 
 ```sh
