@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "purpose": "synthetic 집계 검증이며 실제 모델 품질 비교가 아닙니다.",
+  "adapter": "fixed-response",
+  "sources": {
+    "cases": {
+      "path": "examples/quality-cases.json",
+      "id": "quality-cases-v1",
+      "sha256": "5854d178d1573d22525bcbe7dcc3f560db5c90bd732a39d3e13bef6a6e5fe531"
+    },
+    "responses": {
+      "path": "examples/quality-responses.json",
+      "id": "quality-responses-v1",
+      "sha256": "3e5e75e3fae328ea16985f1a8c84a6a4d342300ca2bc99835778a6ad7f636245"
+    },
+    "expectations": {
+      "path": "examples/quality-expectations.json",
+      "id": "quality-expectations-v1",
+      "sha256": "2c4950430eaf956b98a3fa2394656acbc352ff7c175b46dff9af61c9bc134e70"
+    }
+  },
+  "case_order": [
+    "clean",
+    "missed",
+    "caught",
+    "not-run",
+    "missing-response",
+    "failed"
+  ],
+  "rows": [
+    {
+      "case_id": "clean",
+      "status": "completed",
+      "case_ref": "examples/quality-cases.json#/cases/clean",
+      "response_ref": "examples/quality-responses.json#/responses/clean",
+      "expectation_ref": "examples/quality-expectations.json#/cases/clean",
+      "metrics": {
+        "missed_defects": 0,
+        "false_approvals": 0,
+        "rework": 0,
+        "execution_failures": 0
+      }
+    },
+    {
+      "case_id": "missed",
+      "status": "completed",
+      "case_ref": "examples/quality-cases.json#/cases/missed",
+      "response_ref": "examples/quality-responses.json#/responses/missed",
+      "expectation_ref": "examples/quality-expectations.json#/cases/missed",
+      "metrics": {
+        "missed_defects": 1,
+        "false_approvals": 1,
+        "rework": 0,
+        "execution_failures": 0
+      }
+    },
+    {
+      "case_id": "caught",
+      "status": "completed",
+      "case_ref": "examples/quality-cases.json#/cases/caught",
+      "response_ref": "examples/quality-responses.json#/responses/caught",
+      "expectation_ref": "examples/quality-expectations.json#/cases/caught",
+      "metrics": {
+        "missed_defects": 0,
+        "false_approvals": 0,
+        "rework": 2,
+        "execution_failures": 0
+      }
+    },
+    {
+      "case_id": "not-run",
+      "status": "skipped",
+      "case_ref": "examples/quality-cases.json#/cases/not-run",
+      "response_ref": "examples/quality-responses.json#/responses/not-run",
+      "expectation_ref": "examples/quality-expectations.json#/cases/not-run",
+      "metrics": {
+        "missed_defects": null,
+        "false_approvals": null,
+        "rework": null,
+        "execution_failures": 0
+      }
+    },
+    {
+      "case_id": "missing-response",
+      "status": "missing_response",
+      "case_ref": "examples/quality-cases.json#/cases/missing-response",
+      "response_ref": null,
+      "expectation_ref": "examples/quality-expectations.json#/cases/missing-response",
+      "metrics": {
+        "missed_defects": null,
+        "false_approvals": null,
+        "rework": null,
+        "execution_failures": null
+      }
+    },
+    {
+      "case_id": "failed",
+      "status": "failed",
+      "case_ref": "examples/quality-cases.json#/cases/failed",
+      "response_ref": "examples/quality-responses.json#/responses/failed",
+      "expectation_ref": "examples/quality-expectations.json#/cases/failed",
+      "metrics": {
+        "missed_defects": null,
+        "false_approvals": null,
+        "rework": null,
+        "execution_failures": 1
+      }
+    }
+  ],
+  "metrics": {
+    "missed_defects": {
+      "observed_total": 1,
+      "observed_cases": 3,
+      "unobserved_cases": 3
+    },
+    "false_approvals": {
+      "observed_total": 1,
+      "observed_cases": 3,
+      "unobserved_cases": 3
+    },
+    "rework": {
+      "observed_total": 2,
+      "observed_cases": 3,
+      "unobserved_cases": 3
+    },
+    "execution_failures": {
+      "observed_total": 1,
+      "observed_cases": 5,
+      "unobserved_cases": 1
+    }
+  },
+  "status_counts": {
+    "completed": 3,
+    "skipped": 1,
+    "failed": 1,
+    "missing_response": 1
+  },
+  "matches_expected": true,
+  "unmeasured": {
+    "model_quality": null,
+    "human_review_seconds": null,
+    "tokens": null,
+    "cost": null
+  }
+}
