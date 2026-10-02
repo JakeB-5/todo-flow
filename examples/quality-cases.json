@@ -1,0 +1,32 @@
+{
+  "id": "quality-cases-v1",
+  "synthetic": true,
+  "order": [
+    "clean",
+    "missed",
+    "caught",
+    "not-run",
+    "missing-response",
+    "failed"
+  ],
+  "cases": {
+    "clean": {
+      "prompt": "합성 덧셈 구현: add(a, b)는 a + b를 반환한다. 결함을 검토한다."
+    },
+    "missed": {
+      "prompt": "합성 덧셈 구현: add(a, b)는 a - b를 반환한다. 결함을 검토한다."
+    },
+    "caught": {
+      "prompt": "합성 첫 항목 구현: first(items)는 빈 목록에서도 items[0]을 반환한다. 빈 목록은 None이어야 한다."
+    },
+    "not-run": {
+      "prompt": "합성 출금 구현: 잔액보다 큰 출금을 허용한다. 잔액 음수를 금지해야 한다."
+    },
+    "missing-response": {
+      "prompt": "합성 항등 구현: identity(value)는 value를 반환한다. 결함을 검토한다."
+    },
+    "failed": {
+      "prompt": "합성 종료 구현: stop()이 무한 반복한다. 호출은 종료되어야 한다."
+    }
+  }
+}

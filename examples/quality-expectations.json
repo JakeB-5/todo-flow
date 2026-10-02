@@ -1,0 +1,61 @@
+{
+  "id": "quality-expectations-v1",
+  "fixture_id": "quality-cases-v1",
+  "synthetic": true,
+  "cases": {
+    "clean": {
+      "defects": []
+    },
+    "missed": {
+      "defects": [
+        "subtract-instead-of-add"
+      ]
+    },
+    "caught": {
+      "defects": [
+        "empty-index"
+      ]
+    },
+    "not-run": {
+      "defects": [
+        "negative-balance"
+      ]
+    },
+    "missing-response": {
+      "defects": []
+    },
+    "failed": {
+      "defects": [
+        "never-returns"
+      ]
+    }
+  },
+  "expected_metrics": {
+    "missed_defects": {
+      "observed_total": 1,
+      "observed_cases": 3,
+      "unobserved_cases": 3
+    },
+    "false_approvals": {
+      "observed_total": 1,
+      "observed_cases": 3,
+      "unobserved_cases": 3
+    },
+    "rework": {
+      "observed_total": 2,
+      "observed_cases": 3,
+      "unobserved_cases": 3
+    },
+    "execution_failures": {
+      "observed_total": 1,
+      "observed_cases": 5,
+      "unobserved_cases": 1
+    }
+  },
+  "expected_status_counts": {
+    "completed": 3,
+    "skipped": 1,
+    "missing_response": 1,
+    "failed": 1
+  }
+}

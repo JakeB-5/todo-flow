@@ -1,0 +1,35 @@
+{
+  "id": "quality-responses-v1",
+  "fixture_id": "quality-cases-v1",
+  "synthetic": true,
+  "responses": {
+    "clean": {
+      "status": "completed",
+      "found_defects": [],
+      "approved": true,
+      "rework": 0
+    },
+    "missed": {
+      "status": "completed",
+      "found_defects": [],
+      "approved": true,
+      "rework": 0
+    },
+    "caught": {
+      "status": "completed",
+      "found_defects": [
+        "empty-index"
+      ],
+      "approved": false,
+      "rework": 2
+    },
+    "not-run": {
+      "status": "skipped",
+      "reason": "검사를 실행하지 않은 합성 응답"
+    },
+    "failed": {
+      "status": "failed",
+      "reason": "합성 adapter 실행 실패"
+    }
+  }
+}
