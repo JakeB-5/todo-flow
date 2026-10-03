@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../src/todo_flow/web');
+require('./dashboard_theme.test.cjs');
 function environment({storageFails=false}={}) {
   const memory = new Map();
   const document = {documentElement:{lang:'en'},querySelectorAll:()=>[],getElementById:()=>({value:''})};

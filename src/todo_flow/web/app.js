@@ -416,5 +416,24 @@ $('language').onchange=async()=>{
   if(runtimeOpen&&document.querySelector('.runtime-details'))document.querySelector('.runtime-details').open=true;
   window.scrollTo(0,y);
 };
+// Appearance is local UI state. Never rerender routes or authored documents here.
+function initializeTheme() {
+  const control = document.getElementById('theme');
+  const key = 'todo-flow.theme';
+  const apply = value => {
+    const theme = value === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    control.value = theme;
+    return theme;
+  };
+  let saved;
+  try { saved = localStorage.getItem(key); } catch { /* Storage can be disabled. */ }
+  apply(saved);
+  control.onchange = () => {
+    const theme = apply(control.value);
+    try { localStorage.setItem(key, theme); } catch { /* Switching still works. */ }
+  };
+}
+initializeTheme();
 applyLanguage('en');
 refresh();setInterval(()=>{if(!document.hidden)refresh(true);},5000);
