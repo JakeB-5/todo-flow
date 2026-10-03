@@ -183,6 +183,7 @@ function renderActivity(data) {
       <span>${tr('{count} active tasks',{count:number(t.taskCount)})}</span></div>
       <p><b>${tr("Current task")}</b> · ${w?esc(roles[w.kind]||tr("Task")):tr("No active task")}</p>
       <p>${w?esc(taskDescription(w)):tr("Review the open decision.")}</p>
+      ${w?workerSummary(w.worker):''}
       <p class="subtle">${tr('{running} running · {queued} awaiting assignment · {waiting} waiting',{running:number(t.running),queued:number(t.queued),waiting:number(t.waiting)})}
       · ${tr('{count} open decisions',{count:number(t.decisions)})}</p>
       <p class="subtle">${tr("Recent verification")} · ${recent}${t.verificationAt?' · '+date(t.verificationAt):''}</p>
@@ -242,6 +243,31 @@ function launchPanel(launch) {
   }
   return `<section class="evidence-block"><h3>${esc(tr("Execution evidence"))}</h3><dl>${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></section>`;
 }
+function workerValue(field, source=false) {
+  const states={selected:tr("Selected value"),confirmed:tr("Provider-confirmed value"),
+    delegated:tr("Provider default"),unconfirmed:tr("Not confirmed"),
+    missing:tr("No record"),unreadable:tr("Unreadable worker evidence")};
+  const status=field?.status||'missing';
+  let value=states[status]||tr("No record");
+  if((status==='selected'||status==='confirmed')&&typeof field?.value==='string')value=field.value+' · '+value;
+  if(source&&field?.source)value+=' · '+tr("Source")+': '+field.source;
+  return value;
+}
+function workerSummary(worker) {
+  const fields=[[tr("Model"),worker?.model],[tr("Reasoning effort"),worker?.effort]];
+  return `<p class="worker-summary">${fields.map(([label,field])=>{
+    const value=field?.confirmed?.status==='confirmed'?field.confirmed:field?.selected;
+    return `<span>${esc(label)}: ${esc(workerValue(value))}</span>`;
+  }).join('')}</p>`;
+}
+function workerPanel(worker) {
+  const rows=[[tr("Provider"),workerValue(worker?.provider,true)]];
+  for(const [label,field] of [[tr("Model"),worker?.model],[tr("Reasoning effort"),worker?.effort]]) {
+    rows.push([label+' · '+tr("Selected value"),workerValue(field?.selected,true)],
+      [label+' · '+tr("Provider-confirmed value"),workerValue(field?.confirmed,true)]);
+  }
+  return `<section class="evidence-block worker-evidence"><h3>${esc(tr("Worker model and reasoning effort"))}</h3><dl>${rows.map(([label,value])=>`<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}</dl></section>`;
+}
 async function inspectTask(id, focus=false) {
   currentTask=id;
   $('taskInspector').hidden=false;
@@ -250,7 +276,7 @@ async function inspectTask(id, focus=false) {
   try {
     const d=await api('tasks/'+encodeURIComponent(id));if(currentTask!==id)return;
     const w=d.task;
-    const html=`<div class="panel"><button data-close-task>${tr("Close task details")}</button><div class="eyebrow">${tr("Selected work")}</div><h2>${esc(roles[w.kind]||w.kind)}</h2><p class="prose">${esc(w.purpose)}</p><dl>${[[tr("Owner"),w.owner||tr("Unassigned")],[tr("Status"),w.status==='running'&&(!w.lease||w.lease<=Date.now()/1000)?tr("Execution needs checking"):labels[w.status]||w.status],[tr("Last observed"),date(w.updated,true)],[tr("Claim generation"),w.generation],[tr("Attempt"),d.attempt?.id||tr("Not yet")],[tr("Track"),w.track]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${w.error?`<section class="evidence-block"><h3>${tr("Task needs attention")}</h3><pre>${esc(w.error)}</pre></section>`:''}${launchPanel(d.launch)}<a class="section-link" href="#track/${encodeURIComponent(w.track)}?from=activity&amp;evidence=verification&amp;return=${encodeURIComponent(savedViews.activity)}">${tr("Verification results")} →</a>${d.result?`<div class="quiet">${esc(d.result.summary)}</div>`:''}<a class="section-link" href="#track/${encodeURIComponent(w.track)}">${tr("View full track context")} →</a></div>`;
+    const html=`<div class="panel"><button data-close-task>${tr("Close task details")}</button><div class="eyebrow">${tr("Selected work")}</div><h2>${esc(roles[w.kind]||w.kind)}</h2><p class="prose">${esc(w.purpose)}</p><dl>${[[tr("Owner"),w.owner||tr("Unassigned")],[tr("Status"),w.status==='running'&&(!w.lease||w.lease<=Date.now()/1000)?tr("Execution needs checking"):labels[w.status]||w.status],[tr("Last observed"),date(w.updated,true)],[tr("Claim generation"),w.generation],[tr("Attempt"),d.attempt?.id||tr("Not yet")],[tr("Track"),w.track]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${w.error?`<section class="evidence-block"><h3>${tr("Task needs attention")}</h3><pre>${esc(w.error)}</pre></section>`:''}${workerPanel(d.worker)}${launchPanel(d.launch)}<a class="section-link" href="#track/${encodeURIComponent(w.track)}?from=activity&amp;evidence=verification&amp;return=${encodeURIComponent(savedViews.activity)}">${tr("Verification results")} →</a>${d.result?`<div class="quiet">${esc(d.result.summary)}</div>`:''}<a class="section-link" href="#track/${encodeURIComponent(w.track)}">${tr("View full track context")} →</a></div>`;
     if($('taskInspector').innerHTML!==html)$('taskInspector').innerHTML=html;
     if(focus)$('taskInspector').focus();
   }catch(e){if(currentTask!==id)return;$('taskInspector').innerHTML=`<div class="notice">${esc(e.message)}</div>`;}
@@ -416,5 +442,24 @@ $('language').onchange=async()=>{
   if(runtimeOpen&&document.querySelector('.runtime-details'))document.querySelector('.runtime-details').open=true;
   window.scrollTo(0,y);
 };
+// Appearance is local UI state. Never rerender routes or authored documents here.
+function initializeTheme() {
+  const control = document.getElementById('theme');
+  const key = 'todo-flow.theme';
+  const apply = value => {
+    const theme = value === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    control.value = theme;
+    return theme;
+  };
+  let saved;
+  try { saved = localStorage.getItem(key); } catch { /* Storage can be disabled. */ }
+  apply(saved);
+  control.onchange = () => {
+    const theme = apply(control.value);
+    try { localStorage.setItem(key, theme); } catch { /* Switching still works. */ }
+  };
+}
+initializeTheme();
 applyLanguage('en');
 refresh();setInterval(()=>{if(!document.hidden)refresh(true);},5000);

@@ -110,6 +110,74 @@ class HttpTests(unittest.TestCase):
             with urllib.request.urlopen(self.url + path) as r:
                 self.assertEqual(r.status, 200)
 
+    def test_worker_evidence_routes_are_attempt_scoped_bounded_and_read_only(self):
+        self.s.register({**DOC, "id": "second", "title": "Second"})
+        with self.s.transaction() as c:
+            c.executemany(
+                "INSERT INTO tasks(id,track,kind,purpose,status,lease,created,updated)"
+                " VALUES(?,?,'work','Synthetic task','running',3000000000,1,1)",
+                [("one", "example"), ("two", "second")],
+            )
+            c.executemany(
+                "INSERT INTO attempts(id,task,started,status) VALUES(?,?,?,'running')",
+                [("a-old", "one", 1), ("a-new", "one", 2), ("b-one", "two", 1)],
+            )
+        for attempt, model, effort in (
+            ("a-old", "old-model", "low"),
+            ("a-new", "selected-a", "high"),
+            ("b-one", "selected-b", None),
+        ):
+            folder = self.s.path / "attempts" / attempt
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "worker-selection.json").write_text(
+                json.dumps(
+                    {
+                        "selected": {"provider": "codex", "model": model, "effort": effort},
+                        "command": "PRIVATE_COMMAND",
+                    }
+                )
+            )
+        native = self.s.path / "attempts" / "a-new" / "native-session.json"
+        native.write_text(json.dumps({"provider_confirmed": {"effort": "medium"}}))
+
+        def snapshot():
+            with self.s.connect() as c:
+                rows = {
+                    table: [tuple(row) for row in c.execute("SELECT * FROM " + table)]
+                    for table in ("tracks", "tasks", "attempts", "events")
+                }
+            files = {
+                str(path): path.read_bytes()
+                for path in self.s.path.rglob("*.json")
+                if path.is_file()
+            }
+            return rows, files
+
+        before = snapshot()
+        first = self.get("/api/activity?limit=1")
+        second = self.get("/api/activity?limit=1&offset=1")
+        self.assertEqual(first["total"], 2)
+        self.assertEqual(len(first["items"]), 1)
+        self.assertTrue(first["hasMore"])
+        self.assertFalse(second["hasMore"])
+        one = self.get("/api/tasks/one")
+        two = self.get("/api/tasks/two")
+        self.assertEqual(first["items"][0]["current"]["worker"], one["worker"])
+        self.assertEqual(second["items"][0]["current"]["worker"], two["worker"])
+        self.assertEqual(one["worker"]["attempt"], one["attempt"]["id"])
+        self.assertEqual(one["worker"]["attempt"], "a-new")
+        self.assertEqual(one["worker"]["model"]["selected"]["value"], "selected-a")
+        self.assertEqual(one["worker"]["model"]["confirmed"]["status"], "unconfirmed")
+        self.assertEqual(one["worker"]["effort"]["confirmed"]["value"], "medium")
+        self.assertEqual(two["worker"]["model"]["selected"]["value"], "selected-b")
+        self.assertEqual(two["worker"]["effort"]["selected"]["status"], "delegated")
+        self.assertNotIn("PRIVATE_COMMAND", json.dumps([first, second, one, two]))
+        self.assertNotIn("old-model", json.dumps([first, second, one, two]))
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.get("/api/activity?limit=101")
+        self.assertEqual(err.exception.code, 400)
+        self.assertEqual(before, snapshot())
+
     def test_bounded_routes_and_archive_separation(self):
         for i in range(30):
             self.s.register({**DOC, "id": f"track-{i}", "title": f"Track {i}"})

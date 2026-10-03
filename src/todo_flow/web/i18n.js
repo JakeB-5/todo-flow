@@ -1,5 +1,15 @@
 // English messages are the source. Only product UI is translated, never authored content.
 const koreanMessages = {
+  "Worker model and reasoning effort": "워커 모델·추론 에포트",
+  "Model": "모델",
+  "Reasoning effort": "추론 에포트",
+  "Provider": "공급자",
+  "Selected value": "선택값",
+  "Provider-confirmed value": "공급자 확인값",
+  "Provider default": "공급자 기본값에 위임",
+  "Not confirmed": "확인되지 않음",
+  "Unreadable worker evidence": "워커 근거를 읽을 수 없음",
+  "Source": "출처",
   "{tracks} tracks / {tasks} active tasks": "트랙 {tracks}개 / 활성 작업 {tasks}개",
   "Failed": "실패",
   "Passed": "통과",
@@ -257,6 +267,9 @@ const koreanMessages = {
   "Select a task to see its owner, claim, latest attempt and result.": "왼쪽 작업을 선택하면 담당자, 작업권, 최근 실행과 결과가 표시됩니다.",
   "Watch list": "Watch 목록",
   "Dashboard language": "대시보드 언어",
+  "Dashboard theme": "대시보드 테마",
+  "Light theme": "밝은 테마",
+  "Dark theme": "어두운 테마",
   "{count} tracks selected": "{count}개 트랙 선택",
   " · {count} outside this list": " · 현재 목록 밖 {count}개",
   " + {count} more": " 외 {count}개",
@@ -529,6 +542,9 @@ const additionalMessages = {
   "Select a task to see its owner, claim, latest attempt and result.": ["タスクを選択すると、担当者、取得権、最新の試行と結果が表示されます。", "选择任务以查看负责人、领取状态、最近尝试和结果。"],
   "Watch list": ["Watch 一覧", "Watch 列表"],
   "Dashboard language": ["ダッシュボードの言語", "仪表板语言"],
+  "Dashboard theme": ["ダッシュボードのテーマ", "仪表板主题"],
+  "Light theme": ["ライトテーマ", "浅色主题"],
+  "Dark theme": ["ダークテーマ", "深色主题"],
   "{count} tracks selected": ["トラック {count} 件を選択", "已选择 {count} 个跟踪项"],
   " · {count} outside this list": [" · この一覧の外に {count} 件", " · {count} 个不在此列表中"],
   " + {count} more": [" ほか {count} 件", " 另有 {count} 个"],
@@ -542,6 +558,18 @@ const additionalMessages = {
   "Medium": ["中", "中"],
   "Low": ["低", "低"]
 };
+Object.assign(additionalMessages, {
+  "Worker model and reasoning effort": ["ワーカーのモデル・推論エフォート", "工作进程模型与推理强度"],
+  "Model": ["モデル", "模型"],
+  "Reasoning effort": ["推論エフォート", "推理强度"],
+  "Provider": ["プロバイダー", "提供方"],
+  "Selected value": ["選択値", "所选值"],
+  "Provider-confirmed value": ["プロバイダー確認値", "提供方确认值"],
+  "Provider default": ["プロバイダーの既定値に委任", "使用提供方默认值"],
+  "Not confirmed": ["未確認", "尚未确认"],
+  "Unreadable worker evidence": ["ワーカーの根拠を読み取れません", "无法读取工作进程依据"],
+  "Source": ["出典", "来源"]
+});
 const catalogs = {
   en: {},
   ko: koreanMessages,
