@@ -2,13 +2,13 @@
 
 [English](DEMO.md) · [한국어](DEMO.ko.md) · [日本語](DEMO.ja.md) · [简体中文](DEMO.zh-CN.md)
 
-[README](README.zh-CN.md) · [智能体安装](AGENT_INSTALL.zh-CN.md) · [运维](OPERATIONS.zh-CN.md)
+[README](README.zh-CN.md) · [智能体安装](AGENT_INSTALL.zh-CN.md) · [运维](OPERATIONS.zh-CN.md) · [更新](UPDATES.zh-CN.md)
 
-<!-- translation-source: DEMO.md; source-sha256: 6723cd1053d11cecc427d635e36a6ac26979a8af5fd82e97fb64c7662db4a5ef; status: translated -->
+<!-- translation-source: DEMO.md; source-sha256: 181597c84a147f8b0a8c41d739588656e153da14097006b5d541e294a88fe283; status: translated -->
 
 ## 本仓库自身的配置
 
-[自托管操作指南](examples/self-hosting/README.md)记录了本仓库在2026年9月26日的实际配置：单独安装的 `0.0.4` 引擎、韩语项目语言、Codex 工作进程以及 review 终点。其中包含实际的空白仪表盘和可在其他环境使用的验证步骤。在该时间点，本项目尚未注册或执行任何轨道。今后的实际任务结果应与这份配置记录一并保存。
+[自托管操作指南](examples/self-hosting/README.md)记录了本仓库于2026年9月26日进行的实际配置：使用单独安装的 `0.0.4` 引擎、韩语项目语言、Codex 工作进程以及 review 终点。其中包含实际的空白仪表盘和可在其他环境使用的验证步骤。在该时间点，本项目尚未注册或执行任何轨道。今后的实际任务结果应与这份配置记录一并保存。
 
 ## 仪表盘导览
 

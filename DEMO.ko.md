@@ -33,9 +33,9 @@ uv run todo-flow --state /absolute/new-dashboard-demo serve --port 8766
 3. 활동 화면에서 담당자, 현재 작업, 결정 대기를 확인합니다.
 4. 트랙을 열어 문서, 조건, 증거를 읽습니다.
 5. 별도의 완료 보관함을 검색하고 필요하면 이전 기록을 불러옵니다.
-6. English / 한국어 / 日本語 / 简体中文을 전환합니다. 선택과 결정 초안은 유지되며 작성된 내용은 원래 언어로 남습니다.
+6. English / 한국어 / 日本語 / 简体中文을 전환합니다. 선택과 결정 초안은 유지되며 작성된 콘텐츠는 원래 언어를 유지합니다.
 
-fixture는 대시보드의 변경 요청을 거부합니다. 실제 작업은 별도로 초기화한 프로젝트에서 실행하세요.
+fixture는 데이터를 변경하는 대시보드 요청을 거부합니다. 실제 작업은 별도로 초기화한 프로젝트에서 실행하세요.
 
 실행 중인 브라우저에서 화면을 캡처한 뒤 둘러보기 영상을 조합하려면 다음 명령을 사용합니다.
 
@@ -46,57 +46,57 @@ uv run --no-project --with Pillow==11.3.0 python scripts/render_demo.py \
   assets/demo/activity-en.png assets/demo/track-en.png assets/demo/completed-en.png
 ```
 
-스크립트는 제공한 캡처를 조합할 뿐 실행 상태를 만들어 내지 않습니다.
+스크립트는 제공된 캡처만 조합하며 실행 상태를 만들어 내지 않습니다.
 
-## 전체 워크플로우 실행
+## 전체 워크플로 실행
 
-초기 커밋, origin 원격, 인증과 정상 동작하는 테스트가 있는 일회용 프로젝트를 사용하세요. [설치 안내](AGENT_INSTALL.ko.md)에 따라 `en`, `ko`, `ja`, `zh-CN` 중 하나를 선택합니다. 실제 통합과 triage까지 포함하려면 `--endpoint land --allow-land`를 사용합니다. 그렇지 않으면 리뷰된 후보에서 멈춥니다.
+초기 커밋, origin 원격 저장소, 인증, 정상 동작하는 테스트가 있는 일회용 프로젝트를 사용하세요. [설치 안내](AGENT_INSTALL.ko.md)에 따라 `en`, `ko`, `ja`, `zh-CN` 중 하나를 선택합니다. 실습에 실제 통합과 triage를 포함하려면 `--endpoint land --allow-land`를 사용하세요. 이 옵션들이 없으면 리뷰된 후보에서 종료됩니다.
 
-에이전트에게 범위가 제한된 두 요구를 전달합니다. 예를 들면 다음과 같습니다.
+예를 들어 에이전트에게 범위가 명확한 요구 두 개를 전달합니다.
 
 ```text
-todo 일시적인 네트워크 오류에 제한된 재시도를 추가해줘. 영구적인 오류 처리 동작은 유지하고 테스트를 추가해줘.
-todo 영구적인 요청 실패를 유용한 다음 조치와 함께 설명해줘. 메시지 테스트를 추가해줘.
+todo 일시적인 네트워크 실패에 횟수가 제한된 재시도를 추가하세요. 영구적인 실패 처리는 유지하고 테스트를 추가하세요.
+todo 영구적인 요청 실패를 유용한 다음 조치와 함께 설명하세요. 메시지 테스트를 추가하세요.
 trackpicks
 ```
 
-[재시도 계획](examples/retry-backoff.html)과 [오류 메시지 계획](examples/request-error-message.html)은 검토 가능한 HTML 문서 예시입니다. 등록 전에 실제 fixture에 맞게 범위와 증거를 조정하세요. 완료된 작업이 아닌 예시입니다.
+[재시도 계획 예시](examples/retry-backoff.html)와 [오류 메시지 계획 예시](examples/request-error-message.html)는 검토 가능한 HTML 문서를 보여 줍니다. 등록 전에 실제 fixture에 맞게 범위와 증거를 조정하세요. 이 파일들은 요구사항 예시이며 완료된 작업이 아닙니다.
 
-생성된 문서를 검토한 뒤 실제 반환된 ID로 실행을 요청합니다.
+생성된 문서를 검토한 다음 실제로 반환된 ID로 실행을 요청합니다.
 
 ```sh
 trackrun retry-backoff request-error-message
 ```
 
-대시보드에서 별도 워크트리와 작업을 관찰하세요. 각 후보의 실제 검증과 독립 리뷰를 확인합니다. 랜딩이 허용됐다면 통합 SHA, 랜딩 후 triage, 이슈 종료와 완료를 확인합니다. 결정 대기 중이면 답하고 필요할 때 드라이버를 다시 시작합니다. 새 후속 TODO는 선정되지 않은 상태로 남습니다.
+대시보드에서 분리된 worktree와 작업을 관찰합니다. 각 후보의 실제 검증과 독립 리뷰를 확인하세요. 통합이 승인된 경우 통합 SHA, 통합 후 triage, 이슈 종료와 완료 상태를 대조하세요. 결정 대기 중이면 답변하고 필요할 때 드라이버를 다시 시작하세요. 후속 TODO는 선택되지 않은 상태로 남습니다.
 
-## 이전 공개 수용 시험 살펴보기
+## 이전 공개 인수 테스트 살펴보기
 
-2026년 9월 24일 일회용 공개 시험에서 다음 결과를 만들었습니다.
+2026년 9월 24일의 일회용 공개 테스트에서 다음 산출물이 생성되었습니다.
 
-| 요구 | 이슈 | 병합된 변경 |
+| 요구사항 | 이슈 | 병합된 변경 |
 |---|---|---|
-| 텍스트 slug 변환 | [Issue #1](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/issues/1) | [PR #3](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/pull/3) |
-| 시퀀스 묶음 나누기 | [Issue #2](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/issues/2) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/pull/4) |
+| 텍스트 슬러그 변환 | [Issue #1](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/issues/1) | [PR #3](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/pull/3) |
+| 시퀀스 분할 | [Issue #2](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/issues/2) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/pull/4) |
 | 숫자 범위 제한 | [Issue #5](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/issues/5) | [PR #6](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/pull/6) |
 
-처음 두 트랙은 triage 중복 검색 결함을 수정한 뒤 복구가 필요했습니다. 새로 실행한 세 번째 트랙은 개입 없이 완료됐습니다. 이 산출물은 당시의 실행 워크플로우를 보여주며 이후의 모든 UI·다국어 변경이나 대규모 프로젝트 성능을 입증하지 않습니다.
+첫 두 트랙은 triage 중복 검색 버그를 수정한 뒤 복구가 필요했습니다. 새로 실행한 세 번째 트랙은 추가 개입 없이 완료되었습니다. 이 산출물은 당시 실행 워크플로를 보여 주며, 이후의 모든 UI·다국어 변경이나 대규모 프로젝트에서의 동작을 검증하지는 않습니다.
 
-## 원격 수용 시험 재현
+## 원격 인수 테스트 재현
 
-최근 개발 실행은 2026년 9월 24일 눈에 보이는 Orca 터미널에서 경로 기반 워커를 사용했습니다.
+가장 최근 개발 실행은 2026년 9월 24일 화면에 보이는 Orca 터미널에서 경로 기반 워커를 사용했습니다.
 
-| 요구 | 이슈 | 병합된 변경 |
+| 요구사항 | 이슈 | 병합된 변경 |
 |---|---|---|
-| 연속 공백 축약 | [Issue #1](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/1) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/4) |
+| 공백 압축 | [Issue #1](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/1) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/4) |
 | 서로 다른 값의 첫 등장 보존 | [Issue #2](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/2) | [PR #5](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/5) |
-| 명시적 대체 동작을 가진 나눗셈 | [Issue #3](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/3) | [PR #6](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/6) |
+| 명시적인 대체 동작을 가진 나눗셈 | [Issue #3](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/3) | [PR #6](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/6) |
 
-구현 워커 세 개가 동시에 실행됐습니다. 기준 브랜치 변경 후 반복한 triage를 포함해 실제 Codex 워커 14개가 Orca 터미널에서 실행됐습니다. 선정한 세 트랙은 모두 완료됐고, 새 사용 문서 TODO와 기존 라이선스 TODO는 선정되지 않은 상태로 남았습니다. 결정 대기나 런타임 오류는 없었으며 전달한 fixture는 테스트 19개를 통과했습니다. fixture에는 150 KB보다 큰 소스 파일이 포함됐습니다. 이는 범위가 제한된 수용 시험이며 대규모 프로젝트 벤치마크나 실제 Claude 검증이 아닙니다.
+구현 워커 세 개가 동시에 작업한 구간이 있었습니다. 기준 브랜치가 전진했을 때의 새 triage를 포함하여 실제 Codex 워커 14개가 Orca 터미널에서 실행되었습니다. 선택한 세 트랙은 모두 완료되었고, 새 사용 문서 TODO와 기존 라이선스 TODO는 선택되지 않은 상태로 남았습니다. 이 실행에는 결정 대기나 런타임 오류가 없었으며 제공된 fixture는 테스트 19개를 통과했습니다. fixture에는 150 KB보다 큰 소스 파일이 포함되어 있었습니다. 이는 범위가 제한된 인수 테스트이며 대규모 프로젝트 벤치마크나 실제 Claude 검증이 아닙니다.
 
-완료된 실행의 워크트리 11개와 워커 터미널 14개를 제거하면서 기존 증거 파일 466개와 모든 로컬 브랜치의 끝 커밋을 보존했습니다. 이어진 [정리 수명주기 작업(PR #8)](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/8)은 실제 Codex 워커로 완료됐습니다. 랜딩과 triage 후 해당 작업의 워크트리 3개와 워커 터미널 4개가 자동 제거되어 주 체크아웃과 보존된 증거만 남았습니다. 워크플로우가 [Issue #7](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/7)을 종료했습니다.
+완료된 실행에서 생성한 worktree 11개와 워커 터미널 14개는 이후 정리되었으며, 기존 증거 파일 466개와 모든 로컬 브랜치의 끝 커밋은 보존되었습니다. 이어 별도의 [정리 수명주기 작업(PR #8)](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/8)이 실제 Codex 워커로 완료되었습니다. 통합과 triage 후 생성한 worktree 3개와 워커 터미널 4개가 자동으로 제거되어 기본 체크아웃과 보존된 증거만 남았습니다. 워크플로가 [Issue #7](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/7)을 닫았습니다.
 
-다음 명령은 **공개 저장소와 실제 이슈·PR·모델 호출·병합을 생성합니다**. 해당 외부 실험을 의도할 때만 본인 계정과 새 시험 디렉터리로 실행하세요.
+다음 명령은 **공개 저장소와 실제 이슈·PR·모델 호출·병합을 생성합니다**. 이 외부 실험을 의도한 경우에만 본인 계정과 새 테스트 디렉터리로 실행하세요.
 
 ```sh
 uv run python scripts/parallel_smoke.py \

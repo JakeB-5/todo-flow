@@ -33,9 +33,9 @@ Open `http://127.0.0.1:8766`:
 5. Search the separate completed archive and load earlier records when needed.
 6. Switch English / 한국어 / 日本語 / 简体中文. Selection and decision drafts are retained; authored content stays in its original language.
 
-The fixture rejects dashboard mutation requests. Use a separately initialized project to execute real work.
+The fixture refuses mutating dashboard requests. Run real work in a separate initialized project.
 
-To assemble the tour after capturing screens from a running browser:
+To assemble a tour after capturing screenshots from the running browser:
 
 ```sh
 uv run --no-project --with Pillow==11.3.0 python scripts/render_demo.py \
@@ -44,33 +44,33 @@ uv run --no-project --with Pillow==11.3.0 python scripts/render_demo.py \
   assets/demo/activity-en.png assets/demo/track-en.png assets/demo/completed-en.png
 ```
 
-The script combines supplied captures; it does not invent execution state.
+The script only combines supplied captures; it does not manufacture execution states.
 
 ## Run the full workflow
 
-Use a disposable project with an initial commit, origin remote, authentication and working tests. Follow [setup](AGENT_INSTALL.md), selecting `en`, `ko`, `ja` or `zh-CN`. Use `--endpoint land --allow-land` if this exercise includes actual integration and triage; otherwise it stops at a reviewed candidate.
+Use a disposable project with an initial commit, an origin remote, authentication and working tests. Follow [setup](AGENT_INSTALL.md), choose `en`, `ko`, `ja` or `zh-CN`, and use `--endpoint land --allow-land` if this exercise should include real landing and triage. Without those flags, it ends at a reviewed candidate.
 
-Give your agent two bounded requirements, for example:
+Give the agent two bounded requirements, for example:
 
 ```text
-todo Add bounded retries for temporary network failures. Preserve permanent failure behavior and add tests.
-todo Explain permanent request failures with useful next steps. Add message tests.
+todo Add bounded retries for temporary network failures. Preserve permanent failures and add tests.
+todo Explain permanent request failures with a useful next action. Add message tests.
 trackpicks
 ```
 
-The [retry plan](examples/retry-backoff.html) and [error-message plan](examples/request-error-message.html) show reviewable HTML documents. Adapt their scope and evidence to the actual fixture before registering; they are examples, not completed work.
+[Retry plan example](examples/retry-backoff.html) and [error-message plan example](examples/request-error-message.html) illustrate reviewable HTML documents. Adapt scope and evidence to the real fixture before registration; these files are illustrative requirements, not completed work.
 
-Review the generated documents, then request their actual IDs:
+Review the generated documents, then request the actual returned IDs:
 
 ```sh
 trackrun retry-backoff request-error-message
 ```
 
-Observe the separate worktrees and tasks in the dashboard. Inspect real verification and independent review for each candidate. With landing authorized, check the integrated SHA, post-landing triage, issue closure and completion. If work waits on a decision, answer it and restart the driver when needed. New follow-up TODOs remain unselected.
+Observe separate worktrees and tasks in the dashboard. Inspect the actual verification and independent review for each candidate. With authorized landing, compare the integrated SHA, post-landing triage, issue closure and completed state. If work waits for a decision, answer it and restart a driver if needed. Follow-up TODOs remain unselected.
 
 ## Inspect a previous public acceptance run
 
-A disposable public test on September 24, 2026 produced:
+A disposable public test on September 24, 2026 produced these artifacts:
 
 | Requirement | Issue | Merged change |
 |---|---|---|
@@ -78,23 +78,23 @@ A disposable public test on September 24, 2026 produced:
 | Sequence chunking | [Issue #2](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/issues/2) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/pull/4) |
 | Numeric clamping | [Issue #5](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/issues/5) | [PR #6](https://github.com/JakeB-5/todo-flow-terminal-20260924-r5/pull/6) |
 
-The first two tracks needed recovery after a triage duplicate-search defect was repaired. The fresh third track completed without intervention. These artifacts demonstrate the execution workflow at that time, not every later UI/localization change or large-project scale.
+The first two tracks needed recovery after a triage duplicate-search bug was corrected. A new third track completed without additional intervention. These artifacts demonstrate the earlier execution workflow; they do not validate every later UI/localization change or large-project scale.
 
 ## Reproduce remote acceptance
 
-The latest development run used path-based workers in visible Orca terminals on September 24, 2026:
+The latest development run exercised path-based workers in visible Orca terminals on September 24, 2026:
 
 | Requirement | Issue | Merged change |
 |---|---|---|
-| Collapse whitespace | [Issue #1](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/1) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/4) |
+| Compact whitespace | [Issue #1](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/1) | [PR #4](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/4) |
 | Preserve first distinct values | [Issue #2](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/2) | [PR #5](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/5) |
-| Division with explicit fallback | [Issue #3](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/3) | [PR #6](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/6) |
+| Divide with an explicit fallback | [Issue #3](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/3) | [PR #6](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/6) |
 
-Three implementation workers overlapped. Fourteen real Codex workers ran in Orca terminals, including repeated triage after base advancement. All three selected tracks completed; a new usage-document TODO and an existing license TODO remained unselected. The run had no decision waits or runtime errors, and the delivered fixture passed 19 tests. The fixture included a source file larger than 150 KB. These are bounded acceptance tasks, not a large-project benchmark or live Claude validation.
+Three implementation workers overlapped. Fourteen actual Codex workers ran in Orca terminals, including fresh triage when the base advanced. All three selected tracks reached completion; a new usage-documentation TODO and an existing licensing TODO remained unselected. There were no decision waits or runtime errors during this run, and the delivered fixture passed 19 tests. The fixture included a source file larger than 150 KB. These are bounded acceptance tasks, not a large-project benchmark or a live Claude validation.
 
-The completed run's 11 worktrees and 14 worker terminals were then removed, preserving the existing 466 evidence files and every local branch tip. A subsequent [cleanup lifecycle task (PR #8)](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/8) completed with real Codex workers: after landing and triage, its three worktrees and four worker terminals were automatically removed, leaving only the main checkout and retained evidence. [Issue #7](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/7) was closed by the workflow.
+The completed run's 11 generated worktrees and 14 worker terminals were then cleaned, preserving 466 existing evidence files and all local branch tips. A separate [cleanup lifecycle task (PR #8)](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/pull/8) subsequently completed with real Codex workers: after landing and triage, its three generated worktrees and four worker terminals were removed automatically, leaving only the main checkout and retained evidence. [Issue #7](https://github.com/JakeB-5/todo-flow-terminal-e2e-20260924/issues/7) was closed by the workflow.
 
-The following command **creates a public repository and real issues, PRs, model calls and merges**. Run it only when you intend that external experiment, using your own account and a new test directory:
+This command **creates a public repository and real issues, PRs, model calls and merges**. Use your account and a new test directory only when that external experiment is intended:
 
 ```sh
 uv run python scripts/parallel_smoke.py \
