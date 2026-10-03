@@ -16,7 +16,7 @@ Keep dependency changes in `pyproject.toml` and `uv.lock` together.
 | Path | Responsibility |
 |---|---|
 | `src/todo_flow/` | CLI, file authority, execution, recovery and adapters |
-| `src/todo_flow/web/` | Dashboard HTML, CSS, JS and English/Korean messages |
+| `src/todo_flow/web/` | Dashboard HTML, CSS, JS and English/Korean/Japanese/Simplified Chinese messages |
 | `skills/` | Agent registration, selection, execution, review, landing, triage and Watch instructions |
 | `templates/`, `examples/` | Starter documents and public-safe review examples |
 | `tests/` | Unit, local Git integration, HTTP and dashboard localization tests |
@@ -38,17 +38,59 @@ Edit canonical skills under `skills/`, not installed copies. `todo-flow install-
 
 ## Language and skills
 
-English is the primary language of public documentation, templates and skill instructions. Keep `README.ko.md` aligned with the main README.
+English is the source language of public documentation, templates and shared skill instructions. The supported locales are English (`en`), Korean (`ko`), Japanese (`ja`) and Simplified Chinese (`zh-CN`). Keep the same locale set across project setup, dashboard messages and the five core guides.
 
-Project setup stores `language: en|ko`. Agent-assisted setup asks when the user has not chosen; unattended CLI setup defaults to English. Skills use the project language for reports and newly authored documents. Machine keys, IDs, code conventions and quoted source remain stable.
+| Surface | Required coverage |
+|---|---|
+| Dashboard fixed text, accessible names, dates and numbers | en, ko, ja, zh-CN; English fallback for unsupported locales or messages |
+| Project default and requested language of new worker output | en, ko, ja, zh-CN |
+| README, AGENT_INSTALL, OPERATIONS, UPDATES, DEMO | English `NAME.md` and `NAME.ko.md`, `NAME.ja.md`, `NAME.zh-CN.md` |
+| CONTRIBUTING, shared skills and templates | English maintenance instructions; full translation is not required |
+| Existing authored tracks/records, historical CHANGELOG and LICENSE | No automatic or retrospective translation |
 
-Dashboard messages use English source text through `tr()` and Korean translations in `web/i18n.js`. Static labels use `data-i18n` and accessible attributes use `data-i18n-aria-label`, `data-i18n-title` or `data-i18n-placeholder`. Use named interpolation for complete messages. Never translate stored user content by matching its text. Verify that language switching preserves selections, drafts and navigation and that browser preferences stay project-specific.
+Project setup stores `language: en|ko|ja|zh-CN`. Agent-assisted setup asks when the user has not chosen; unattended CLI setup defaults to English. Skills use the project language for reports and newly authored documents. Machine keys, IDs, code conventions and quoted source remain stable. A requested output language is not proof of a model's translation quality.
+
+Dashboard messages use English source text through `tr()` and locale dictionaries in `src/todo_flow/web/i18n.js`. Static labels use `data-i18n` and accessible attributes use `data-i18n-aria-label`, `data-i18n-title` or `data-i18n-placeholder`. Use named interpolation for complete messages, retaining every placeholder in each locale. Never translate stored user content by matching its text. Verify that language switching preserves selections, drafts and navigation and that browser preferences stay project-specific without changing the project language.
+
+### Translation updates
+
+Each translated core guide records its English source and the SHA-256 of that source's exact bytes:
+
+```html
+<!-- translation-source: NAME.md; source-sha256: LOWERCASE_SHA256; status: translated -->
+```
+
+`translated` records the translator's claim of coverage at that hash, not an independent certification. A missing marker or changed source hash needs review. The checker reports stale translations; it never rewrites hashes or translates content.
+
+1. Edit the English source first. Compare its changes with all three translations, including navigation-only changes. Preserve the installation requirements, authorization boundaries, compatibility constraints, recovery, rollback and cleanup instructions.
+2. Translate the changed meaning and check the full affected section. Keep functional commands, flags, paths, protocol keys, skill names and placeholders intact. Shell comments and explanatory prose may be translated. Do not shorten an operational restriction into a general summary.
+3. Keep four sibling-language links in every guide and links to all other core guides in the same language. Preserve referenced section anchors; explicit `<a id="english-section-id"></a>` anchors allow translated headings to retain stable links. Check relative file and fragment links, including links outside the core set.
+4. Only after checking the translation, calculate the English file's raw-byte hash with `python -c 'import hashlib,pathlib; print(hashlib.sha256(pathlib.Path("NAME.md").read_bytes()).hexdigest())'` and update the marker in each reviewed translation. Do not refresh a hash just to silence a stale report. Keep pending translations visibly unresolved until updated.
+5. Run the document checker and localization tests below. Have an independent reviewer compare meaning with the English source, especially commands, permissions and recovery instructions. Structural checks cannot establish fluency, completeness of meaning or translation quality.
+6. Keep all 20 guide files in the source distribution. After building, inspect the actual archive using `--sdist`; a correct source tree alone does not prove a correct release artifact.
+
+Use this glossary for prose; retain the English token when referring to a literal CLI command, protocol field, status or skill name.
+
+| English concept | Korean | Japanese | Simplified Chinese |
+|---|---|---|---|
+| track | 트랙 | トラック | 轨道 |
+| worker | 워커 | ワーカー | 工作器 |
+| dashboard | 대시보드 | ダッシュボード | 仪表盘 |
+| verification | 검증 | 検証 | 验证 |
+| review | 리뷰 | レビュー | 审查 |
+| landing | 합입 | 取り込み | 合入 |
+| cleanup | 정리 | クリーンアップ | 清理 |
+| recovery | 복구 | 復旧 | 恢复 |
+| rollback | 롤백 | ロールバック | 回滚 |
+| source of truth | 정본 | 正本 | 权威来源 |
 
 Jev guidance in todo/watchlist is optional. Do not turn a recommendation into an installation dependency or mandatory review gate.
 
 ## Checks
 
 ```sh
+uv run python scripts/check_translations.py
+uv run python -m unittest discover -s tests -p test_document_translations.py -v
 uv run python -m unittest discover -s tests -v
 uv run python -m unittest discover -s tests -p test_language.py -v
 uv run ruff check src tests scripts
@@ -56,15 +98,18 @@ uv run ruff format --check src tests scripts
 node --check src/todo_flow/web/app.js
 node --test tests/dashboard_i18n.test.cjs
 uv build
+uv run python scripts/check_translations.py --sdist dist/todo_flow-0.0.9.tar.gz
 ```
 
-Test observable behavior and relevant recovery boundaries. Do not add tests that merely repeat documentation wording. For UI changes, inspect the real browser in both languages and at narrow widths. Synthetic list rendering, worker concurrency and remote PR merging are different checks; do not substitute one for another.
+Test observable behavior and relevant recovery boundaries. Do not add tests that merely repeat documentation wording. For UI changes, inspect the real browser in all four languages and at narrow widths. Synthetic list rendering, worker concurrency and remote PR merging are different checks; do not substitute one for another.
+
+The document checker detects missing translations, stale or missing source markers, missing language or same-language guide links, broken relative files/fragments and omitted source-distribution entries. Its fixtures exercise those failures. The dashboard tests separately check missing message keys, interpolation and language-switch behavior. Neither check replaces semantic translation review.
 
 Packaging changes should work without ignored local files. Verify the source distribution includes shared guides, license and examples, and that wheels contain the dashboard, translations, skills and template assets. Installed skills must work outside this source checkout.
 
 Normal code changes run one Linux/Python 3.11 job, using uv 0.10.11 and explicitly installed ripgrep. **Actions → Checks → Run workflow → full** runs the Linux/macOS × Python 3.11/3.13 matrix when cross-platform validation is needed. Report local and hosted validation separately.
 
-Automatic checks run on pushes to `main` and pull requests, except root-level Markdown guides, `assets/` presentation files and local `docs/` changes alone. `scripts/ci_changes.py` compares metadata contents: changing only the project version in `pyproject.toml`, the editable package version in `uv.lock`, and the fallback version in `release.py` runs lint, build and clean wheel installation checks without the runtime suite. Dependency, build configuration and real source changes still run tests. Bundled skill and updater changes also run the isolated update smoke, once on Python 3.11 per selected OS.
+Automatic checks run on pushes to `main` and pull requests, except root-level Markdown guides, `assets/` presentation files and local `docs/` changes alone. `scripts/ci_changes.py` compares metadata contents: changing only the project version in `pyproject.toml`, the editable package version in `uv.lock`, and the fallback version in `release.py` runs lint, build and clean wheel installation checks without the runtime suite. Dependency, build configuration and real source changes still run tests. Bundled skill and updater changes also run the isolated update smoke, once on Python 3.11 per selected OS. Run the focused document checks explicitly for guide-only changes skipped by CI.
 
 Tag pushes do not repeat release-commit CI. Newer runs cancel older runs for the same event and branch or pull request. Before making these checks required in branch protection, add an always-reported gate: workflow-level path skips leave required checks pending.
 
@@ -98,11 +143,12 @@ Record behavior, compatibility and important fixes under `Unreleased`. Prepare t
 
 The initial distribution is a Python package containing the `todo-flow` and `trackrun` CLIs, dashboard assets and installable project skills. It does not include a native agent-plugin manifest or marketplace package.
 
-For `0.0.9`, keep `pyproject.toml`, `uv.lock` and both README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
+For `0.0.9`, keep `pyproject.toml`, `uv.lock` and all four README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
 
 ```sh
 uv lock
 uv build --out-dir dist/0.0.9
+uv run python scripts/check_translations.py --sdist dist/0.0.9/todo_flow-0.0.9.tar.gz
 ```
 
 Verify the wheel installs in a clean environment and includes skill templates, dashboard translations and the MIT license. Confirm the source distribution includes the public guides and excludes local `docs/`. Keep the changelog under `Unreleased` until publication. Tagging, GitHub Releases and package-index uploads are separate release actions.
