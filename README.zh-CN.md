@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 73d1b8c23f2e72243113043a08f4d62c9c032aba6e4932278bc33a73d22c087f; status: translated -->
+<!-- translation-source: README.md; source-sha256: 02e2117958fbe35650f9b24fbd5893d58caafaa9f57eebe4f196d4f9cb32bcdc; status: translated -->
 
 ## 37 秒了解 TODO Flow
 
@@ -342,6 +342,8 @@ todo-flow --state /absolute/project/todo compatibility --target /absolute/projec
 [更新与回滚](UPDATES.zh-CN.md) · [运维与恢复](OPERATIONS.zh-CN.md) · [演示与验收测试](DEMO.zh-CN.md) · [贡献指南](CONTRIBUTING.md) · [变更记录](CHANGELOG.md) · [智能体仓库规则](AGENTS.md) · [CI 配置](.github/workflows/ci.yml)
 
 请通过仓库 Issues 报告缺陷或提出改进，并附上可安全公开的最小复现。贡献和本地验证命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。`docs/` 中的本地设计笔记被 Git 忽略，使用或构建项目不依赖它们。
+
+如需复用已确认的反馈，请参阅[已确认反馈的复用指南](AGENTS.md#reusing-confirmed-feedback)：在现有规则旁保留来源、适用范围、可公开的反例和检查方法。实施者的提议不等于用户批准，记录规则也不能替代未满足的条件或 finding 的处置。
 
 **[MIT 许可证](LICENSE)** · Copyright © 2026 TODO Flow contributors.
 
