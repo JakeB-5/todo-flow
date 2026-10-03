@@ -91,6 +91,7 @@ STATUSES = {
 
 def describe_launch(record, language="en"):
     """Translate only runtime labels; preserve unknown codes without guessing."""
+
     def text(english, korean):
         if language in ("ja", "zh-CN"):
             return MESSAGES.get(english, (english, english))[int(language == "zh-CN")]

@@ -5,7 +5,10 @@ Unknown runtime codes and authored content are never looked up here.
 """
 
 MESSAGES = {
-    "Orca terminal (command worker)": ("Orca ターミナル（コマンドワーカー）", "Orca 终端（命令工作进程）"),
+    "Orca terminal (command worker)": (
+        "Orca ターミナル（コマンドワーカー）",
+        "Orca 终端（命令工作进程）",
+    ),
     "Headless process": ("ヘッドレスプロセス", "无界面进程"),
     "tmux terminal": ("tmux ターミナル", "tmux 终端"),
     "Configured terminal": ("設定されたターミナル", "已配置的终端"),
@@ -50,7 +53,10 @@ MESSAGES = {
         "ネイティブセッションの契約は未検証です",
         "原生会话契约仍未经验证",
     ),
-    "Worker failed; recovery required": ("ワーカーが失敗しました。復旧が必要です", "工作进程失败，需要恢复"),
+    "Worker failed; recovery required": (
+        "ワーカーが失敗しました。復旧が必要です",
+        "工作进程失败，需要恢复",
+    ),
     "Reading the same session history; input is not resent": (
         "同じセッション履歴を確認中です。入力は再送しません",
         "正在读取同一会话的历史，不会重新发送输入",
@@ -62,7 +68,10 @@ MESSAGES = {
     "Server process started": ("サーバープロセスが開始しました", "服务器进程已启动"),
     "Read-only session created": ("読み取り専用セッションを作成しました", "已创建只读会话"),
     "Work turn accepted": ("作業要求を受け付けました", "已接受工作请求"),
-    "Visible session client requested": ("表示用セッションクライアントを要求しました", "已请求可视会话客户端"),
+    "Visible session client requested": (
+        "表示用セッションクライアントを要求しました",
+        "已请求可视会话客户端",
+    ),
     "Complete proposal received": ("完全な提案を受信しました", "已收到完整提案"),
     "Server stopped; group confirmation pending": (
         "サーバーが停止しました。プロセスグループの確認待ちです",
@@ -82,7 +91,10 @@ MESSAGES = {
         "已选择，但尚无进程启动的证据",
     ),
     "Selection failed before launch": ("起動前の選択に失敗しました", "启动前选择失败"),
-    "Launch requested; outcome pending": ("起動を要求しました。結果は未確認です", "已请求启动，结果待确认"),
+    "Launch requested; outcome pending": (
+        "起動を要求しました。結果は未確認です",
+        "已请求启动，结果待确认",
+    ),
     "Terminal request accepted; worker start not established": (
         "ターミナル要求は受理されました。ワーカー開始の証拠ではありません",
         "终端请求已接受，但尚无工作进程启动的证据",
@@ -99,7 +111,10 @@ MESSAGES = {
         "ホストが App Server を所有し、サイドバーのライフサイクルを表示に反映します。",
         "App Server 由宿主管理，侧栏生命周期由宿主投影显示。",
     ),
-    "Compatibility worker route selected.": ("互換ワーカー経路を選択しました。", "已选择兼容工作进程路径。"),
+    "Compatibility worker route selected.": (
+        "互換ワーカー経路を選択しました。",
+        "已选择兼容工作进程路径。",
+    ),
     "Native session selection not recorded.": (
         "ネイティブセッションの選択記録がありません。",
         "未记录原生会话选择。",

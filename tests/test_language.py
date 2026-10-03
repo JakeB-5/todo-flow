@@ -235,7 +235,9 @@ class LanguageTests(unittest.TestCase):
                 received = json.loads((self.root / "received.json").read_text())
                 self.assertEqual(received["language"], language)
                 self.assertIn(name, received["output_language_instruction"])
-                self.assertEqual(received["output_language_instruction"], output_instruction(language))
+                self.assertEqual(
+                    received["output_language_instruction"], output_instruction(language)
+                )
                 self.assertNotIn("document", received)
                 self.assertNotIn("goal", received)
                 received_document = json.loads(Path(received["paths"]["document"]).read_text())
@@ -278,7 +280,11 @@ class LanguageTests(unittest.TestCase):
     def test_launch_labels_translate_known_codes_and_preserve_unknown_values(self):
         for language in LANGUAGES:
             with self.subTest(language=language):
-                for field, mapping in (("backend", BACKENDS), ("reason", REASONS), ("status", STATUSES)):
+                for field, mapping in (
+                    ("backend", BACKENDS),
+                    ("reason", REASONS),
+                    ("status", STATUSES),
+                ):
                     for code, labels in mapping.items():
                         record = {"selection": {"requested": "auto"}}
                         if field == "reason":
