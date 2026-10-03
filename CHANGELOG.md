@@ -2,6 +2,21 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## 0.1.0 — 2026-10-04
+
+- Provide English, Korean, Japanese and Simplified Chinese dashboard labels and core guides, with project-isolated language preferences and preserved navigation, drafts and authored content.
+- Add persistent light/dark theme selection and readable dashboard surfaces without rewriting authored documents.
+- Show each worker attempt's selected and confirmed model/reasoning effort, distinguishing delegation, missing records and unreadable evidence.
+- Support role-based worker profiles and mixed, Codex-only and Claude-only routing with durable selection provenance.
+- Separate inconclusive verification from declared implementation failure so environment/check failures do not automatically request speculative code changes.
+- Give independent reviewers explicit source provenance and distinguish confirmed facts from implementer claims. Add public examples and offline quality cases based on independently specified expectations and counterexamples.
+- Preserve existing Claude/Codex skill installations, project bindings and local edits during coexistence-aware installation and updates.
+- Defer follow-up claims until the previous execution releases its track lock; retain execution ownership checks and deterministic handoff/cancellation regressions.
+- Document how to reuse confirmed feedback with its source, scope, counterexample and regression evidence without expanding authorized work.
+- Keep state/configuration formats and worker/skill protocols unchanged. No data migration is required.
+
+Known recovery limits: historical identical no-op proposal journals and superseded synthetic integration commits outside the landed ancestry can still require evidence-preserving manual recovery.
+
 ## 0.0.9 — 2026-10-01
 
 - Run explicitly configured preflight checks before the full verifier, stopping on the first failure and retaining each command's original logs.

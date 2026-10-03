@@ -98,7 +98,7 @@ uv run ruff format --check src tests scripts
 node --check src/todo_flow/web/app.js
 node --test tests/dashboard_i18n.test.cjs
 uv build
-uv run python scripts/check_translations.py --sdist dist/todo_flow-0.0.9.tar.gz
+uv run python scripts/check_translations.py --sdist dist/todo_flow-0.1.0.tar.gz
 ```
 
 Test observable behavior and relevant recovery boundaries. Do not add tests that merely repeat documentation wording. For UI changes, inspect the real browser in all four languages and at narrow widths. Synthetic list rendering, worker concurrency and remote PR merging are different checks; do not substitute one for another.
@@ -143,12 +143,12 @@ Record behavior, compatibility and important fixes under `Unreleased`. Prepare t
 
 The initial distribution is a Python package containing the `todo-flow` and `trackrun` CLIs, dashboard assets and installable project skills. It does not include a native agent-plugin manifest or marketplace package.
 
-For `0.0.9`, keep `pyproject.toml`, `uv.lock` and all four README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
+For `0.1.0`, keep `pyproject.toml`, `uv.lock` and all four README versions aligned. Run the checks above, then build into a version-specific directory so previous development artifacts are not accidentally published:
 
 ```sh
 uv lock
-uv build --out-dir dist/0.0.9
-uv run python scripts/check_translations.py --sdist dist/0.0.9/todo_flow-0.0.9.tar.gz
+uv build --out-dir dist/0.1.0
+uv run python scripts/check_translations.py --sdist dist/0.1.0/todo_flow-0.1.0.tar.gz
 ```
 
 Verify the wheel installs in a clean environment and includes skill templates, dashboard translations and the MIT license. Confirm the source distribution includes the public guides and excludes local `docs/`. Keep the changelog under `Unreleased` until publication. Tagging, GitHub Releases and package-index uploads are separate release actions.

@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 02e2117958fbe35650f9b24fbd5893d58caafaa9f57eebe4f196d4f9cb32bcdc; status: translated -->
+<!-- translation-source: README.md; source-sha256: 345c832db4fb257843b5d067e21d83bf6eed6dcc02571784800f427a9238bcb3; status: translated -->
 
 ## 37 秒了解 TODO Flow
 
@@ -101,11 +101,11 @@ https://github.com/user-attachments/assets/8b5acf19-292a-4205-aef1-f48b75305327
 前提条件：**Python 3.11+、uv、Git，以及已认证的 Claude 或 Codex CLI**。使用 GitHub Issue 和 PR 还需要已认证的 `gh`。安装已发布版本：
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.9/todo_flow-0.0.9-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.0/todo_flow-0.1.0-py3-none-any.whl
 todo-flow --version
 ```
 
-[发行文件与校验和](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.9)。这会安装 CLI 和随包提供的仪表盘、技能，无需检出仓库。进行源码开发时，克隆本仓库，然后使用 `uv sync --frozen` 和 `uv tool install .`。
+[发行文件与校验和](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0)。这会安装 CLI 和随包提供的仪表盘、技能，无需检出仓库。进行源码开发时，克隆本仓库，然后使用 `uv sync --frozen` 和 `uv tool install .`。
 
 在**目标项目**中，使用该项目实际的验证命令、基准分支和相关文件模式。下面假设已有一个 Python 项目，包含测试套件、初始 Git 提交和 `origin` 远程：
 
@@ -315,6 +315,8 @@ todo-flow --state /absolute/project/todo compatibility --target /absolute/projec
 
 ## 当前范围
 
+**0.1.0 新增：** 仪表盘和核心指南支持英语、韩语、日语和简体中文，可切换明暗主题，并查看每次工作进程尝试的模型与推理强度。支持按角色配置工作进程路由，区分验证无法判定与实现失败，并让独立评审基于源证据。技能更新保留现有安装，交接回归测试确保前一次执行释放锁之前，后续工作不会取得该轨道。
+
 **0.0.9 新增：** 配置可选预检与中间验证检查，同时在交付边界保留完整验证和独立评审。将提供的机器证据绑定到其条件、候选版本和原始产物；将工作进程终止情况与提案有效性分开检查。显式请求上限保留尝试使用量，过期集成检出目录的清理仍保护所有权和用户修改。
 
 **0.0.8 新增：** 活动视图按轨道汇总当前工作，将长指令保留在任务详情中，并在语言切换时保留导航。相同的待处理义务共享一次执行，同时保留各父请求。工作进程可提出有界文本替换；验证输出保存为独立日志产物，支持按范围读取。
@@ -329,7 +331,7 @@ todo-flow --state /absolute/project/todo compatibility --target /absolute/projec
 
 已完成轨道会自动清理一次性检出目录和未改变的工作进程终端，同时保留文档、日志、结果和 Git 分支。存在用户修改或所有权未确认的资源会保留，并记录原因。若需保留资源以供检查，使用 `--no-auto-cleanup`；参见[清理与重试](OPERATIONS.zh-CN.md#cleanup-migration-and-hooks)。
 
-最新发行版：**0.0.9**。已演练小项目完整循环、恢复和两到三条独立轨道并发；大型列表有独立的合成界面测试覆盖。
+最新发行版：**0.1.0**。已演练小项目完整循环、恢复和两到三条独立轨道并发；大型列表有独立的合成界面测试覆盖。
 
 - 每份项目状态对应一个仓库。尚未实现 Forgejo、子模块或协调多个仓库的合入。
 - 开发分支的工作进程使用只读工具探索检出目录并返回 JSON 提案。运行时应用变更、验证并发布。尚未实现浏览器工作流。

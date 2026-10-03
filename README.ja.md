@@ -12,7 +12,7 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 02e2117958fbe35650f9b24fbd5893d58caafaa9f57eebe4f196d4f9cb32bcdc; status: translated -->
+<!-- translation-source: README.md; source-sha256: 345c832db4fb257843b5d067e21d83bf6eed6dcc02571784800f427a9238bcb3; status: translated -->
 
 ## 37秒で見る TODO Flow
 
@@ -101,11 +101,11 @@ https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.ja.md に従い、
 前提条件は **Python 3.11+、uv、Git、認証済みの Claude または Codex CLI** です。GitHub Issue と PR には、さらに認証済みの `gh` が必要です。公開リリースをインストールします。
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.9/todo_flow-0.0.9-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.0/todo_flow-0.1.0-py3-none-any.whl
 todo-flow --version
 ```
 
-[リリースの成果物とチェックサム](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.9)。CLI と同梱のダッシュボード・スキルが入り、チェックアウトは不要です。ソース開発では、このリポジトリを clone し、`uv sync --frozen` と `uv tool install .` を使います。
+[リリースの成果物とチェックサム](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0)。CLI と同梱のダッシュボード・スキルが入り、チェックアウトは不要です。ソース開発では、このリポジトリを clone し、`uv sync --frozen` と `uv tool install .` を使います。
 
 **対象プロジェクト**の実際の検証コマンド、ベースブランチ、関連ファイルのパターンを使ってください。以下は、テストスイート、最初の Git コミット、`origin` リモートを持つ既存の Python プロジェクトの例です。
 
@@ -315,6 +315,8 @@ uv tool としてインストールした場合、`todo-flow upgrade --wheel /ab
 
 ## 現在の範囲
 
+**0.1.0 の新機能:** ダッシュボードと主要ガイドを英語・韓国語・日本語・簡体字中国語で利用でき、ライト/ダークテーマを切り替え、試行ごとのワーカーモデルと推論エフォートを確認できます。役割別のワーカールーティングを設定し、検証不能と実装の失敗を区別し、独立レビューをソースの証拠に基づけます。スキル更新は既存のインストールを保持し、引き継ぎの回帰テストは前の実行がロックを解放するまで後続作業がトラックを取得しないことを確認します。
+
 **0.0.9 の新機能:** 任意の事前チェックと中間検証を設定でき、成果を届ける段階では完全な検証と独立レビューを維持します。提供された機械的な証拠を条件、候補、元の成果物に結び付けます。ワーカーの終了と提案の有効性を別々に確認します。明示的なリクエスト上限は試行使用量を保持し、不要になった統合リソースのクリーンアップでも所有権とユーザー変更の保護を維持します。
 
 **0.0.8 の新機能:** アクティビティは現在の作業をトラックごとにまとめ、長い指示をタスク詳細に置き、言語変更後も画面遷移を保持します。同一の保留中の義務は、各親リクエストを保持しながら1つの実行を共有します。ワーカーは範囲を限定したテキスト置換を提案でき、検証出力は部分的に読み取れる個別のログ成果物として保存します。
@@ -329,7 +331,7 @@ uv tool としてインストールした場合、`todo-flow upgrade --wheel /ab
 
 完了したトラックは、文書、ログ、結果、Git ブランチを保持しながら、使い捨てチェックアウトと変更されていないワーカーターミナルを自動的にクリーンアップします。ユーザーの変更があるリソースや所有権を確認できないリソースは、理由を記録して保持します。調査用にリソースを残すには `--no-auto-cleanup` を使います。[クリーンアップと再試行](OPERATIONS.ja.md)を参照してください。
 
-最新リリースは **0.0.9** です。小規模プロジェクトの全工程、復旧、2〜3件の独立した同時トラックで動作確認しています。大きな一覧は別途、合成データによる UI テストで確認しています。
+最新リリースは **0.1.0** です。小規模プロジェクトの全工程、復旧、2〜3件の独立した同時トラックで動作確認しています。大きな一覧は別途、合成データによる UI テストで確認しています。
 
 - プロジェクト状態ごとに1つのリポジトリを扱います。Forgejo、submodule、複数リポジトリにまたがる協調した統合は未実装です。
 - 開発版のワーカーは読み取り専用ツールでチェックアウトを調べ、JSON 提案を返します。ランタイムが変更を適用し、検証して公開します。ブラウザーワークフローは未実装です。

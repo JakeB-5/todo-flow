@@ -94,11 +94,11 @@ track that covers this request, then report the actual result and next steps.
 Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Install the published release:
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.0.9/todo_flow-0.0.9-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.0/todo_flow-0.1.0-py3-none-any.whl
 todo-flow --version
 ```
 
-[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.9). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
+[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
 
 In the **target project**, use its real verification command, base branch and relevant file patterns. This example assumes an existing Python project with a test suite, an initial Git commit and an `origin` remote:
 
@@ -304,6 +304,8 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 ## Current scope
 
+**New in 0.1.0:** Use English, Korean, Japanese or Simplified Chinese across the dashboard and core guides, switch between light and dark themes, and inspect each worker attempt’s model and reasoning effort. Configure role-based worker routing, distinguish inconclusive verification from implementation failure, and keep independent review grounded in source evidence. Skill updates preserve existing installations, and deterministic handoff checks prevent a successor from claiming a track before the previous execution lock is released.
+
 **New in 0.0.9:** Configure optional preflight and intermediate verification checks while preserving full verification and independent review at delivery boundaries. Bind supplied machine evidence to its condition, candidate and original artifact; inspect worker termination separately from proposal validity. Explicit request limits preserve attempt usage, and obsolete integration cleanup retains ownership and user-change protections.
 
 **New in 0.0.8:** Activity groups current work by track, keeps long instructions in task details and preserves navigation across language changes. Identical pending obligations share one execution while retaining each parent request. Workers can propose bounded text replacements, and verification output is retained as separate log artifacts that support bounded reads.
@@ -318,7 +320,7 @@ Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for eac
 
 Completed tracks automatically clean disposable checkouts and unchanged worker terminals while retaining documents, logs, results and Git branches. Resources with user changes or unconfirmed ownership are kept with a reason. Use `--no-auto-cleanup` to retain resources for inspection; see [cleanup and retry](OPERATIONS.md#cleanup-migration-and-hooks).
 
-Latest release: **0.0.9**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
+Latest release: **0.1.0**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
 - One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
 - Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.

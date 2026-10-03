@@ -4,7 +4,7 @@
 
 [README](README.ko.md) · [에이전트 설치](AGENT_INSTALL.ko.md) · [운영](OPERATIONS.ko.md) · [데모](DEMO.ko.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: a905e2445375ad0cad2da2eacf3edf2a02be1e8eb2a31470275a9c473289b9a6; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: 6262c997bc6bf94de1778b16b931c80acb2e1242139c275f42b01da6b1a9d133; status: translated -->
 
 공유 엔진을 한 번 업데이트한 뒤 각 프로젝트에 설치된 스킬을 업데이트합니다. 프로젝트 문서와 실행 기록은 기존 상태 디렉터리에 남습니다. 업데이트는 프로젝트를 다시 초기화하거나 대기 중인 작업을 시작하지 않습니다.
 
@@ -42,6 +42,8 @@
 
 `0.0.9`는 선택적인 검증 사전 검사와 중간 검사, 조건에 연결된 기계 증거, 워커 중지 영수증, 명시적인 요청 시도 횟수 제한과 오래된 통합 체크아웃 정리를 추가합니다. 상태/설정 형식과 워커/스킬 프로토콜은 바뀌지 않습니다. 기존 프로젝트 설정은 다시 쓰지 않습니다. 사전 검사와 관련 검사는 새 상태에서 선택하는 설정입니다. 단계별 검증 지침과 트랙 실행 완료 보고 전에 소유 리소스 정리를 마쳐야 한다는 요구를 받으려면 프로젝트 스킬을 업데이트하세요.
 
+`0.1.0`은 4개 언어의 안내서·UI, 테마 선택, 워커 모델·에포트 근거, 역할별 라우팅, 검증 결과별 후속 처리, 독립 리뷰 출처 구분, 스킬 공존과 오프라인 품질 사례를 추가합니다. 이전 실행이 트랙 잠금을 보유한 동안 후속 작업이 점유하지 못하게 합니다. 상태·설정 형식과 워커·스킬 프로토콜은 그대로이며 데이터 마이그레이션은 필요 없습니다. 유휴 상태에서 엔진과 프로젝트 스킬을 업데이트하세요. 기존 프로젝트 바인딩·로컬 수정·설정은 보호됩니다.
+
 <a id="1-inspect-and-stop-relevant-processes"></a>
 
 ## 1. 관련 프로세스 확인 및 중지
@@ -65,11 +67,11 @@ todo-flow --state /absolute/project/todo compatibility \
 
 이 경로에는 기존 **`uv tool install` 설치**와 PATH에서 찾을 수 있는 `uv`가 필요합니다. 소스 체크아웃, editable 환경, 일반 가상환경 설치, 사용자 정의 추가 요구사항/옵션 또는 진입점을 가진 uv tool 설치는 덮어쓰지 않고 진단합니다. 해당 환경이 유휴 상태일 때 원래의 설치 방식으로 업데이트한 다음 프로젝트 호환성과 스킬을 확인하세요.
 
-[v0.0.9 릴리스](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.9)에서 wheel과 `SHA256SUMS`를 다운로드하고 체크섬을 확인한 뒤 로컬 wheel 경로를 전달하세요.
+[v0.1.0 릴리스](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0)에서 wheel과 `SHA256SUMS`를 다운로드하고 체크섬을 확인한 뒤 로컬 wheel 경로를 전달하세요.
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.9-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.9-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl
 ```
 
 계획에는 버전, 아티팩트 해시, 호환성 계약과 알려진 프로젝트가 표시됩니다. 실행 시 배타적 런타임 잠금 아래에서 이를 재확인하고 아티팩트 사본을 보관하며, 설치 환경과 두 진입점을 백업한 뒤 uv를 호출하고 설치된 버전·진입점·포함된 스킬을 검사합니다. 일반적인 설치/검증 실패는 이전 환경을 복원합니다. 업그레이드는 프로젝트 설정, 문서, claim 또는 원격 상태를 변경하지 않습니다.

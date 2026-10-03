@@ -4,7 +4,7 @@
 
 [README](README.ja.md) · [エージェントのインストール](AGENT_INSTALL.ja.md) · [運用](OPERATIONS.ja.md) · [デモ](DEMO.ja.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: a905e2445375ad0cad2da2eacf3edf2a02be1e8eb2a31470275a9c473289b9a6; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: 6262c997bc6bf94de1778b16b931c80acb2e1242139c275f42b01da6b1a9d133; status: translated -->
 
 共有エンジンを一度更新してから、各プロジェクトにインストールされたスキルを更新します。プロジェクトの文書と実行記録は既存の状態ディレクトリに残ります。更新はプロジェクトを再初期化せず、保留中の作業も開始しません。
 
@@ -42,6 +42,8 @@
 
 `0.0.9` は任意の検証事前チェックと中間チェック、条件に結び付けた機械証拠、ワーカー停止レシート、明示的な要求試行回数制限、不要になった統合チェックアウトのクリーンアップを追加します。状態/設定形式とワーカー/スキルプロトコルは変わりません。既存のプロジェクト設定は書き換えません。事前チェックと関連チェックは新しい状態向けのオプトイン設定です。段階的検証の指針と、トラック実行完了の報告前に所有リソースのクリーンアップを完了する要件を受け取るには、プロジェクトのスキルを更新してください。
 
+`0.1.0` は4言語のガイドと UI、テーマ選択、ワーカーモデル/エフォートの証拠、役割別ルーティング、検証結果別の後続処理、独立レビューの出典区分、スキルの共存、オフライン品質ケースを追加します。前の実行がトラックのロックを保持している間は後続作業の取得を防ぎます。状態/設定形式とワーカー/スキルプロトコルは変わらず、データ移行は不要です。処理が停止している間にエンジンとプロジェクトスキルを更新してください。既存のプロジェクト結び付け、ローカル編集、設定は保護されます。
+
 <a id="1-inspect-and-stop-relevant-processes"></a>
 
 ## 1. 関連プロセスを確認して停止する
@@ -65,11 +67,11 @@ todo-flow --state /absolute/project/todo compatibility \
 
 この方法には既存の **`uv tool install` によるインストール**と、PATH 上の `uv` が必要です。ソースチェックアウト、editable 環境、通常の仮想環境へのインストール、追加要件/オプションやエントリーポイントをカスタマイズした uv tool インストールは、上書きせず診断します。それらの環境はアイドル状態で元の方法を使って更新し、その後プロジェクトの互換性とスキルを確認してください。
 
-[v0.0.9 リリース](https://github.com/JakeB-5/todo-flow/releases/tag/v0.0.9)から wheel と `SHA256SUMS` をダウンロードし、チェックサムを確認してからローカルの wheel パスを渡します。
+[v0.1.0 リリース](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0)から wheel と `SHA256SUMS` をダウンロードし、チェックサムを確認してからローカルの wheel パスを渡します。
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.9-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.0.9-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl
 ```
 
 計画にはバージョン、アーティファクトのダイジェスト、互換性契約、既知のプロジェクトが表示されます。実行時には排他的なランタイムロックの下でそれらを再確認し、アーティファクトのコピーを保存し、インストール済み環境と 2 つのエントリーポイントをバックアップして uv を呼び出します。その後、インストールされたバージョン、エントリーポイント、同梱スキルを確認します。通常のインストール/検証失敗では以前の環境を復元します。アップグレードはプロジェクト設定、文書、claim、リモート状態を変更しません。
