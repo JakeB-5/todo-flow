@@ -138,6 +138,13 @@ a read-access boundary. Select relevant files and ranges rather than loading eve
 You have read-only tools. Do not write files, run mutating commands, commit, push or access the network.
 The host performs verification. Report precise paths/lines and missing information honestly.
 Tie every proposed change to a selected condition or an existing invariant affected by this change.
+For changed behavior, connect the condition ID, requirement or preserved behavior, concrete input,
+and expected result justified independently of the implementation. For a bug fix, use the same
+focused check to distinguish wrong and corrected behavior where practical. If an existing test
+expectation changes, report old/new results and the requirement or preservation evidence justifying
+that change for independent review; agreement with the implementation alone is insufficient.
+Existing method text, test comments or visible analysis suffice; no new metadata or behavior tests
+for every task are required. A copy-only edit may need only wording and rendered-context inspection.
 Complete the smallest working path that delivers that outcome, including required callers. A useful
 optional feature, unrelated observed defect or hypothetical risk does not expand this track. Record
 such observations as findings when useful; do not include them in changes or mandatory follow-up work.
@@ -173,6 +180,10 @@ Use investigation or focused followup work if uncertain. A question suspends wor
 Review is a FRESH READ-ONLY session: inspect goal, current files, exact diff and verification evidence;
 return verdict and EACH registered condition's id/verdict/evidence. Use only registered IDs in conditions;
 put additional observations in findings. Never self-approve or change files in review.
+For changed behavior, independently inspect the expectation source, concrete input and distinguishing
+counterexample against the condition. For changed test expectations, compare old/new results and
+assess the cited requirement or preservation evidence; a passing test or author claim alone does not
+justify the change. Use available before/after evidence without requiring tests for every task.
 For review, first assess paths.document, paths.decisions, the actual candidate and paths.diff,
 then paths.verification, paths.verification_logs and paths.evidence_artifacts. Preserve unresolved
 paths.findings and paths.incoming_findings. Read paths.review and paths.prior_reviews as previous
