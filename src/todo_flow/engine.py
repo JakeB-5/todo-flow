@@ -296,7 +296,7 @@ class Engine:
             revision / "track.html" if "presentation" in doc else revision.with_suffix(".md")
         )
         doc.pop("presentation", None)
-        return {
+        context = {
             "task": {k: task[k] for k in ("id", "kind", "purpose", "attempt")},
             "document": doc,
             "head": t["head"],
@@ -334,6 +334,26 @@ class Engine:
                 if json.loads(f["body"]).get("target") == t["id"]
             ],
         }
+        if task["kind"] == "review":
+            # Role and attempt come from stored records, never from a result's claims.
+            tasks = {w["id"]: w for w in snap["tasks"] if w["track"] == t["id"]}
+            records = [
+                {
+                    "result_id": r["id"],
+                    "task_id": r["task"],
+                    "kind": tasks[r["task"]]["kind"],
+                    "attempt": r["attempt"],
+                    "created": r["created"],
+                    "body": json.loads(r["body"]),
+                }
+                for r in sorted(snap["results"], key=lambda r: (r["created"], r["id"]))
+                if r["task"] in tasks
+            ]
+            del context["recent_results"]
+            # Implementation activity must not evict earlier independent assessments.
+            context["prior_reviews"] = [r for r in records if r["kind"] == "review"]
+            context["supplementary_results"] = [r for r in records if r["kind"] != "review"][-6:]
+        return context
 
     def record_review(self, task, result, expected_head=None):
         proposal_application.require_clear(self, task["track"])
