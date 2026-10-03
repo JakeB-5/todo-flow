@@ -1,6 +1,8 @@
 # Operating TODO Flow
 
-[Start here](README.md#quick-start) · [Agent installation](AGENT_INSTALL.md) · [한국어](README.ko.md)
+[English](OPERATIONS.md) · [한국어](OPERATIONS.ko.md) · [日本語](OPERATIONS.ja.md) · [简体中文](OPERATIONS.zh-CN.md)
+
+[Start here](README.md#quick-start) · [Agent installation](AGENT_INSTALL.md) · [Updates](UPDATES.md) · [Demo](DEMO.md)
 
 ## Project state and language
 
@@ -15,7 +17,7 @@ todo-flow serve --port 8765
 trackrun --state /absolute/project/todo TRACK_ID_1
 ```
 
-`init --language en|ko` persists the primary language in `config/1.json`. Interactive setup prompts when the flag is omitted; unattended setup defaults to English. Agent-assisted setup asks the user if no preference or existing configuration is available. Older configurations without the field default to English.
+`init --language en|ko|ja|zh-CN` persists the primary language in `config/1.json`. Interactive setup prompts when the flag is omitted; unattended setup defaults to English. Agent-assisted setup asks the user if no preference or existing configuration is available. Older configurations without the field default to English.
 
 Skills are written in English and use the primary language for new documents and user-facing explanations. Installed `project.json` identifies their project state and language. Built-in worker adapters receive the same language instruction; custom adapters receive `language` and `output_language_instruction` in their input. Schema keys, IDs, commands, code conventions and original source quotations stay unchanged.
 

@@ -1,6 +1,8 @@
 # Updating TODO Flow
 
-[README](README.md) · [Agent installation](AGENT_INSTALL.md) · [Operations](OPERATIONS.md)
+[English](UPDATES.md) · [한국어](UPDATES.ko.md) · [日本語](UPDATES.ja.md) · [简体中文](UPDATES.zh-CN.md)
+
+[README](README.md) · [Agent installation](AGENT_INSTALL.md) · [Operations](OPERATIONS.md) · [Demo](DEMO.md)
 
 Update the shared engine once, then update the installed skills of each project. Project documents and execution records remain in their existing state directory. Updating does not reinitialize a project or start pending work.
 

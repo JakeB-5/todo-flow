@@ -1,18 +1,19 @@
 """Project language for human-facing output; protocol keys remain stable."""
 
-LANGUAGES = {"en": "English", "ko": "한국어"}
+LANGUAGES = {"en": "English", "ko": "한국어", "ja": "日本語", "zh-CN": "简体中文"}
 
 
 def select_language(value=None, *, interactive=False):
+    choices = ", ".join(f"{code}: {name}" for code, name in LANGUAGES.items())
     if value is None and interactive:
         while True:
-            value = input("Primary language / 기본 언어 [en: English, ko: 한국어] (en): ").strip()
+            value = input(f"Primary language / 기본 언어 / 言語 / 语言 [{choices}] (en): ").strip()
             if not value or value in LANGUAGES:
                 break
-            print("Choose en or ko / en 또는 ko를 선택하세요.")
+            print(f"Choose one of: {', '.join(LANGUAGES)}")
     value = value or "en"
     if value not in LANGUAGES:
-        raise ValueError("Language must be en or ko")
+        raise ValueError(f"Language must be one of: {', '.join(LANGUAGES)}")
     return value
 
 

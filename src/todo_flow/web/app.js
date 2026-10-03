@@ -230,7 +230,7 @@ function activityDisconnected() {
 }
 function launchPanel(launch) {
   const evidence=launch?.evidence||'missing';
-  const summary=evidence==='available'?launch?.summaries?.[language]:null;
+  const summary=evidence==='available'?(launch?.summaries?.[language]||launch?.summaries?.en):null;
   const state=evidence==='available'?tr("Recorded"):evidence==='unreadable'?tr("Unreadable launch evidence"):tr("No launch evidence");
   const rows=[[tr("Evidence status"),state]];
   if(summary)rows.push([tr("Requested launcher"),summary.requested],[tr("Selected backend"),summary.backend],[tr("Selection reason"),summary.reason],[tr("Launch status"),summary.status]);

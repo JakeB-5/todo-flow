@@ -4,7 +4,9 @@
 
 Turn selected TODOs into parallel work, independent reviews and verified delivery—with files that survive the session and a dashboard that shows who is doing what.
 
-**English** · [한국어](README.ko.md)
+[English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [简体中文](README.zh-CN.md)
+
+[Installation](AGENT_INSTALL.md) · [Operations](OPERATIONS.md) · [Updates](UPDATES.md) · [Demo](DEMO.md)
 
 [Get started](#quick-start) · [See it in action](#see-it-in-action) · [For agents](#for-agents) · [Operations](OPERATIONS.md)
 
@@ -71,7 +73,7 @@ Useful for a backlog of independent changes, work that spans sessions, and revie
 
 ## Quick start
 
-Choose **English (`en`) or Korean (`ko`) during project setup**. This sets the project's default dashboard language and the language requested from agents for reports and new track documents. Skill instructions remain English. The dashboard also has an English / 한국어 switch for your personal display preference.
+Choose **English (`en`), Korean (`ko`), Japanese (`ja`) or Simplified Chinese (`zh-CN`) during project setup**. This sets the project's default dashboard language and the language requested from agents for reports and new track documents. Skill instructions remain English. The dashboard also has an English / 한국어 / 日本語 / 简体中文 switch for your personal display preference.
 
 ### Let your agent set it up
 
@@ -79,7 +81,7 @@ Paste this into your coding-agent session, filling in the project and first task
 
 ```text
 Install TODO Flow in /absolute/my-project following
-https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md. Ask me to choose English or Korean if I have not specified it.
+https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md. Ask me to choose en, ko, ja or zh-CN if I have not specified it.
 My first task is: [the change and expected result].
 Register a reviewable HTML TODO and show me its link. Select and run the
 track that covers this request, then report the actual result and next steps.
@@ -112,7 +114,7 @@ todo-flow install-skills --target .agents/skills
 todo-flow serve --port 8765
 ```
 
-Use `--language ko` for Korean. Omitting it prompts in an interactive terminal and defaults to English without a terminal. For Claude sessions, install to `.claude/skills`. Skills inherit the configured language. Add `--github OWNER/REPOSITORY` to `init` for GitHub issues and PRs.
+Use `--language ko`, `--language ja` or `--language zh-CN` for the other supported languages. Omitting it prompts in an interactive terminal and defaults to English without a terminal. For Claude sessions, install to `.claude/skills`. Skills inherit the configured language. Add `--github OWNER/REPOSITORY` to `init` for GitHub issues and PRs.
 
 Open **http://127.0.0.1:8765**. Ask your agent to use the installed todo skill, review the generated document, then select and run its actual ID. Setup is complete when the dashboard opens, the registered document renders and the requested first run reaches its configured endpoint. [Detailed setup and recovery](AGENT_INSTALL.md).
 
@@ -239,7 +241,7 @@ The default endpoint is **`review`**, which preserves a reviewed candidate. To a
 
 ## For agents
 
-Read **[AGENT_INSTALL.md](AGENT_INSTALL.md)** and perform the requested installation and first-run scope. Reuse existing configuration and authorization. **Ask for the primary language if it was not specified; persist it with `init --language en|ko` and use it for new documents and reports.** Do not infer language solely from the English README.
+Read **[AGENT_INSTALL.md](AGENT_INSTALL.md)** and perform the requested installation and first-run scope. Reuse existing configuration and authorization. **Ask for the primary language if it was not specified; persist it with `init --language en|ko|ja|zh-CN` and use it for new documents and reports.** Do not infer language solely from the English README.
 
 Acceptance conditions should trace to the selected outcome or an existing invariant affected by the change. Keep optional features and unrelated defects separate, and honor recorded user tradeoffs during work and review. Discovering an improvement does not authorize adding it to the current track.
 
@@ -266,7 +268,7 @@ One installed engine serves multiple projects. Each project has its own configur
 | Worker adapters | Claude CLI and Codex CLI; trusted command adapter for integrations/tests |
 | Remote delivery | Git remote, optionally GitHub issues / PRs through `gh` |
 | Project state | HTML / Markdown / JSON files; SQLite is only a rebuildable query cache |
-| Language | English / Korean project preference and dashboard UI |
+| Language | English / Korean / Japanese / Simplified Chinese project preference, dashboard UI and five core guides (README, installation, operations, updates, demo) |
 | Environment | Local macOS validation; Linux checks configured in CI. Windows is not supported by the current POSIX process/locking implementation. |
 
 ## Updates

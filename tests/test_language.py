@@ -9,8 +9,9 @@ from unittest.mock import patch
 
 from todo_flow.adapters import command
 from todo_flow.cli import main
-from todo_flow.documents import load, render_html
-from todo_flow.language import select_language
+from todo_flow.documents import load, parse, render, render_html, source
+from todo_flow.language import LANGUAGES, output_instruction, select_language
+from todo_flow.launch_display import BACKENDS, REASONS, STATUSES, describe_launch
 from todo_flow.projections import Dashboard
 from todo_flow.store import Store
 from todo_flow.worker import run_worker
@@ -161,3 +162,184 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(
             original, {"goal": "Keep this text unchanged", "workspace": str(self.root)}
         )
+
+    def test_four_languages_reach_registration_skills_and_worker(self):
+        example = Path(__file__).resolve().parents[1] / "examples" / "retry-backoff.html"
+        authored = load(example)
+        raw = {k: v for k, v in authored.items() if k not in ("presentation", "language")}
+        headings = {
+            "en": ("Goal", "Acceptance conditions"),
+            "ko": ("목표", "완료 조건"),
+            "ja": ("目標", "完了条件"),
+            "zh-CN": ("目标", "验收条件"),
+        }
+        script = self.root / "locale-worker.py"
+        script.write_text(
+            "import json,sys\n"
+            "from pathlib import Path\n"
+            'Path("received.json").write_text(json.dumps(json.load(sys.stdin)))\n'
+            'print(json.dumps({"summary":"Checked"}))\n'
+        )
+        self.assertEqual(set(LANGUAGES), {"en", "ko", "ja", "zh-CN"})
+        for language, name in LANGUAGES.items():
+            with self.subTest(language=language):
+                self.state = self.repo / ("state-" + language)
+                self.init("--language", language)
+                store = Store(self.state)
+                before = store.config()
+                self.assertEqual(before["language"], language)
+                self.assertEqual(Dashboard(store).overview()["project"]["language"], language)
+                target = self.repo / ("skills-" + language)
+                result = self.cli("install-skills", "--target", str(target))
+                self.assertEqual(result["language"], language)
+                for context_path in target.glob("*/project.json"):
+                    self.assertEqual(
+                        json.loads(context_path.read_text()),
+                        {"language": language, "state": str(self.state.resolve())},
+                    )
+                self.assertTrue((target / "todo" / "project.json").is_file())
+                input_path = self.root / "input.json"
+                input_path.write_text(json.dumps(raw))
+                self.cli("register", str(input_path))
+                saved = (self.state / "tracks" / raw["id"] / "track.html").read_text()
+                self.assertIn(f'lang="{language}"', saved)
+                self.assertIn(headings[language][1], saved)
+                doc = {**raw, "language": language}
+                markdown = render(doc)
+                self.assertIn("## " + headings[language][0] + "\n", markdown)
+                self.assertEqual(parse(markdown), doc)
+                self.assertEqual(render_html(authored), example.read_text())
+                # An authored Markdown presentation is not rewritten by localization.
+                authored_markdown = {
+                    **doc,
+                    "presentation": {"format": "markdown", "source": markdown, "assets": []},
+                }
+                self.assertEqual(source(authored_markdown), markdown)
+                self.assertIn(raw["goal"], markdown)
+                original = {
+                    "document": {"goal": "Authored text"},
+                    "workspace": str(self.root),
+                }
+                run_worker(
+                    {
+                        "language": language,
+                        "worker_protocol": 2,
+                        "worker_launcher": "headless",
+                        "worker": {"type": "command", "argv": [sys.executable, str(script)]},
+                    },
+                    original,
+                    {"attempt": "locale-" + language, "kind": "assess"},
+                    self.root,
+                    lambda _: None,
+                )
+                received = json.loads((self.root / "received.json").read_text())
+                self.assertEqual(received["language"], language)
+                self.assertIn(name, received["output_language_instruction"])
+                self.assertEqual(
+                    received["output_language_instruction"], output_instruction(language)
+                )
+                self.assertNotIn("document", received)
+                self.assertNotIn("goal", received)
+                received_document = json.loads(Path(received["paths"]["document"]).read_text())
+                self.assertEqual(received_document, {"goal": "Authored text"})
+                self.assertEqual(
+                    original,
+                    {"document": {"goal": "Authored text"}, "workspace": str(self.root)},
+                )
+                self.assertEqual(store.config(), before)
+
+    def test_all_interactive_choices_and_standalone_skill_languages(self):
+        for language in LANGUAGES:
+            with self.subTest(language=language):
+                with (
+                    patch("builtins.input", side_effect=["unsupported", language]) as ask,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(select_language(interactive=True), language)
+                self.assertEqual(ask.call_count, 2)
+                for code in LANGUAGES:
+                    self.assertIn(code + ":", ask.call_args.args[0])
+                target = self.repo / ("standalone-" + language)
+                self.cli("install-skills", "--target", str(target), "--language", language)
+                self.assertEqual(
+                    json.loads((target / "todo" / "project.json").read_text())["language"],
+                    language,
+                )
+        self.assertFalse(self.state.exists())
+        with patch("builtins.input", return_value=""):
+            self.assertEqual(select_language(interactive=True), "en")
+
+    def test_new_document_unknown_language_falls_back_without_changing_content(self):
+        doc = {"id": "fallback", "title": "Authored title", "goal": "Authored goal"}
+        for language in (None, "unsupported"):
+            candidate = {**doc, "language": language}
+            self.assertIn('lang="en"', render_html(candidate))
+            self.assertIn("Acceptance conditions", render_html(candidate))
+            self.assertEqual(parse(render(candidate)), candidate)
+
+    def test_launch_labels_translate_known_codes_and_preserve_unknown_values(self):
+        for language in LANGUAGES:
+            with self.subTest(language=language):
+                for field, mapping in (
+                    ("backend", BACKENDS),
+                    ("reason", REASONS),
+                    ("status", STATUSES),
+                ):
+                    for code, labels in mapping.items():
+                        record = {"selection": {"requested": "auto"}}
+                        if field == "reason":
+                            record["selection"]["reason"] = code
+                        else:
+                            record[field] = code
+                        summary = describe_launch(record, language)
+                        self.assertEqual(summary["requested"], "auto")
+                        if language == "en":
+                            self.assertEqual(summary[field], labels[0])
+                        elif language == "ko":
+                            self.assertEqual(summary[field], labels[1])
+                        else:
+                            self.assertTrue(summary[field])
+                            self.assertNotEqual(summary[field], labels[0])
+                unknown = describe_launch(
+                    {
+                        "backend": "future-backend",
+                        "status": "future-status",
+                        "selection": {"reason": "future-reason", "requested": "future-launcher"},
+                    },
+                    language,
+                )
+                self.assertEqual(unknown["backend"], "future-backend")
+                self.assertEqual(unknown["status"], "future-status")
+                self.assertEqual(unknown["reason"], "future-reason")
+                self.assertEqual(unknown["requested"], "future-launcher")
+        self.assertEqual(describe_launch({}, "unsupported"), describe_launch({}, "en"))
+
+    def test_launch_cli_accepts_all_languages_without_changing_receipt(self):
+        self.init()
+        store = Store(self.state)
+        with store.transaction() as connection:
+            connection.execute(
+                "INSERT INTO tasks(id,track,kind,purpose,created,updated) VALUES(?,?,?,?,?,?)",
+                ("locale-task", "fixture", "work", "Authored purpose", 1, 1),
+            )
+            connection.execute(
+                "INSERT INTO attempts(id,task,started,status) VALUES(?,?,?,?)",
+                ("locale-attempt", "locale-task", 1, "running"),
+            )
+        folder = self.state / "attempts" / "locale-attempt"
+        folder.mkdir(parents=True, exist_ok=True)
+        receipt = folder / "launch.json"
+        receipt.write_text(json.dumps({"backend": "orca", "status": "accepted"}))
+        before = receipt.read_bytes()
+        for language, expected in (
+            ("en", "worker start not established"),
+            ("ko", "워커 시작 근거 아님"),
+            ("ja", "ワーカー開始の証拠ではありません"),
+            ("zh-CN", "尚无工作进程启动的证据"),
+        ):
+            with self.subTest(language=language):
+                result = self.cli("launch-status", "locale-task", "--language", language)
+                self.assertIn(expected, result["summary"]["status"])
+                self.assertEqual(result["record"]["status"], "accepted")
+                self.assertEqual(receipt.read_bytes(), before)
+        self.assertEqual(store.config()["language"], "en")

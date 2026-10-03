@@ -1,6 +1,8 @@
 # See TODO Flow in action
 
-[README](README.md) · [한국어](README.ko.md) · [Operations](OPERATIONS.md)
+[English](DEMO.md) · [한국어](DEMO.ko.md) · [日本語](DEMO.ja.md) · [简体中文](DEMO.zh-CN.md)
+
+[README](README.md) · [Agent installation](AGENT_INSTALL.md) · [Operations](OPERATIONS.md) · [Updates](UPDATES.md)
 
 ## This repository's own setup
 
@@ -29,7 +31,7 @@ Open `http://127.0.0.1:8766`:
 3. Open Activity to inspect owners, current tasks and decision waits.
 4. Open a track to read its document, conditions and evidence.
 5. Search the separate completed archive and load earlier records when needed.
-6. Switch English / 한국어. Selection and decision drafts are retained; authored content stays in its original language.
+6. Switch English / 한국어 / 日本語 / 简体中文. Selection and decision drafts are retained; authored content stays in its original language.
 
 The fixture refuses mutating dashboard requests. Run real work in a separate initialized project.
 
@@ -46,7 +48,7 @@ The script only combines supplied captures; it does not manufacture execution st
 
 ## Run the full workflow
 
-Use a disposable project with an initial commit, an origin remote, authentication and working tests. Follow [setup](AGENT_INSTALL.md), choose `en` or `ko`, and use `--endpoint land --allow-land` if this exercise should include real landing and triage. Without those flags, it ends at a reviewed candidate.
+Use a disposable project with an initial commit, an origin remote, authentication and working tests. Follow [setup](AGENT_INSTALL.md), choose `en`, `ko`, `ja` or `zh-CN`, and use `--endpoint land --allow-land` if this exercise should include real landing and triage. Without those flags, it ends at a reviewed candidate.
 
 Give the agent two bounded requirements, for example:
 
