@@ -85,19 +85,13 @@ class RichDocumentTests(unittest.TestCase):
             original,
         )
         detail = Dashboard(self.store).detail("retry-backoff")
-        self.assertEqual(
-            detail["documentView"]["url"], "/documents/retry-backoff/1/index.html"
-        )
+        self.assertEqual(detail["documentView"]["url"], "/documents/retry-backoff/1/index.html")
         self.assertEqual(track["status"], "open")
         self.assertEqual(track["control"], "idle")
         self.assertIsNone(track["request"])
         with self.store.connect() as connection:
-            self.assertEqual(
-                connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 0
-            )
-            self.assertEqual(
-                connection.execute("SELECT COUNT(*) FROM attempts").fetchone()[0], 0
-            )
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM attempts").fetchone()[0], 0)
 
     def test_markdown_preserves_arbitrary_body_and_renders_table_svg_script(self):
         text = (
