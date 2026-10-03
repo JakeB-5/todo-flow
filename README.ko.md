@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 73d1b8c23f2e72243113043a08f4d62c9c032aba6e4932278bc33a73d22c087f; status: translated -->
+<!-- translation-source: README.md; source-sha256: 02e2117958fbe35650f9b24fbd5893d58caafaa9f57eebe4f196d4f9cb32bcdc; status: translated -->
 
 ## 37초로 보는 TODO Flow
 
@@ -342,6 +342,8 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 [업데이트·롤백](UPDATES.ko.md) · [운영·복구](OPERATIONS.ko.md) · [데모·인수 테스트](DEMO.ko.md) · [기여](CONTRIBUTING.md) · [변경 기록](CHANGELOG.md) · [에이전트 저장소 규칙](AGENTS.md) · [CI 설정](.github/workflows/ci.yml)
 
 버그·개선 제안은 저장소 Issues에 공개 가능한 최소 재현과 함께 남겨주세요. 기여와 로컬 검증 명령은 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다. `docs/`의 로컬 설계 기록은 Git에서 무시하며 사용·빌드에 필요하지 않습니다.
+
+확정된 피드백을 재사용하려면 [확정 피드백 재사용 지침](AGENTS.md#reusing-confirmed-feedback)을 참고하세요. 출처·적용 범위·공개 가능한 반례·확인 방법을 기존 규칙 곁에 유지합니다. 구현자 제안은 사용자 승인이 아니며, 규칙을 기록해도 미충족 조건이나 finding 처분을 대신하지 않습니다.
 
 **[MIT 라이선스](LICENSE)** · Copyright © 2026 TODO Flow contributors.
 

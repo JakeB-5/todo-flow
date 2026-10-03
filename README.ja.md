@@ -12,7 +12,7 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 73d1b8c23f2e72243113043a08f4d62c9c032aba6e4932278bc33a73d22c087f; status: translated -->
+<!-- translation-source: README.md; source-sha256: 02e2117958fbe35650f9b24fbd5893d58caafaa9f57eebe4f196d4f9cb32bcdc; status: translated -->
 
 ## 37秒で見る TODO Flow
 
@@ -342,6 +342,8 @@ uv tool としてインストールした場合、`todo-flow upgrade --wheel /ab
 [更新とロールバック](UPDATES.ja.md) · [運用と復旧](OPERATIONS.ja.md) · [デモと受け入れテスト](DEMO.ja.md) · [貢献ガイド](CONTRIBUTING.md) · [変更履歴](CHANGELOG.md) · [エージェント向けリポジトリ規則](AGENTS.md) · [CI 設定](.github/workflows/ci.yml)
 
 不具合報告や改善提案はリポジトリの Issue で行い、公開しても問題のない最小の再現手順を含めてください。貢献とローカル検証のコマンドは [CONTRIBUTING.md](CONTRIBUTING.md) にあります。`docs/` のローカル設計メモは Git の管理対象外で、プロジェクトの利用やビルドには不要です。
+
+確定したフィードバックの再利用については、[確定したフィードバックの再利用指針](AGENTS.md#reusing-confirmed-feedback)を参照してください。出典、適用範囲、公開可能な反例、確認方法を既存の規則のそばに置きます。実装者の提案はユーザーの承認ではなく、規則の記録は未達成の条件や finding の処置を代替しません。
 
 **[MIT ライセンス](LICENSE)** · Copyright © 2026 TODO Flow contributors.
 
