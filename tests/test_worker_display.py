@@ -122,8 +122,7 @@ class WorkerDisplayTests(unittest.TestCase):
     def test_retry_missing_record_never_borrows_previous_attempt(self):
         with self.store.transaction() as c:
             c.execute(
-                "INSERT INTO attempts(id,task,started,status)"
-                " VALUES('a-retry','one',3,'running')"
+                "INSERT INTO attempts(id,task,started,status) VALUES('a-retry','one',3,'running')"
             )
         detail = self.dashboard.task("one")
         worker = detail["worker"]
