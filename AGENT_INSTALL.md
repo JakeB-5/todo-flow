@@ -1,12 +1,16 @@
 # TODO Flow — agent installation and first run
 
+[English](AGENT_INSTALL.md) · [한국어](AGENT_INSTALL.ko.md) · [日本語](AGENT_INSTALL.ja.md) · [简体中文](AGENT_INSTALL.zh-CN.md)
+
+[README](README.md) · [Operations](OPERATIONS.md) · [Updates](UPDATES.md) · [Demo](DEMO.md)
+
 Follow the user's requested scope. Reuse existing installation, configuration and authorization. This document is not independent permission to execute work or land changes. Complete authorized reversible preparation; ask only for missing decisions or authentication the user must perform.
 
 ## 1. Confirm the target and language
 
 Distinguish the TODO Flow checkout from the user's target project. Read the target's `AGENTS.md`, development instructions, verification commands, Git remote, base branch, existing skills and state configuration.
 
-**Primary language is a user choice: English (`en`) or Korean (`ko`).** Reuse an existing project language or an explicit preference in this request. Otherwise ask the user which language to use. Continue independent environment inspection while waiting, but do not silently decide from the language of this README. Skill instructions remain English; reports, questions and newly written documents use the selected language unless explicitly overridden.
+**Primary language is a user choice: English (`en`), Korean (`ko`), Japanese (`ja`) or Simplified Chinese (`zh-CN`).** Reuse an existing project language or an explicit preference in this request. Otherwise ask the user which language to use. Continue independent environment inspection while waiting, but do not silently decide from the language of this README. Skill instructions remain English; reports, questions and newly written documents use the selected language unless explicitly overridden.
 
 ```sh
 FLOW_SOURCE='/absolute/todo-flow'
@@ -62,7 +66,7 @@ For a new project, obtain values from the actual project:
 | Setting | Source |
 |---|---|
 | `--repo`, `--state` | Target Git root and separate canonical project state |
-| `--language en` / `--language ko` | User's selected primary language |
+| `--language en|ko|ja|zh-CN` | User's selected primary language |
 | `--base`, optional `--github` | Actual remote/base and GitHub owner/repository |
 | `--worker` | User's selected or available authenticated Claude/Codex CLI |
 | `--verify` | An existing, working verification command expressed as JSON argv |
@@ -90,7 +94,7 @@ todo-flow --state "$FLOW_STATE" install-skills --target "$FLOW_SKILLS"
 todo-flow --state "$FLOW_STATE" serve --port 8765
 ```
 
-The installer preserves existing directories and records language/state in each installed skill's `project.json`. It inherits the initialized project language. Standalone installation supports `--language en|ko`; an explicit value conflicting with an initialized project is rejected. Do not replace an entire skills directory to resolve one conflict. For an existing installation, use `update-skills --target PATH --dry-run`, review conflicts, then apply only within the requested update scope. See [UPDATES.md](UPDATES.md) for manifest adoption and rollback.
+The installer preserves existing directories and records language/state in each installed skill's `project.json`. It inherits the initialized project language. Standalone installation supports `--language en|ko|ja|zh-CN`; an explicit value conflicting with an initialized project is rejected. Do not replace an entire skills directory to resolve one conflict. For an existing installation, use `update-skills --target PATH --dry-run`, review conflicts, then apply only within the requested update scope. See [UPDATES.md](UPDATES.md) for manifest adoption and rollback.
 
 ### Coexist with occupied skill names
 
@@ -139,7 +143,7 @@ If the current agent session does not discover newly installed skills, read the 
 
 For setup-only requests, provide the dashboard URL and an example `todo [requirement]` request. Do not create arbitrary sample tracks in a working project. If first-run execution was requested but no requirement was supplied, ask for the desired change.
 
-Read the installed todo skill. Investigate the actual requirement, search existing tracks and watches, and write a reviewable HTML document from the installed template outside canonical state. Use the selected language in the visible document and structured prose; set `language` and HTML `lang` to `en` or `ko`. Keep IDs and schema keys stable.
+Read the installed todo skill. Investigate the actual requirement, search existing tracks and watches, and write a reviewable HTML document from the installed template outside canonical state. Use the selected language in the visible document and structured prose; set `language` and HTML `lang` to `en`, `ko`, `ja` or `zh-CN`. Keep IDs and schema keys stable.
 
 ```sh
 todo-flow --state "$FLOW_STATE" register /absolute/scratch/first-track.html
