@@ -210,6 +210,90 @@ function launchFixture(status='accepted') {
       status:failed?'실행 전 선택 실패':'터미널 요청 수락됨; 워커 시작 근거 아님'}
   }};
 }
+function workerFixture(id='one') {
+  const field=(value,status,source)=>({value,status,source});
+  return {attempt:'attempt-'+id,
+    provider:field('codex','selected','worker-selection.json:selected.provider'),
+    model:{selected:field('chosen-'+id,'selected','worker-selection.json:selected.model'),
+      confirmed:field(id==='one'?'native-'+('x'.repeat(450))+'<tag>':null,
+        id==='one'?'confirmed':'unconfirmed','native-session.json:provider_confirmed.model')},
+    effort:{selected:field(id==='one'?'high':'low','selected','worker-selection.json:selected.effort'),
+      confirmed:field(null,'unconfirmed','native-session.json:provider_confirmed.effort')}};
+}
+
+test('worker summary uses field-level confirmation and preserves activity context across languages',async()=>{
+  const e=activityEnvironment();
+  const one=workerFixture('one'), two=workerFixture('two');
+  e.data.items[0].current.worker=one;
+  e.data.items[1].current.worker=two;
+  const originalFetch=e.context.fetch;
+  e.context.fetch=async url=>{
+    const response=await originalFetch(url);
+    const body=await response.json();
+    if(url==='/api/tasks/one')body.worker=one;
+    return {ok:true,json:async()=>body};
+  };
+  const hash=e.context.location.hash;
+  const original=JSON.stringify([one,two]);
+  e.run("selected.set('alpha','Authored title');drafts.set('d1','Keep draft')");
+  for(const locale of ['en','ko']) {
+    e.run('saveDisplayLanguage('+JSON.stringify(locale)+')');
+    await e.load();
+    const work=e.html('work'), detail=e.html('taskInspector');
+    assert.ok(work.includes('native-'+('x'.repeat(450))+'&lt;tag&gt;'));
+    assert.ok(work.includes('chosen-two'));
+    assert.ok(!work.includes('chosen-one'));
+    assert.ok(!work.includes('native-session.json'));
+    assert.ok(!work.includes('<tag>'));
+    assert.ok(work.includes('high · '+e.run("tr('Selected value')")));
+    assert.ok(work.includes('low · '+e.run("tr('Selected value')")));
+    assert.ok(work.includes(e.run("tr('Provider-confirmed value')")));
+    assert.ok(work.includes(e.run("tr('Reasoning effort')")));
+    assert.ok(detail.includes('chosen-one'));
+    assert.ok(!detail.includes('chosen-two'));
+    assert.ok(detail.includes('native-session.json:provider_confirmed.model'));
+    assert.ok(detail.includes('worker-selection.json:selected.effort'));
+    assert.ok(detail.includes(e.run("tr('Not confirmed')")));
+    assert.ok(detail.includes(e.run("tr('Source')")));
+    assert.ok(!detail.includes('<tag>'));
+    assert.equal(e.context.location.hash,hash);
+    assert.equal(e.run('currentTask'),'one');
+    assert.equal(e.run("selected.get('alpha')"),'Authored title');
+    assert.equal(e.run("drafts.get('d1')"),'Keep draft');
+  }
+  assert.equal(JSON.stringify([one,two]),original);
+});
+
+test('worker details distinguish delegation, missing records and unreadable evidence',async()=>{
+  const e=inspectorEnvironment();
+  for(const locale of ['en','ko']) {
+    e.run('applyLanguage('+JSON.stringify(locale)+')');
+    const first=taskFixture('one');
+    first.worker=workerFixture('one');
+    let pending=e.inspect('one');
+    e.requests.at(-1).resolve(first);await pending;
+    assert.ok(e.html().includes('chosen-one'));
+    const second=taskFixture('two');
+    second.worker=workerFixture('two');
+    second.worker.model.selected={value:null,status:'delegated',source:'worker-selection.json:selected.model'};
+    second.worker.effort.selected={value:null,status:'missing',source:null};
+    second.worker.effort.confirmed={value:null,status:'unreadable',source:null};
+    pending=e.inspect('two');
+    e.requests.at(-1).resolve(second);await pending;
+    assert.ok(!e.html().includes('chosen-one'));
+    assert.ok(e.html().includes(e.run("tr('Provider default')")));
+    assert.ok(e.html().includes(e.run("tr('No record')")));
+    assert.ok(e.html().includes(e.run("tr('Unreadable worker evidence')")));
+    assert.ok(e.html().includes('attempt-two'));
+    assert.equal(e.run('currentTask'),'two');
+    pending=e.inspect('legacy');
+    e.requests.at(-1).resolve(taskFixture('legacy'));await pending;
+    assert.ok(e.html().includes(e.run("tr('Worker model and reasoning effort')")));
+    assert.ok(e.html().includes(e.run("tr('No record')")));
+    assert.ok(!e.html().includes(e.run("tr('Provider default')")));
+  }
+});
+
 function taskFixture(id='one',launch=launchFixture()) {
   return {task:{id,kind:'work',purpose:'Authored purpose '+id,owner:'worker-one',
     status:'running',lease:Date.now()/1000+60,updated:1,generation:2,track:'track/'+id},

@@ -34,11 +34,31 @@ class CleanupTests(unittest.TestCase):
         self.s.start("second")
         Engine(self.s).run(jobs=2, max_tasks=20)
         worktrees = command(["git", "worktree", "list", "--porcelain"], self.repo)
-        self.assertEqual(worktrees.count("worktree "), 1)
-        for track in self.s.snapshot()["tracks"]:
-            self.assertEqual(track["status"], "done")
-            report = json.loads(receipt_path(self.s, track).read_text())
-            self.assertEqual(report["status"], "complete", encode(report))
+        snapshot = self.s.snapshot()
+        receipts = {}
+        for track in snapshot["tracks"]:
+            path = receipt_path(self.s, track)
+            receipts[track["id"]] = (
+                json.loads(path.read_text()) if path.exists() else {"missing": str(path)}
+            )
+        diagnostics = encode(
+            {
+                "tracks": snapshot["tracks"],
+                "tasks": snapshot["tasks"],
+                "decisions": snapshot["decisions"],
+                "cleanup_events": [
+                    event for event in snapshot["events"] if event["type"].startswith("cleanup.")
+                ],
+                "receipts": receipts,
+                "git_worktrees": worktrees,
+            }
+        )
+        print("Parallel completion diagnostics: " + diagnostics, flush=True)
+        self.assertEqual(worktrees.count("worktree "), 1, diagnostics)
+        for track in snapshot["tracks"]:
+            self.assertEqual(track["status"], "done", diagnostics)
+            report = receipts[track["id"]]
+            self.assertEqual(report.get("status"), "complete", diagnostics)
             self.assertGreaterEqual(len(report["worktrees"]), 3)
             self.assertTrue((self.s.path / "tracks" / track["id"] / "track.html").exists())
             self.assertEqual(

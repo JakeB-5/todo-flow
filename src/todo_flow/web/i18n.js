@@ -1,5 +1,15 @@
 // English messages are the source. Only product UI is translated, never authored content.
 const koreanMessages = {
+  "Worker model and reasoning effort": "워커 모델·추론 에포트",
+  "Model": "모델",
+  "Reasoning effort": "추론 에포트",
+  "Provider": "공급자",
+  "Selected value": "선택값",
+  "Provider-confirmed value": "공급자 확인값",
+  "Provider default": "공급자 기본값에 위임",
+  "Not confirmed": "확인되지 않음",
+  "Unreadable worker evidence": "워커 근거를 읽을 수 없음",
+  "Source": "출처",
   "{tracks} tracks / {tasks} active tasks": "트랙 {tracks}개 / 활성 작업 {tasks}개",
   "Failed": "실패",
   "Passed": "통과",
@@ -548,6 +558,18 @@ const additionalMessages = {
   "Medium": ["中", "中"],
   "Low": ["低", "低"]
 };
+Object.assign(additionalMessages, {
+  "Worker model and reasoning effort": ["ワーカーのモデル・推論エフォート", "工作进程模型与推理强度"],
+  "Model": ["モデル", "模型"],
+  "Reasoning effort": ["推論エフォート", "推理强度"],
+  "Provider": ["プロバイダー", "提供方"],
+  "Selected value": ["選択値", "所选值"],
+  "Provider-confirmed value": ["プロバイダー確認値", "提供方确认值"],
+  "Provider default": ["プロバイダーの既定値に委任", "使用提供方默认值"],
+  "Not confirmed": ["未確認", "尚未确认"],
+  "Unreadable worker evidence": ["ワーカーの根拠を読み取れません", "无法读取工作进程依据"],
+  "Source": ["出典", "来源"]
+});
 const catalogs = {
   en: {},
   ko: koreanMessages,
