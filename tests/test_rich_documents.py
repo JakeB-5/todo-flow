@@ -70,6 +70,29 @@ class RichDocumentTests(unittest.TestCase):
         self.assertNotIn("presentation", detail["document"])
         self.assertEqual(detail["documentView"]["url"], "/documents/rich-track/2/index.html")
 
+    def test_retry_example_preserves_authored_html_without_starting_work(self):
+        path = Path(__file__).resolve().parents[1] / "examples/retry-backoff.html"
+        original = path.read_bytes()
+        doc = documents.load(path)
+        self.store.register(doc)
+        track = self.store.track("retry-backoff")
+        stored = json.loads(track["document"])
+        self.assertEqual([item["id"] for item in stored["conditions"]], ["retry"])
+        self.assertEqual(stored["conditions"], doc["conditions"])
+        self.assertEqual(documents.render_html(stored).encode("utf-8"), original)
+        self.assertEqual(
+            (self.store.path / "tracks/retry-backoff/track.html").read_bytes(),
+            original,
+        )
+        detail = Dashboard(self.store).detail("retry-backoff")
+        self.assertEqual(detail["documentView"]["url"], "/documents/retry-backoff/1/index.html")
+        self.assertEqual(track["status"], "open")
+        self.assertEqual(track["control"], "idle")
+        self.assertIsNone(track["request"])
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM attempts").fetchone()[0], 0)
+
     def test_markdown_preserves_arbitrary_body_and_renders_table_svg_script(self):
         text = (
             "---\n"
