@@ -269,7 +269,7 @@ class CancellationTests(unittest.TestCase):
                     (task["id"],),
                 )
                 connection.execute("UPDATE tracks SET control='active' WHERE id='addition'")
-            replacement.append(self.s.claim("replacement"))
+            self.assertIsNone(self.s.claim("replacement"))
             return {
                 "summary": "late",
                 "changes": [{"path": "calc.py", "content": "late write"}],
@@ -287,6 +287,10 @@ class CancellationTests(unittest.TestCase):
         verify.assert_not_called()
         publish.assert_not_called()
         self.assertEqual((workspace / "calc.py").read_bytes(), original)
+        # Reassignment waits until the old attempt releases its execution lock.
+        replacement.append(self.s.claim("replacement"))
+        self.assertIsNotNone(replacement[0])
+        recover_request(self.s, self.requests()[0])
         self.assertGreater(replacement[0]["generation"], task["generation"])
         self.assert_cancelled(task)
         self.assertEqual(self.attempt(replacement[0])["status"], "running")

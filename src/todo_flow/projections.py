@@ -8,6 +8,7 @@ from . import condition_evidence
 from .language import LANGUAGES
 from .launch_display import describe_launch, read_launch
 from .verification_log_view import log_view, read_log_range
+from .worker_display import read_worker
 
 
 SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
@@ -298,6 +299,15 @@ class Dashboard:
                     (track["id"],),
                 ).fetchone()
                 track["current"] = dict(task) if task else None
+                if task:
+                    attempt = c.execute(
+                        "SELECT id FROM attempts WHERE task=?"
+                        " ORDER BY started DESC,id DESC LIMIT 1",
+                        (task["id"],),
+                    ).fetchone()
+                    track["current"]["worker"] = read_worker(
+                        self.store.path, attempt["id"] if attempt else None
+                    )
         result["observedAt"] = now
         return result
 
@@ -383,6 +393,7 @@ class Dashboard:
         return {
             "task": dict(w),
             "attempt": dict(a) if a else None,
+            "worker": read_worker(self.store.path, a["id"] if a else None),
             "result": json.loads(r["body"]) if r else None,
             # Expose runtime labels and explicitly selected resource identifiers only.
             "launch": {

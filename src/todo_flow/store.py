@@ -493,6 +493,8 @@ class Store:
         return state
 
     def claim(self, owner, ttl=45, *, connection=None):
+        from .adapters import file_lock
+
         with (
             contextlib.nullcontext(connection)
             if connection is not None
@@ -506,6 +508,14 @@ class Store:
                 "AND a.status='running') ORDER BY w.created,w.id"
             ).fetchall()
             for row in rows:
+                # A finished task may still own its process_attempt lock. Probe without
+                # waiting while holding the transaction, before consuming a claim/budget.
+                # Execution retains its own lock and claim checks against later owners.
+                try:
+                    with file_lock(self.path / "locks" / (row["track"] + ".lock")):
+                        pass
+                except Conflict:
+                    continue
                 t = self.track(row["track"], c)
                 if t["control"] != "active":
                     continue
