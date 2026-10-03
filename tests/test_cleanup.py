@@ -47,9 +47,7 @@ class CleanupTests(unittest.TestCase):
                 "tasks": snapshot["tasks"],
                 "decisions": snapshot["decisions"],
                 "cleanup_events": [
-                    event
-                    for event in snapshot["events"]
-                    if event["type"].startswith("cleanup.")
+                    event for event in snapshot["events"] if event["type"].startswith("cleanup.")
                 ],
                 "receipts": receipts,
                 "git_worktrees": worktrees,
