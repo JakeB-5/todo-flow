@@ -51,6 +51,8 @@ def initialize(args):
         config["verify_preflight"] = json.loads(args.verify_preflight)
     if args.verify_related is not None:
         config["verify_related"] = json.loads(args.verify_related)
+    if args.verify_concurrency is not None:
+        config["verify_concurrency"] = args.verify_concurrency
     check_config(config)
     store = Store(args.state or repo / "todo")
     store.configure(config)
@@ -110,6 +112,11 @@ def parser():
         help="Optional worker time limit in seconds (default: no time limit)",
     )
     i.add_argument("--verify-timeout", type=int, default=180)
+    i.add_argument(
+        "--verify-concurrency",
+        type=int,
+        help="Positive verification command limit shared by drivers using this state",
+    )
     i.add_argument(
         "--language",
         choices=list(LANGUAGES),

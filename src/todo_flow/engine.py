@@ -24,7 +24,7 @@ from .cancel_execution import reconcile_cancelled
 from .verification import VerificationCleanupError, run as run_verification
 from .process_barrier import ProcessBarrier, ProcessBarrierError
 from .process_inventory import ProcessInventory, launch_identity
-from . import managed_workspace
+from . import managed_workspace, verification_capacity
 
 
 class Engine:
@@ -191,14 +191,39 @@ class Engine:
                     "ok": False,
                 }
                 checks.append(check)
-                output = run_verification(
-                    argv,
-                    workspace,
-                    timeout=self.config.get("verify_timeout", 180),
-                    env=environment,
-                    launch_identity=execution,
+                limit = self.config.get("verify_concurrency")
+                with verification_capacity.slot(
+                    self.store.path,
+                    limit,
+                    task,
+                    execution,
+                    stage=stage,
+                    workspace=workspace,
+                    head=head,
+                    scope=scope,
                     check=lambda: self.check_claim(task),
-                )
+                ):
+                    if limit is not None:
+                        # Waiting grants capacity only, never claim/input validity.
+                        self.check_claim(task)
+                        proposal_application.require_clear(self, task["track"])
+                        self.process_barrier(task["track"]).require_clear()
+                        require_clean(workspace, head)
+                        current = verification_identity.capture(
+                            self.config, workspace, environment, scope=scope
+                        )
+                        if not verification_identity.matches(identity, current):
+                            raise verification_identity.VerificationIdentityError(
+                                "Verification inputs changed while waiting for capacity"
+                            )
+                    output = run_verification(
+                        argv,
+                        workspace,
+                        timeout=self.config.get("verify_timeout", 180),
+                        env=environment,
+                        launch_identity=execution,
+                        check=lambda: self.check_claim(task),
+                    )
                 check.update(
                     ok=True,
                     outcome="passed",
