@@ -8,6 +8,7 @@ import test_web
 
 class TaskLaunchHttpTests(unittest.TestCase):
     setUp = test_web.HttpTests.setUp
+    stop_server = test_web.HttpTests.stop_server
     tearDown = test_web.HttpTests.tearDown
     get = test_web.HttpTests.get
 

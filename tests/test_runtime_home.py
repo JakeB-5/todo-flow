@@ -14,6 +14,7 @@ from unittest.mock import patch
 import test_file_store
 import test_flow
 import test_language
+import test_task_launch_http
 import test_updates
 import test_web
 import test_worker_routing
@@ -172,6 +173,40 @@ class RuntimeHomeIsolationTests(unittest.TestCase):
                 self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
                 self.assertEqual(os.environ["TODO_FLOW_HOME"], str(self.real_home))
                 self.assertEqual(self.snapshot(), before)
+
+    def test_task_launch_http_fixture_stops_server_and_restores_caller_home(self):
+        # test-home-contained / real-update-protection: run the unchanged HTTP
+        # expectations under a sentinel caller home, including the reused setup.
+        before = self.snapshot()
+        cases = unittest.defaultTestLoader.loadTestsFromTestCase(
+            test_task_launch_http.TaskLaunchHttpTests
+        )
+        for case in cases:
+            with self.subTest(method=case.id()):
+                homes = []
+
+                def record_home(test_case):
+                    isolated = isolate_runtime_home(test_case)
+                    homes.append(isolated)
+                    return isolated
+
+                result = unittest.TestResult()
+                try:
+                    with patch.object(test_web, "isolate_runtime_home", side_effect=record_home):
+                        case.run(result)
+                    self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+                    self.assertEqual(len(homes), 1)
+                    self.assertNotEqual(homes[0], self.real_home)
+                    self.assertIsNotNone(case.proc.poll())
+                    self.assertFalse(homes[0].exists())
+                    self.assertFalse(Path(case.tmp.name).exists())
+                    self.assertEqual(os.environ["TODO_FLOW_HOME"], str(self.real_home))
+                    self.assertEqual(self.snapshot(), before)
+                finally:
+                    # Keep the pre-fix AttributeError counterexample from leaking
+                    # its child; this fallback runs only after lifecycle assertions.
+                    if hasattr(case, "proc"):
+                        stop_process(case.proc)
 
     def test_setup_failures_restore_the_callers_home(self):
         # real-update-protection: unittest skips tearDown after a setUp error.
