@@ -2,9 +2,12 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from todo_flow.cleanup import receipt_path
 from todo_flow.projections import Dashboard
-from todo_flow.store import Store, encode
+from todo_flow.store import Store, encode, fingerprint
+from todo_flow.triage import state_key
 
 
 class ProjectionTests(unittest.TestCase):
@@ -234,3 +237,295 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(self.dashboard.tracks(control="running")["total"], 0)
         self.assertEqual(self.dashboard.activity()["items"][0]["status"], "running")
         self.assertEqual(self.dashboard.activity()["items"][0]["uncertain"], 1)
+
+    def test_delivery_lookup_is_limited_to_the_archive_page(self):
+        from todo_flow.delivery_display import delivery_summary
+
+        with patch("todo_flow.projections.delivery_summary", wraps=delivery_summary) as read:
+            result = self.dashboard.tracks(view="completed", limit=5, offset=100)
+        self.assertEqual(result["total"], 2000)
+        self.assertEqual(len(result["items"]), 5)
+        self.assertEqual(
+            [call.args[2] for call in read.call_args_list],
+            [row["id"] for row in result["items"]],
+        )
+        self.assertTrue(all(not row["selectable"] for row in result["items"]))
+        self.assertLess(len(encode(result)), 10000)
+
+
+class DeliveryProjectionTests(unittest.TestCase):
+    # Expectations come from delivery-phases / cleanup-completion-proof:
+    # remote landing and track done cannot substitute for current run cleanup.
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.tmp.name) / "state")
+        self.store.configure({"github": None, "base": "main", "endpoint": "land"})
+        self.landing = {
+            "head": "candidate",
+            "merged": "merge",
+            "baseBefore": "base",
+            "effectId": "effect",
+            "verification": {"ok": True, "head": "merge"},
+        }
+        review = {"verdict": "met", "head": "candidate", "documentRevision": 1}
+        intent = {
+            "candidate": "candidate",
+            "merged": "merge",
+            "base": "base",
+            "verification": self.landing["verification"],
+        }
+        with self.store.transaction() as c:
+            c.execute(
+                "INSERT INTO tracks(id,revision,document,status,control,request,head,review,landing,updated)"
+                " VALUES('delivery',1,?,'open','active','request-current','candidate',?,?,1)",
+                (
+                    encode({"id": "delivery", "title": "Delivery"}),
+                    encode(review),
+                    encode(self.landing),
+                ),
+            )
+            c.execute(
+                "INSERT INTO effects(id,track,kind,intent,receipt,updated)"
+                " VALUES('effect','delivery','landing',?,?,1)",
+                (encode(intent), encode(self.landing)),
+            )
+        self.dashboard = Dashboard(self.store)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def clear_triage(self):
+        with self.store.transaction() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO triages(id,track,input_key,body,created)"
+                " VALUES('clear','delivery',?,?,1)",
+                (state_key(self.store, c, "delivery"), encode({"cleared": True})),
+            )
+
+    def finish(self):
+        self.clear_triage()
+        with self.store.transaction() as c:
+            c.execute("UPDATE tracks SET status='done',control='finished' WHERE id='delivery'")
+
+    def receipt(self, **changes):
+        track = self.store.track("delivery")
+        report = {
+            "track": "delivery",
+            "request": track["request"],
+            "head": track["head"],
+            "delivery": fingerprint(
+                [track[key] for key in ("request", "revision", "head", "review", "landing")]
+            ),
+            "dryRun": False,
+            "status": "complete",
+            "landing": {"status": "confirmed", "head": "candidate", "merged": "merge"},
+            "worktrees": [{"status": "removed", "path": "PRIVATE_RESOURCE"}],
+            "terminals": [{"status": "closed", "attempt": "PRIVATE_ATTEMPT"}],
+            "at": time.time(),
+            **changes,
+        }
+        path = receipt_path(self.store, track)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(encode(report))
+        return path
+
+    def delivery(self):
+        return self.dashboard.detail("delivery")["delivery"]
+
+    def test_landing_and_triage_are_not_execution_completion(self):
+        self.assertEqual(self.delivery()["phase"], "landed")
+        self.assertEqual(self.delivery()["reason"], "triage-pending")
+        with self.store.transaction() as c:
+            c.execute(
+                "INSERT INTO tasks(id,track,kind,purpose,status,created,updated)"
+                " VALUES('triage','delivery','triage','Assess','running',1,1)"
+            )
+        self.assertEqual(self.delivery()["phase"], "triage")
+        listed = self.dashboard.tracks()["items"][0]
+        activity = self.dashboard.activity()["items"][0]
+        self.assertEqual(listed["delivery"], self.delivery())
+        self.assertEqual(activity["delivery"], self.delivery())
+        self.assertEqual(listed["status"], "open")
+        self.assertFalse(listed["selectable"])
+
+    def test_done_requires_actual_cleanup_and_current_deferral_reason(self):
+        self.finish()
+        self.assertEqual(self.delivery()["reason"], "cleanup-missing")
+        with self.store.transaction() as c:
+            self.store.event(
+                c,
+                "cleanup.requested",
+                "delivery",
+                {
+                    "request": "request-current",
+                    "head": "candidate",
+                },
+            )
+        self.assertEqual(self.delivery()["phase"], "cleanup")
+        self.receipt(status="pending")
+        self.assertEqual(self.delivery()["phase"], "cleanup")
+        self.receipt(
+            status="deferred",
+            worktrees=[{"status": "preserved", "reason": "User changes"}],
+        )
+        self.assertEqual(self.delivery()["detail"], "User changes")
+        path = receipt_path(self.store, self.store.track("delivery"))
+        path.unlink()
+        with self.store.transaction() as c:
+            self.store.event(
+                c,
+                "cleanup.deferred",
+                "delivery",
+                {
+                    "request": "old-request",
+                    "reason": "Obsolete reason",
+                },
+            )
+        self.assertNotEqual(self.delivery()["phase"], "cleanup-deferred")
+        with self.store.transaction() as c:
+            self.store.event(
+                c,
+                "cleanup.deferred",
+                "delivery",
+                {
+                    "request": "request-current",
+                    "reason": "Worker still alive " * 100,
+                },
+            )
+        self.assertEqual(self.delivery()["phase"], "cleanup-deferred")
+        self.assertTrue(self.delivery()["detail"].startswith("Worker still alive"))
+        self.assertEqual(len(self.delivery()["detail"]), 350)
+        self.receipt()
+        self.assertEqual(self.delivery()["phase"], "complete")
+        with self.store.transaction() as c:
+            self.store.event(
+                c,
+                "cleanup.deferred",
+                "delivery",
+                {
+                    "request": "request-current",
+                    "reason": "Retry blocked",
+                },
+            )
+        self.assertEqual(self.delivery()["phase"], "cleanup-deferred")
+        self.assertEqual(self.store.track("delivery")["status"], "done")
+
+    def test_current_complete_is_read_only_bounded_and_shared_with_archive(self):
+        self.finish()
+        self.receipt()
+        before = {str(p): p.read_bytes() for p in self.store.path.rglob("*.json")}
+        with (
+            patch.object(self.store, "snapshot", side_effect=AssertionError("full snapshot")),
+            patch("todo_flow.cleanup.command", side_effect=AssertionError("external command")),
+            patch("todo_flow.cleanup.cleanup_track", side_effect=AssertionError("cleanup")),
+        ):
+            detail = self.delivery()
+            archive = self.dashboard.tracks(view="completed")["items"][0]
+            self.assertEqual(detail["phase"], "complete")
+            self.assertEqual(detail, archive["delivery"])
+            self.assertFalse(archive["selectable"])
+            self.assertEqual(self.dashboard.tracks()["total"], 0)
+            self.assertEqual(self.dashboard.activity()["total"], 0)
+        self.assertNotIn("PRIVATE_", encode(archive))
+        self.assertLess(len(encode(archive["delivery"])), 500)
+        self.assertEqual(before, {str(p): p.read_bytes() for p in self.store.path.rglob("*.json")})
+
+    def test_old_complete_cannot_follow_request_candidate_review_or_landing_changes(self):
+        self.finish()
+        path = self.receipt()
+        original = self.store.track("delivery")
+        changes = {
+            "request": "next-request",
+            "revision": 2,
+            "head": "other-candidate",
+            "review": encode(
+                {"verdict": "met", "head": "candidate", "documentRevision": 1, "at": 2}
+            ),
+            "landing": encode({**self.landing, "at": 2}),
+        }
+        for field, value in changes.items():
+            with self.subTest(field=field):
+                with self.store.transaction() as c:
+                    c.execute(f"UPDATE tracks SET {field}=? WHERE id='delivery'", (value,))
+                self.clear_triage()
+                # Even copying the old complete receipt into the new path is not proof.
+                current_path = receipt_path(self.store, self.store.track("delivery"))
+                current_path.write_bytes(path.read_bytes())
+                self.assertEqual(self.delivery()["phase"], "check-needed")
+                with self.store.transaction() as c:
+                    c.execute(
+                        f"UPDATE tracks SET {field}=? WHERE id='delivery'", (original[field],)
+                    )
+        self.clear_triage()
+        self.assertEqual(self.delivery()["phase"], "complete")
+
+    def test_missing_corrupt_dry_run_and_incomplete_proof_never_complete(self):
+        self.finish()
+        path = self.receipt()
+        valid = path.read_text()
+        for invalid in ("{", "[]", "null"):
+            with self.subTest(invalid=invalid):
+                path.write_text(invalid)
+                self.assertEqual(self.delivery()["phase"], "check-needed")
+        path.write_text(valid)
+        for change in (
+            {"dryRun": True},
+            {"delivery": "old"},
+            {"landing": {"status": "unconfirmed"}},
+            {"worktrees": [{"status": "preserved", "reason": "Still owned"}]},
+            {"terminals": [{"status": "pending"}]},
+            {"at": None},
+        ):
+            with self.subTest(change=change):
+                self.receipt(**change)
+                self.assertEqual(self.delivery()["phase"], "check-needed")
+        self.receipt()
+        with self.store.transaction() as c:
+            c.execute("UPDATE triages SET body='[]'")
+        self.assertEqual(self.delivery()["reason"], "triage-unconfirmed")
+        self.clear_triage()
+        with self.store.transaction() as c:
+            c.execute(
+                "INSERT INTO findings(id,track,body,status,updated)"
+                " VALUES('new','delivery','{}','open',1)"
+            )
+        self.assertEqual(self.delivery()["reason"], "triage-unconfirmed")
+        self.clear_triage()
+        self.assertEqual(self.delivery()["phase"], "complete")
+        with self.store.transaction() as c:
+            c.execute("UPDATE effects SET receipt=NULL")
+        self.assertEqual(self.delivery()["reason"], "landing-unconfirmed")
+
+    def test_pending_and_malformed_landing_are_not_success(self):
+        with self.store.transaction() as c:
+            c.execute("UPDATE tracks SET landing=NULL")
+        self.assertEqual(self.delivery()["phase"], "pending")
+        for field in ("review", "landing"):
+            with self.subTest(field=field):
+                with self.store.transaction() as c:
+                    c.execute(
+                        "UPDATE tracks SET review=?,landing=?",
+                        (encode({"verdict": "met"}), encode(self.landing)),
+                    )
+                    c.execute(f"UPDATE tracks SET {field}='[]'")
+                self.assertEqual(self.delivery()["phase"], "check-needed")
+
+    def test_recovered_landing_uses_its_matching_anchor(self):
+        self.finish()
+        recovered = {
+            "head": "candidate",
+            "merged": "merge",
+            "baseBefore": "merge",
+            "recovered": True,
+        }
+        with self.store.transaction() as c:
+            c.execute("UPDATE tracks SET landing=?", (encode(recovered),))
+            c.execute("DELETE FROM effects")
+        self.clear_triage()
+        self.receipt()
+        self.assertEqual(self.delivery()["phase"], "complete")
+        with self.store.transaction() as c:
+            c.execute("UPDATE tracks SET landing=?", (encode({**recovered, "baseBefore": "old"}),))
+        self.clear_triage()
+        self.receipt()
+        self.assertEqual(self.delivery()["reason"], "landing-unconfirmed")

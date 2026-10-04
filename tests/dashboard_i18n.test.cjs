@@ -474,7 +474,7 @@ function activityEnvironment() {
     updated:1,intent:'verification-repair'};
   const data={items:[
     {id:'alpha',title:'Alpha',taskCount:2,running:1,queued:1,waiting:0,uncertain:0,
-      decisions:0,status:'running',verificationOk:0,verificationOutcome:'failed',current},
+      decisions:0,status:'running',delivery:{phase:'landed',reason:'triage-pending'},verificationOk:0,verificationOutcome:'failed',current},
     {id:'beta',title:'Beta',taskCount:1,running:0,queued:0,waiting:1,uncertain:0,
       decisions:1,status:'waiting',verificationOk:null,
       current:{id:'three',kind:'work',status:'waiting',intent:null}}
@@ -497,6 +497,7 @@ function activityEnvironment() {
     [0,app.indexOf('function go(')],
     [app.indexOf('function go('),app.indexOf('function badge(')],
     [app.indexOf('function badge('),app.indexOf('async function post(')],
+    [app.indexOf('function deliveryState('),app.indexOf('function stateOf(')],
     [app.indexOf('function renderDecisions('),app.indexOf('function planning(')],
     [app.indexOf('async function loadRoute('),app.indexOf('async function refresh(')],
     [app.indexOf('function queryChange('),app.indexOf("$('search').addEventListener")],
@@ -672,4 +673,208 @@ test('task details receive keyboard focus and the close button preserves track c
   await e.load();
   assert.equal(e.elements.get('taskInspector').hidden,true);
   assert.equal(e.run('currentTask'),null);
+});
+
+
+// delivery-phases / cleanup-completion-proof: these expectations come from the
+// track conditions, not status=done. Projection receipt validation is exercised
+// by DeliveryProjectionTests; these fixtures exercise its public UI boundary.
+function deliveryEnvironment() {
+  const e=activityEnvironment();
+  const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+  for(const [start,end] of [
+    [app.indexOf('function summaryCards('),app.indexOf('function chrome(')],
+    [app.indexOf('function trackHref('),app.indexOf('function deliveryState(')],
+    [app.indexOf('function stateOf('),app.indexOf('function renderDecisions(')],
+    [app.indexOf('function planning('),app.indexOf('async function showEvidence(')],
+    [app.indexOf('async function refresh('),app.indexOf('function queryChange(')],
+    [app.indexOf("$('language').onchange="),app.indexOf('// Appearance is local UI state.')]
+  ])e.run(app.slice(start,end));
+  e.document.querySelector=()=>null;
+  const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#39;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
+  // A string DOM adapter for the production label-only refresh. This does not
+  // emulate layout, native tab order or screen-reader announcements.
+  function deliveryNodes(owner) {
+    return [...owner.innerHTML.matchAll(/<span class="delivery-status"([^>]*)>([\s\S]*?)<\/small><\/span>/g)].map(match=>{
+      const attrs=Object.fromEntries([...match[1].matchAll(/([\w-]+)="([^"]*)"/g)].map(x=>[x[1],decode(x[2])]));
+      const dataset=Object.fromEntries(['phase','reason','detail','fresh'].map(key=>[key,attrs['data-'+key]]));
+      let content=match[2]+'</small>';
+      return {dataset,setAttribute(key,value){attrs[key]=value;},
+        get innerHTML(){return content;},
+        set innerHTML(value){
+          content=value;
+          for(const [key,value] of Object.entries(dataset))attrs['data-'+key]=value;
+          e.context.attributes=attrs;
+          const opening=e.run('Object.entries(attributes).map(([k,v])=>k+\'=\"\'+esc(v)+\'\"\').join(" ")');
+          owner.innerHTML=owner.innerHTML.replace(match[0],'<span class="delivery-status" '+opening+'>'+value+'</span>');
+        }};
+    });
+  }
+  e.document.querySelectorAll=selector=>selector==='.delivery-status'
+    ? [...e.elements.values()].flatMap(deliveryNodes):[];
+  const get=e.document.getElementById;
+  e.document.getElementById=id=>{
+    const element=get(id);
+    element.querySelectorAll=selector=>selector==='.delivery-status'?deliveryNodes(element):[];
+    return element;
+  };
+  e.context.history={replaceState(_state,_title,hash){e.context.location.hash=hash;}};
+  const overview={project:{key:'delivery-fixture',language:'en'},counts:{ready:1,running:1,decisions:0,completed:1},observedAt:1};
+  const track={id:'delivery',title:'Authored title',goal:'Authored goal',area:'General',priority:'P2',
+    status:'done',control:'finished',request:'current',selectable:false,updated:1,activity:[],
+    delivery:{phase:'cleanup-deferred',reason:'cleanup-deferred',detail:'User <changes> & retained shell'},
+    document:{title:'Authored title',goal:'Authored goal',scope:'Authored scope',evidence:'Authored evidence',conditions:[]},
+    documentView:{url:'/document/delivery'},revision:1};
+  const page={items:[track],total:1,offset:0,limit:50,hasMore:false,asOf:1};
+  let offline=false;
+  const activityFetch=e.context.fetch;
+  e.context.fetch=async(url,options)=>{
+    assert.ok(!options?.method||options.method==='GET','display changes must not write records');
+    if(offline)throw Error('offline');
+    if(url==='/api/overview')return {ok:true,json:async()=>overview};
+    if(url==='/api/tracks/delivery')return {ok:true,json:async()=>track};
+    if(url.startsWith('/api/tracks?')){
+      const query=new URL(url,'http://fixture').searchParams;
+      assert.ok(Number(query.get('limit'))<=100);
+      return {ok:true,json:async()=>page};
+    }
+    return activityFetch(url,options);
+  };
+  e.context.fixture=track;
+  e.context.overviewFixture=overview;
+  e.run('overview=overviewFixture;useProjectLanguage(overview.project)');
+  return {...e,track,page,setOffline(value){offline=value;}};
+}
+
+test('delivery phases and reasons appear in lists, archive, Activity and detail in four languages',async()=>{
+  const e=deliveryEnvironment();
+  const cases=[
+    ['pending',null,null,['Awaiting landing','반영 대기','反映待ち','等待合入']],
+    ['landed','triage-pending',null,['Landed','반영됨','反映済み','已合入']],
+    ['triage','triage-pending',null,['Triage','트리아지','トリアージ','分诊']],
+    ['cleanup','cleanup-pending',null,['Cleaning up','정리 중','後処理中','正在清理']],
+    ['cleanup-deferred','cleanup-deferred','User <changes> & retained shell',['Cleanup deferred','정리 보류','後処理保留','清理暂缓']],
+    ['complete',null,null,['Run complete','실행 완료','実行完了','执行完成']],
+    ['check-needed','cleanup-stale',null,['Check needed','확인 필요','確認が必要','需要确认']]
+  ];
+  const locales=['en','ko','ja','zh-CN'];
+  for(const [phase,reason,detail,labels] of cases) {
+    e.track.delivery={phase,reason,detail};
+    e.data.items[0].delivery=e.track.delivery;
+    const before=JSON.stringify([e.track,e.data]);
+    for(const [index,locale] of locales.entries()) {
+      e.run('saveDisplayLanguage('+JSON.stringify(locale)+');detailSignature=""');
+      for(const [hash,target] of [['#todos','rows'],['#completed','rows'],['#activity','work'],['#track/delivery?from=completed','trackView']]) {
+        e.context.location.hash=hash;
+        await e.load();
+        const html=e.html(target);
+        assert.ok(html.includes(labels[index]),locale+' '+hash+' '+phase);
+        if(phase!=='complete')assert.ok(!html.includes(cases[5][3][index]));
+        if(phase==='landed')assert.ok(html.includes(['Awaiting triage.','트리아지 대기 중입니다.','トリアージ待ちです。','正在等待分诊。'][index]));
+        if(detail)assert.ok(html.includes('User &lt;changes&gt; &amp; retained shell'));
+        if(phase==='check-needed')assert.ok(html.includes(['Cleanup evidence is for an earlier request or candidate.','정리 근거가 이전 요청 또는 후보에 해당합니다.','後処理の根拠は以前の要求または候補のものです。','清理依据属于之前的请求或候选。'][index]));
+      }
+    }
+    assert.equal(JSON.stringify([e.track,e.data]),before);
+  }
+  // Older servers/absent evidence must not turn a done record into run completion.
+  delete e.track.delivery;
+  e.context.location.hash='#completed';
+  await e.load();
+  assert.ok(e.html('rows').includes('需要确认'));
+  assert.ok(!e.html('rows').includes('执行完成'));
+});
+
+test('disconnect and offline language switches invalidate completion until that view is fetched again',async()=>{
+  const checks=[['#todos','rows'],['#completed','rows'],['#activity','work'],['#track/delivery?from=completed','trackView']];
+  for(const [hash,target] of checks) {
+    const e=deliveryEnvironment();
+    e.track.delivery={phase:'complete',reason:null,detail:null};
+    e.data.items[0].delivery=e.track.delivery;
+    // An open record in the active list retains its independent task state.
+    if(hash==='#todos')e.track.status='open';
+    e.context.location.hash=hash;
+    e.run("selected.set('alpha','Authored title');drafts.set('d1','Keep <draft> unchanged')");
+    await e.load();
+    assert.ok(e.html(target).includes('Run complete'));
+    const before=JSON.stringify([e.track,e.data]);
+    const navigation=e.context.location.hash;
+    const focused={dataset:{},tagName:'SELECT',closest:()=>null};
+    e.document.activeElement=focused;
+    e.setOffline(true);
+    await e.run('refresh()');
+    for(const [locale,unknown,complete] of [
+      ['en','Check needed','Run complete'],['ko','확인 필요','실행 완료'],
+      ['ja','確認が必要','実行完了'],['zh-CN','需要确认','执行完成']
+    ]) {
+      e.document.getElementById('language').value=locale;
+      await e.document.getElementById('language').onchange();
+      assert.ok(e.html(target).includes(unknown),hash+' '+locale);
+      assert.ok(!e.html(target).includes(complete),hash+' '+locale);
+      assert.equal(e.context.location.hash,navigation);
+      assert.equal(e.document.activeElement,focused);
+      assert.equal(e.run("selected.get('alpha')"),'Authored title');
+      assert.equal(e.run("drafts.get('d1')"),'Keep <draft> unchanged');
+    }
+    e.setOffline(false);
+    await e.run('refresh()');
+    if(hash==='#activity') {
+      // cleanup-completion-proof / delivery-phases: only alpha has completion evidence;
+      // reconnecting must leave beta's absent evidence marked as needing confirmation.
+      const tracks=e.html(target).match(/<section class="activity-track">[\s\S]*?<\/section>/g)||[];
+      const alpha=tracks.find(track=>track.includes('href="#track/alpha"'));
+      const beta=tracks.find(track=>track.includes('href="#track/beta"'));
+      assert.ok(alpha,'alpha Activity region exists');
+      assert.ok(beta,'beta Activity region exists');
+      assert.ok(alpha.includes('执行完成'),'alpha recovered');
+      assert.ok(!alpha.includes('需要确认'),'alpha recovered');
+      assert.ok(beta.includes('需要确认'),'beta still lacks delivery evidence');
+      assert.ok(!beta.includes('执行完成'),'beta must not appear complete');
+    } else {
+      assert.ok(e.html(target).includes('执行完成'),hash+' recovered');
+      assert.ok(!e.html(target).includes('需要确认'),hash+' recovered');
+    }
+    assert.equal(JSON.stringify([e.track,e.data]),before);
+  }
+});
+
+test('fresh detail recovery does not recreate the document or restore stale archive completion',async()=>{
+  const e=deliveryEnvironment();
+  e.track.delivery={phase:'complete',reason:null,detail:null};
+  e.context.location.hash='#completed';
+  await e.load();
+  e.context.location.hash='#track/delivery?from=completed';
+  await e.load();
+  e.setOffline(true);
+  await e.run('refresh()');
+  assert.ok(!e.html('rows').includes('Run complete'));
+  // A label-only recovery preserves existing document/expanded UI markup.
+  const view=e.elements.get('trackView');
+  view.innerHTML+='<!-- retained document context -->';
+  e.setOffline(false);
+  await e.run('refresh()');
+  assert.ok(e.html('trackView').includes('Run complete'));
+  assert.ok(e.html('trackView').includes('<!-- retained document context -->'));
+  assert.ok(!e.html('rows').includes('Run complete'));
+});
+
+
+test('delivery Activity page navigation retains selection, drafts and keyboard task context',async()=>{
+  const e=activityEnvironment();
+  e.data.offset=25;e.data.total=100;e.data.hasMore=true;
+  e.run("selected.set('alpha','Authored title');drafts.set('d1','Keep <draft> unchanged');activityFocus='inspector'");
+  await e.load();
+  assert.equal(e.document.activeElement,e.elements.get('taskInspector'));
+  assert.ok(e.html('work').includes('Landed'));
+  const before=JSON.stringify(e.data);
+  const button={dataset:{activityPage:'50',pageKey:'offset'},hasAttribute:name=>name==='data-activity-page'};
+  await e.handlers.get('click')({target:{closest:()=>button}});
+  await e.load();
+  assert.ok(e.requests.includes('/api/activity?limit=25&offset=50'));
+  assert.equal(e.run("route().query.get('track')"),'alpha');
+  assert.equal(e.run("route().query.get('task')"),'one');
+  assert.equal(e.run("route().query.get('tasks_offset')"),'10');
+  assert.equal(e.run("selected.get('alpha')"),'Authored title');
+  assert.equal(e.run("drafts.get('d1')"),'Keep <draft> unchanged');
+  assert.equal(JSON.stringify(e.data),before);
 });

@@ -5,6 +5,7 @@ import time
 import hashlib
 
 from . import condition_evidence
+from .delivery_display import delivery_summary, object_value
 from .language import LANGUAGES
 from .launch_display import describe_launch, read_launch
 from .verification_log_view import log_view, read_log_range
@@ -168,6 +169,7 @@ class Dashboard:
             c.execute("BEGIN")
             result = page(c, "SELECT " + SUMMARY, source, params, order, limit, offset)
             for t in result["items"]:
+                t["delivery"] = delivery_summary(self.store, c, t["id"])
                 t["selectable"] = t["status"] != "done" and t["control"] not in (
                     "active",
                     "paused",
@@ -189,15 +191,20 @@ class Dashboard:
         for key in ("document",):
             t[key] = json.loads(t[key])
         with self.store.connect() as c:
+            c.execute("BEGIN")
+            t["delivery"] = delivery_summary(self.store, c, id_)
             triage = c.execute(
                 "SELECT id,body,created FROM triages WHERE track=? ORDER BY created DESC LIMIT 1",
                 (id_,),
             ).fetchone()
-        t["triage"] = (
-            {"id": triage["id"], "at": triage["created"], **json.loads(triage["body"])}
-            if triage
-            else None
-        )
+        try:
+            t["triage"] = (
+                {"id": triage["id"], "at": triage["created"], **object_value(triage["body"])}
+                if triage
+                else None
+            )
+        except (ValueError, TypeError):
+            t["triage"] = None
         presentation = t["document"].pop("presentation", None)
         t["documentView"] = {
             "url": f"/documents/{id_}/{t['revision']}/index.html",
@@ -205,10 +212,16 @@ class Dashboard:
             "assets": len(presentation.get("assets", [])) if presentation else 0,
         }
         # Recheck explicit references before displaying a current integrity assertion.
-        review = condition_evidence.review_view(self.store.path, t)
+        try:
+            review = condition_evidence.review_view(self.store.path, t)
+        except (ValueError, TypeError, AttributeError):
+            review = None
         # Heavy evidence is fetched only on demand, never shipped with a list or the initial detail.
         for key in ("verification", "review", "landing"):
-            value = review if key == "review" else json.loads(t[key]) if t[key] else None
+            try:
+                value = object_value(review if key == "review" else t[key])
+            except (ValueError, TypeError):
+                value = None
             t[key] = (
                 {
                     k: value[k]
@@ -289,6 +302,7 @@ class Dashboard:
                 "SELECT COALESCE(SUM(a.task_count),0) " + source, (now,)
             ).fetchone()[0]
             for track in result["items"]:
+                track["delivery"] = delivery_summary(self.store, c, track["id"])
                 task = c.execute(
                     "SELECT "
                     + TASK_SUMMARY

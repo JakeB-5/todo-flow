@@ -113,9 +113,58 @@ function resultLinks(t) {
   const root='https://github.com/'+overview.project.github;
   return `<div class="links">${t.pr?`<a href="${esc(root)}/pull/${t.pr}" target="_blank" rel="noopener" aria-label="${esc(tr('Open PR {id}',{id:t.pr}))}">PR #${t.pr} ↗</a>`:''}${t.issue?`<a href="${esc(root)}/issues/${t.issue}" target="_blank" rel="noopener" aria-label="${esc(tr('Open issue {id}',{id:t.issue}))}">#${t.issue} ↗</a>`:''}${!t.pr&&!t.issue?`<span class="subtle">${tr("No external results linked")}</span>`:''}</div>`;
 }
+function deliveryState(t, fresh = true) {
+  const d=t.delivery||{};
+  const phases={
+    pending:['queued',tr("Awaiting landing")],landed:['active',tr("Landed")],
+    triage:['running',tr("Triage")],cleanup:['running',tr("Cleaning up")],
+    'cleanup-deferred':['waiting',tr("Cleanup deferred")],
+    complete:['done',tr("Run complete")],'check-needed':['unknown',tr("Check needed")]
+  };
+  const reasons={
+    'request-missing':tr("Current request evidence is missing."),
+    'evidence-invalid':tr("Delivery evidence is unreadable."),
+    'landing-missing':tr("Landing evidence is missing."),
+    'landing-unconfirmed':tr("Landing is not confirmed for this candidate."),
+    'triage-pending':tr("Awaiting triage."),
+    'triage-unconfirmed':tr("Triage is not confirmed for this candidate."),
+    'completion-pending':tr("Awaiting completion check."),
+    'execution-not-finished':tr("The execution request has not finished."),
+    'unfinished-work':tr("Unfinished work remains."),
+    'cleanup-requested':tr("Cleanup requested."),
+    'cleanup-pending':tr("Cleanup is in progress."),
+    'cleanup-deferred':tr("Cleanup has not finished."),
+    'cleanup-missing':tr("Cleanup evidence is missing."),
+    'cleanup-stale':tr("Cleanup evidence is for an earlier request or candidate."),
+    'cleanup-dry-run':tr("Cleanup was only simulated."),
+    'cleanup-unconfirmed':tr("Cleanup is not confirmed.")
+  };
+  const known=Object.hasOwn(phases,d.phase);
+  const [kind,label]=known?phases[d.phase]:phases['check-needed'];
+  let reason=Object.hasOwn(reasons,d.reason)?reasons[d.reason]:'';
+  if(!known)reason=tr("Current delivery evidence is unavailable.");
+  if(!fresh)reason=tr("Connection lost. Delivery needs a fresh observation.")+' '+reason;
+  return [fresh?kind:'unknown',fresh?label:tr("Check needed"),[reason,d.detail].filter(Boolean).join(' · ')];
+}
+function deliveryContent(t, fresh) {
+  const [kind,label,reason]=deliveryState(t,fresh);
+  return badge(kind,label)+`<small class="delivery-reason">${esc(reason)}</small>`;
+}
+function deliveryMarkup(t, fresh = true) {
+  const d=t.delivery||{};
+  return `<span class="delivery-status" aria-label="${esc(tr("Delivery status"))}" data-phase="${esc(d.phase)}" data-reason="${esc(d.reason)}" data-detail="${esc(d.detail)}" data-fresh="${fresh}">${deliveryContent(t,fresh)}</span>`;
+}
+function refreshDeliveryDisplays(stale = null, root = document) {
+  // Update only read-only labels: keep focused controls, drafts and iframes intact.
+  for(const node of root.querySelectorAll('.delivery-status')) {
+    if(stale!==null)node.dataset.fresh=String(!stale);
+    node.setAttribute('aria-label',tr("Delivery status"));
+    node.innerHTML=deliveryContent({delivery:{phase:node.dataset.phase,reason:node.dataset.reason,detail:node.dataset.detail}},node.dataset.fresh!=='false');
+  }
+}
 function stateOf(t) {
   const activity=t.activity || [], running=activity.find(w=>w.status==='running'), waiting=activity.find(w=>w.status==='waiting');
-  if (t.status==='done') return ['done',tr("Done"),tr("Completion evidence and outputs preserved")];
+  if (t.status==='done') return deliveryState(t);
   if (t.control==='paused'||t.control==='pause-requested') return [t.control,labels[t.control],tr("Work can continue after a resume request")];
   if (running) return running.lease < Date.now()/1000 ? ['unknown',tr("Check worker status"),tr("Check execution before deciding whether to reclaim")] : ['running',roles[running.kind] || tr("Working"),running.purpose];
   if (waiting) return ['waiting',tr("Awaiting decision"),waiting.purpose];
@@ -144,7 +193,7 @@ function renderList(data, r) {
   $('rows').innerHTML=data.items.map(t=>{
     const [kind,label,reason]=stateOf(t);
     if(!t.selectable)selected.delete(t.id);
-    return `<tr><td class="check-cell">${completed?`<span class="checkmark" aria-label="${tr("Done")}">✓</span>`:`<input type="checkbox" data-select="${esc(t.id)}" aria-label="${esc(tr('Select {title}',{title:t.title}))}" ${selected.has(t.id)?'checked':''} ${t.selectable?'':'disabled'}>`}</td><td class="title-cell"><a class="track-title" href="${trackHref(t.id)}">${esc(t.title)}</a><span class="track-id" title="${esc(t.id)}">${esc(t.area==='General'?tr('General'):t.area)}</span><span class="track-goal">${esc(t.goal)}</span></td>${completed?`<td class="priority-cell">${badge('done')}</td><td class="links-cell">${resultLinks(t)}</td>`:`<td class="priority-cell"><span class="priority ${['높음','HIGH','high'].includes(t.priority)?'high':''}">${esc(priorityLabel(t.priority))}</span></td><td class="status-cell">${badge(kind,label)}<div class="status-note">${t.activity?.[0]?.owner?esc(t.activity[0].owner.slice(-8)):'—'}</div></td><td class="reason-col"><div class="reason" title="${esc(reason)}">${esc(reason)}</div></td>`}<td class="date-cell"><time class="subtle" title="${date(t.updated,true)}">${date(t.updated)}</time></td></tr>`;
+    return `<tr><td class="check-cell">${completed?`<span class="subtle" aria-label="${tr("Completed tracks")}">·</span>`:`<input type="checkbox" data-select="${esc(t.id)}" aria-label="${esc(tr('Select {title}',{title:t.title}))}" ${selected.has(t.id)?'checked':''} ${t.selectable?'':'disabled'}>`}</td><td class="title-cell"><a class="track-title" href="${trackHref(t.id)}">${esc(t.title)}</a><span class="track-id" title="${esc(t.id)}">${esc(t.area==='General'?tr('General'):t.area)}</span><span class="track-goal">${esc(t.goal)}</span></td>${completed?`<td class="priority-cell">${deliveryMarkup(t)}</td><td class="links-cell">${resultLinks(t)}</td>`:`<td class="priority-cell"><span class="priority ${['높음','HIGH','high'].includes(t.priority)?'high':''}">${esc(priorityLabel(t.priority))}</span></td><td class="status-cell">${badge(kind,label)}${deliveryMarkup(t)}<div class="status-note">${t.activity?.[0]?.owner?esc(t.activity[0].owner.slice(-8)):'—'}</div></td><td class="reason-col"><div class="reason" title="${esc(reason)}">${esc(reason)}</div></td>`}<td class="date-cell"><time class="subtle" title="${date(t.updated,true)}">${date(t.updated)}</time></td></tr>`;
   }).join('');
   $('empty').hidden=!!data.items.length;
   $('empty').innerHTML=`<div class="empty-symbol">${completed?'✓':'▤'}</div><strong>${r.query.get('q')||r.query.get('control')?tr("No tracks match these filters"):completed?tr("No completed tracks yet"):tr("No active TODOs")}</strong>${completed?tr("Completed tracks are preserved here."):overview.counts.completed?tr("Find past work in the completed archive."):tr("Ask your agent to register a requirement with the todo skill.")}${r.query.size?`<br><button class="text-button" data-reset>${tr("Reset search and filters")}</button>`:''}`;
@@ -181,6 +230,7 @@ function renderActivity(data) {
     return `<section class="activity-track"><a class="work-track" href="#track/${encodeURIComponent(t.id)}">${esc(t.title)}</a>
       <div class="work-meta">${badge(state,uncertain?tr("Execution needs checking"):undefined)} ${['paused','pause-requested'].includes(t.control)?badge(t.control):''}
       <span>${tr('{count} active tasks',{count:number(t.taskCount)})}</span></div>
+      ${deliveryMarkup(t,activityConnected)}
       <p><b>${tr("Current task")}</b> · ${w?esc(roles[w.kind]||tr("Task")):tr("No active task")}</p>
       <p>${w?esc(taskDescription(w)):tr("Review the open decision.")}</p>
       ${w?workerSummary(w.worker):''}
@@ -227,7 +277,10 @@ function renderActivityTasks(data,track) {
 }
 function activityDisconnected() {
   activityConnected=false;
+  const focus=document.activeElement?.dataset?.activityTrack;
   if(route().view==='activity'&&activityData)renderActivity(activityData);
+  refreshDeliveryDisplays(true);
+  if(focus)[...document.querySelectorAll('[data-activity-track]')].find(b=>b.dataset.activityTrack===focus)?.focus();
 }
 function launchPanel(launch) {
   const evidence=launch?.evidence||'missing';
@@ -295,12 +348,12 @@ function renderTrack(t,r) {
   const back=r.query.get('return');
   if(back==='#activity'||back?.startsWith('#activity?'))savedViews.activity=back;
   const signature=JSON.stringify(t);
-  if(signature===detailSignature)return;
+  if(signature===detailSignature){refreshDeliveryDisplays(false,$('trackView'));return;}
   detailSignature=signature;
   $('eyebrow').textContent=t.id; $('title').textContent=t.document.title; $('subtitle').textContent=t.document.goal;
   const from=['completed','activity'].includes(r.query.get('from'))?r.query.get('from'):'todos';
   const review=t.review;
-  $('trackView').innerHTML=`<a class="section-link" href="${esc(savedViews[from]||'#'+from)}">← ${from==='completed'?tr("Completed archive"):from==='activity'?tr("Activity"):tr("TODO list")}</a>${t.document.documentReview==='pending-human-review'?`<div class="notice">${tr("Triage registered this follow-up document. Review its contents and scope before selection.")}</div>`:''}<section class="document-stage"><div class="section-heading"><h2>${tr("Analysis and plan")}</h2><a href="${esc(t.documentView.url)}" target="_blank" rel="noopener">${tr("Open document")} ↗</a></div><iframe title="${esc(t.document.title)} ${tr("Analysis and plan")}" src="${esc(t.documentView.url)}" sandbox="allow-scripts allow-downloads" referrerpolicy="no-referrer"></iframe></section><details class="runtime-details"><summary>${tr("Conditions \u00b7 execution \u00b7 evidence")}</summary><div class="detail-grid"><div><div class="panel"><h2>${tr("Goal and scope")}</h2><p class="prose">${esc(t.document.scope)}</p></div><div class="panel"><h2>${tr("Problem and evidence")}</h2><p class="prose">${esc(t.document.evidence)}</p></div>${triagePanel(t)}${planning(t.document)}<div class="panel"><h2>${tr("Acceptance conditions")}</h2>${t.document.conditions.map((c,i)=>{const v=review?.conditions?.find(x=>x.id===c.id);return `<div class="condition"><span class="condition-num">${String(i+1).padStart(2,'0')}</span><div><strong>${esc(c.text)}</strong><small>${esc(c.id)} · ${esc(c.method)}</small>${v?.evidence?`<small>${esc(v.evidence)}</small>`:''}</div>${badge(v?.verdict||tr("Not verified"))}</div>`}).join('')}</div>${t.document.design?`<div class="panel"><h2>${tr("Approach and decisions")}</h2><p class="prose">${esc(t.document.design)}</p></div>`:''}<div class="panel"><h2>${tr("Outputs and evidence")}</h2>${resultLinks(t)}${['verification','review','landing'].map(kind=>`<div class="evidence-block"><button class="evidence-button" data-evidence="${kind}" aria-expanded="false">${{verification:tr("Verification results"),review:tr("Independent review"),landing:tr("Landing record")}[kind]} <span>＋</span></button><div id="evidence-${kind}" hidden></div></div>`).join('')}</div></div><aside class="inspector"><div class="panel"><h3>${tr("Current state")}</h3>${badge(t.status==='done'?'done':t.control)}<div class="quiet">${t.status==='done'?tr("Acceptance conditions and delivery results are preserved."):t.control==='finished'?tr("The requested endpoint was reached. This does not necessarily mean the track is complete."):tr("See Activity for assigned work and waiting conditions.")}</div><div class="controls">${['active','pause-requested'].includes(t.control)?`<button data-control="pause" data-track="${t.id}">${tr("Request pause")}</button>`:''}${['paused','pause-requested'].includes(t.control)?`<button data-control="resume" data-track="${t.id}">${tr("Resume")}</button>`:''}${t.status!=='done'&&t.request&&t.control!=='cancelled'?`<button data-control="cancel" data-track="${t.id}">${tr("Cancelled")}</button>`:''}</div><a class="section-link" href="#activity">${tr("View activity")} →</a></div><div class="panel"><h3>${tr("Track information")}</h3><dl class="metadata">${[[tr("Area"),t.document.area||tr("General")],[tr("Priority"),t.document.priority||tr("Unspecified")],[tr("Document revision"),t.revision],[tr("Last updated"),date(t.updated,true)],[tr("Change revision"),t.head||tr("Not yet")],[tr("Workspace"),t.workspace||tr("Not yet")]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div><div class="panel"><h3>${tr("Canonical document")}</h3><p class="subtle">${tr("Create and revise documents with the agent's todo skill. Execution facts are linked from their records.")}</p></div></aside></div></details>`;
+  $('trackView').innerHTML=`<a class="section-link" href="${esc(savedViews[from]||'#'+from)}">← ${from==='completed'?tr("Completed archive"):from==='activity'?tr("Activity"):tr("TODO list")}</a>${t.document.documentReview==='pending-human-review'?`<div class="notice">${tr("Triage registered this follow-up document. Review its contents and scope before selection.")}</div>`:''}<div class="panel delivery-panel">${deliveryMarkup(t)}</div><section class="document-stage"><div class="section-heading"><h2>${tr("Analysis and plan")}</h2><a href="${esc(t.documentView.url)}" target="_blank" rel="noopener">${tr("Open document")} ↗</a></div><iframe title="${esc(t.document.title)} ${tr("Analysis and plan")}" src="${esc(t.documentView.url)}" sandbox="allow-scripts allow-downloads" referrerpolicy="no-referrer"></iframe></section><details class="runtime-details"><summary>${tr("Conditions \u00b7 execution \u00b7 evidence")}</summary><div class="detail-grid"><div><div class="panel"><h2>${tr("Goal and scope")}</h2><p class="prose">${esc(t.document.scope)}</p></div><div class="panel"><h2>${tr("Problem and evidence")}</h2><p class="prose">${esc(t.document.evidence)}</p></div>${triagePanel(t)}${planning(t.document)}<div class="panel"><h2>${tr("Acceptance conditions")}</h2>${t.document.conditions.map((c,i)=>{const v=review?.conditions?.find(x=>x.id===c.id);return `<div class="condition"><span class="condition-num">${String(i+1).padStart(2,'0')}</span><div><strong>${esc(c.text)}</strong><small>${esc(c.id)} · ${esc(c.method)}</small>${v?.evidence?`<small>${esc(v.evidence)}</small>`:''}</div>${badge(v?.verdict||tr("Not verified"))}</div>`}).join('')}</div>${t.document.design?`<div class="panel"><h2>${tr("Approach and decisions")}</h2><p class="prose">${esc(t.document.design)}</p></div>`:''}<div class="panel"><h2>${tr("Outputs and evidence")}</h2>${resultLinks(t)}${['verification','review','landing'].map(kind=>`<div class="evidence-block"><button class="evidence-button" data-evidence="${kind}" aria-expanded="false">${{verification:tr("Verification results"),review:tr("Independent review"),landing:tr("Landing record")}[kind]} <span>＋</span></button><div id="evidence-${kind}" hidden></div></div>`).join('')}</div></div><aside class="inspector"><div class="panel"><h3>${tr("Current state")}</h3>${badge(t.control)}<div class="quiet">${t.status==='done'?tr("Acceptance conditions and delivery results are preserved."):t.control==='finished'?tr("The requested endpoint was reached. This does not necessarily mean the track is complete."):tr("See Activity for assigned work and waiting conditions.")}</div><div class="controls">${['active','pause-requested'].includes(t.control)?`<button data-control="pause" data-track="${t.id}">${tr("Request pause")}</button>`:''}${['paused','pause-requested'].includes(t.control)?`<button data-control="resume" data-track="${t.id}">${tr("Resume")}</button>`:''}${t.status!=='done'&&t.request&&t.control!=='cancelled'?`<button data-control="cancel" data-track="${t.id}">${tr("Cancelled")}</button>`:''}</div><a class="section-link" href="#activity">${tr("View activity")} →</a></div><div class="panel"><h3>${tr("Track information")}</h3><dl class="metadata">${[[tr("Area"),t.document.area||tr("General")],[tr("Priority"),t.document.priority||tr("Unspecified")],[tr("Document revision"),t.revision],[tr("Last updated"),date(t.updated,true)],[tr("Change revision"),t.head||tr("Not yet")],[tr("Workspace"),t.workspace||tr("Not yet")]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div><div class="panel"><h3>${tr("Canonical document")}</h3><p class="subtle">${tr("Create and revise documents with the agent's todo skill. Execution facts are linked from their records.")}</p></div></aside></div></details>`;
   if(r.query.get('evidence')==='verification') {
     document.querySelector('.runtime-details').open=true;
     evidenceOpen.add(t.id+':verification');
@@ -381,7 +434,7 @@ async function loadRoute(poll=false) {
     }
     if(changed)window.scrollTo(0,scrollPositions.get(thisRoute)||0);
     $('connection').textContent=tr("Connected");$('connectionDot').classList.remove('stale');
-  } catch(e){if(e.name==='AbortError')return;activityDisconnected();$('connection').textContent=tr("Connection lost");$('connectionDot').classList.add('stale');notice(tr("Could not refresh. The last observed state is preserved. ")+e.message,true);}
+  } catch(e){if(e.name==='AbortError'||version!==generation)return;activityDisconnected();$('connection').textContent=tr("Connection lost");$('connectionDot').classList.add('stale');notice(tr("Could not refresh. The last observed state is preserved. ")+e.message,true);}
   finally{if(version===generation){$('tableShell').setAttribute('aria-busy','false');$('tableShell').classList.remove('loading');}}
 }
 async function refresh(poll=false) {
@@ -435,6 +488,7 @@ $('language').onchange=async()=>{
   const y=window.scrollY;
   const runtimeOpen=document.querySelector('.runtime-details')?.open;
   saveDisplayLanguage($('language').value);
+  refreshDeliveryDisplays();
   detailSignature='';
   chrome(route());
   renderEvents();
