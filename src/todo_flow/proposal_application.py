@@ -227,6 +227,8 @@ def apply(engine, task, workspace, changes, repair=None, expected_head=None, res
         and prior["intent"]["workspace"] == str(workspace)
         and expected_head in (None, prior["intent"]["before_head"])
         and command(["git", "rev-parse", "HEAD"], workspace) == prior["head"]
+        # A live merge is a new adoption; committed retries have cleared MERGE_HEAD.
+        and not integration.merge_head(workspace)
     ):
         prove_commit(workspace, prior)
         return
