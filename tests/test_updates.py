@@ -16,9 +16,11 @@ from todo_flow.store import Store
 class UpdateTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.env = patch.dict(os.environ, {"TODO_FLOW_HOME": str(self.root / "control")})
         self.env.start()
+        self.addCleanup(self.env.stop)
         self.source = self.root / "bundle"
         self.source.mkdir()
         self.skill = self.source / "todo"
@@ -31,8 +33,7 @@ class UpdateTests(unittest.TestCase):
         self.store.configure({"language": "ko", "github": None})
 
     def tearDown(self):
-        self.env.stop()
-        self.tmp.cleanup()
+        self.doCleanups()
 
     def install(self):
         return skill_updates.update(self.target, self.state, "ko", install=True, source=self.source)

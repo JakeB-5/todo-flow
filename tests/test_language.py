@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runtime_home import isolate_runtime_home
 from todo_flow.adapters import command
 from todo_flow.cli import main
 from todo_flow.documents import load, parse, render, render_html, source
@@ -19,7 +20,9 @@ from todo_flow.worker import run_worker
 
 class LanguageTests(unittest.TestCase):
     def setUp(self):
+        isolate_runtime_home(self)
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.repo = self.root / "project"
         self.repo.mkdir()
@@ -41,7 +44,7 @@ class LanguageTests(unittest.TestCase):
         self.state = self.repo / "todo"
 
     def tearDown(self):
-        self.tmp.cleanup()
+        self.doCleanups()
 
     def cli(self, *args, interactive=False):
         out = io.StringIO()

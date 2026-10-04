@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runtime_home import isolate_runtime_home
 from todo_flow import documents
 from todo_flow.file_store import FileDatabase
 from todo_flow.migrate import migrate
@@ -29,14 +30,16 @@ DOC = {
 
 class FileStoreTests(unittest.TestCase):
     def setUp(self):
+        isolate_runtime_home(self)
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / "todo"
         self.s = Store(self.root)
         self.s.configure({"github": None, "base": "main", "endpoint": "review"})
         self.s.register(DOC)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        self.doCleanups()
 
     def test_markdown_and_execution_survive_deleted_cache(self):
         path = self.root / "tracks/file-track/track.md"
