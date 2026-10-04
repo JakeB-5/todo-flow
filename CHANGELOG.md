@@ -2,6 +2,13 @@
 
 User-visible behavior, compatibility, important fixes and repository changes. The first public release is `0.0.1`, distributed through GitHub Releases.
 
+## 0.1.1 — 2026-10-04
+
+- Distinguish a newly prepared merge from a completed no-op proposal receipt, preserving both merge parents and idempotent retries after restart.
+- Retire superseded owned clean integration checkouts only when their contents and original parents are included in the confirmed landing. Preserve a recoverable commit reference, ownership evidence and interrupted-removal receipts; retain changed or uncertain resources.
+- Isolate test runtime homes, registration, locks and child processes from the real installation, including interrupted tests and failed fixture setup. Preserve real update exclusion checks.
+- Keep state/configuration formats and worker/skill protocols unchanged. No data migration is required.
+
 ## 0.1.0 — 2026-10-04
 
 - Provide English, Korean, Japanese and Simplified Chinese dashboard labels and core guides, with project-isolated language preferences and preserved navigation, drafts and authored content.

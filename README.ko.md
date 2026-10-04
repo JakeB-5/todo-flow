@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 345c832db4fb257843b5d067e21d83bf6eed6dcc02571784800f427a9238bcb3; status: translated -->
+<!-- translation-source: README.md; source-sha256: a69f417dbfbee6c1e46370f1a88643ebdf164460b26b2f61d576bd1ada634a0d; status: translated -->
 
 ## 37초로 보는 TODO Flow
 
@@ -101,11 +101,11 @@ https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.ko.md에 따라
 **Python 3.11+, uv, Git과 인증된 Claude 또는 Codex CLI**가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다.
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.0/todo_flow-0.1.0-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.1/todo_flow-0.1.1-py3-none-any.whl
 todo-flow --version
 ```
 
-[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
+[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
 
 **대상 프로젝트**의 실제 검증 명령·기준 브랜치·관련 파일 범위를 사용하세요. 아래는 테스트 모음, 초기 Git 커밋과 `origin` 원격이 있는 기존 Python 프로젝트 예시입니다.
 
@@ -315,6 +315,8 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 ## 현재 범위
 
+**0.1.1의 변경 사항:** 새로 준비한 병합을 완료된 무변경 제안과 구분하면서 동일 요청의 재시도를 보존합니다. 반영된 내용·포함된 부모·복구 가능한 커밋 참조가 확인된 이전 소유 통합 체크아웃만 정리합니다. 테스트 런타임 홈과 자식 프로세스를 격리하여 중단된 테스트가 실제 업데이트 검사에 영향을 주지 않도록 합니다.
+
 **0.1.0의 변경 사항:** 대시보드와 핵심 안내서를 영어·한국어·일본어·중국어 간체로 제공하고, 밝은 테마·어두운 테마 전환과 시도별 워커 모델·추론 에포트 표시를 지원합니다. 역할별 워커 라우팅을 설정하고, 검증 판정 불가와 구현 실패를 구분하며, 독립 리뷰가 소스 근거를 따르도록 합니다. 스킬 업데이트는 기존 설치를 보존하고, 인계 회귀 검사는 이전 실행의 잠금 해제 전 후속 작업이 트랙을 점유하지 못하도록 확인합니다.
 
 **0.0.9의 변경 사항:** 선택적 사전·중간 검사를 설정하면서 최종 전달 경계의 전체 검증과 독립 리뷰를 유지합니다. 제공된 기계 근거를 조건·후보·원본 artifact에 연결하고, 워커 종료와 제안 유효성을 구분해 조회합니다. 명시적인 요청별 한도는 시도 사용량을 보존하며, 오래된 통합 체크아웃 정리는 소유권과 사용자 변경 보호를 유지합니다.
@@ -331,7 +333,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 완료된 트랙의 임시 체크아웃과 변경되지 않은 워커 터미널은 자동 정리하며 문서·로그·결과·Git 브랜치는 보존합니다. 사용자 변경이 있거나 소유권을 확인할 수 없는 리소스는 이유를 기록하고 남깁니다. 점검을 위해 리소스를 유지하려면 `--no-auto-cleanup`을 사용하세요. [정리와 재시도](OPERATIONS.ko.md#cleanup-migration-and-hooks)를 참고하세요.
 
-최신 릴리스는 **0.1.0**입니다. 소규모 프로젝트의 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 UI 데이터로 검증했습니다.
+최신 릴리스는 **0.1.1**입니다. 소규모 프로젝트의 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 UI 데이터로 검증했습니다.
 
 - 상태 하나당 저장소 하나입니다. Forgejo·서브모듈·복수 저장소 결합 랜딩은 구현하지 않았습니다.
 - 개발 브랜치의 워커는 읽기 전용 도구로 체크아웃을 탐색하고 JSON 제안을 반환합니다. 런타임이 변경 적용·검증·게시를 담당하며 브라우저 워크플로는 구현하지 않았습니다.

@@ -40,6 +40,8 @@ Version `0.0.9` adds optional verification preflight and intermediate checks, co
 
 Version `0.1.0` adds four-language guides and UI, theme selection, worker model/effort evidence, role-based routing, verification-outcome routing, independent-review provenance, skill coexistence and offline quality cases. It also prevents follow-up claims while a previous execution still holds the track lock. State/configuration formats and worker/skill protocols are unchanged; no data migration is required. Upgrade the engine and update project skills while idle. Existing project bindings, local edits and configuration remain protected.
 
+Version `0.1.1` fixes completed no-op proposal reuse across a new merge, safely retires superseded clean integration checkouts with preserved commit references, and isolates test runtime registration from the real installation. State/configuration formats and worker/skill protocols remain unchanged; no data migration is required. Upgrade the engine while idle. Existing project state, user changes and uncertain resources remain protected.
+
 ## 1. Inspect and stop relevant processes
 
 ```sh
@@ -59,11 +61,11 @@ All cooperating processes must use the same `TODO_FLOW_HOME`. Process locks are 
 
 This path requires an existing **`uv tool install` installation** and `uv` on PATH. Source checkouts, editable environments, ordinary virtualenv installations and uv tool installs with custom extra requirements/options or entrypoints are diagnosed rather than overwritten. Update those environments using their original workflow while idle, then run project compatibility and skill checks.
 
-Download the wheel and `SHA256SUMS` from the [v0.1.0 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0), verify its checksum, then pass the local wheel path:
+Download the wheel and `SHA256SUMS` from the [v0.1.1 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1), verify its checksum, then pass the local wheel path:
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl
 ```
 
 The plan shows versions, artifact digest, compatibility contracts and known projects. Execution rechecks those facts under an exclusive runtime lock, snapshots the artifact, backs up the installed environment and two entrypoints, invokes uv, and checks the installed version, entrypoints and bundled skills. An ordinary install/validation failure restores the previous environment. Upgrades do not change project configuration, documents, claims or remote state.

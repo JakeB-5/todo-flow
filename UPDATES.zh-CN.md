@@ -4,7 +4,7 @@
 
 [README](README.zh-CN.md) · [代理安装](AGENT_INSTALL.zh-CN.md) · [运行指南](OPERATIONS.zh-CN.md) · [演示](DEMO.zh-CN.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: 6262c997bc6bf94de1778b16b931c80acb2e1242139c275f42b01da6b1a9d133; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: 448b7c9f6fe586ce98dc12164bbf74a5d7fced643909814f86f3bb475f53f4b2; status: translated -->
 
 先更新一次共享引擎，再更新每个项目中安装的技能。项目文档和执行记录保留在原有状态目录中。更新不会重新初始化项目，也不会启动待办工作。
 
@@ -44,6 +44,8 @@
 
 `0.1.0` 新增四语言指南与 UI、主题选择、工作进程模型/推理强度证据、按角色路由、按验证结果分配后续工作、独立评审来源区分、技能共存和离线质量案例。前一次执行仍持有轨道锁时，将阻止后续工作取得该轨道。状态/配置格式及工作进程/技能协议保持不变，无需数据迁移。请在空闲时升级引擎并更新项目技能。现有项目绑定、本地修改和配置仍受保护。
 
+`0.1.1` 修复在新合并中复用已完成的无修改提案的问题，在保留提交引用的前提下安全回收被替代的干净集成检出，并将测试运行时注册与实际安装隔离。状态/配置格式及工作进程/技能协议保持不变，无需数据迁移。请在空闲时升级引擎。现有项目状态、用户修改及未经确认的资源仍受保护。
+
 <a id="1-inspect-and-stop-relevant-processes"></a>
 
 ## 1. 检查并停止相关进程
@@ -67,11 +69,11 @@ todo-flow --state /absolute/project/todo compatibility \
 
 此路径要求已有 **`uv tool install` 安装**，且 PATH 中可找到 `uv`。源码检出目录、editable 环境、普通虚拟环境安装，以及具有自定义额外要求/选项或入口点的 uv tool 安装会收到诊断信息，不会被覆盖。请在空闲时按原有工作流程更新这些环境，再检查项目兼容性和技能。
 
-从 [v0.1.0 发行版](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.0)下载 wheel 和 `SHA256SUMS`，验证校验和后传入本地 wheel 路径：
+从 [v0.1.1 发行版](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1)下载 wheel 和 `SHA256SUMS`，验证校验和后传入本地 wheel 路径：
 
 ```sh
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl --dry-run
-todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.0-py3-none-any.whl
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl --dry-run
+todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl
 ```
 
 计划会显示版本、产物摘要、兼容性契约和已知项目。执行时会在独占运行时锁下重新检查这些信息，保存产物快照，备份已安装环境和两个入口点，调用 uv，并检查安装后的版本、入口点及内置技能。普通安装/验证失败会恢复原环境。升级不改变项目配置、文档、claim 或远程状态。
