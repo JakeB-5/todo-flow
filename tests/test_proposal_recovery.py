@@ -101,6 +101,30 @@ def restore_original(workspace, record):
     index.write_bytes(base64.b64decode(record["intent"]["index"]))
 
 
+def assert_retry_reuses_receipt(case, engine, task, workspace, changes, before, repair=None):
+    head = command(["git", "rev-parse", "HEAD"], workspace)
+    path = application.journal_path(engine, task["track"])
+    receipt = path.read_bytes()
+    # same-context-retry: adoption is exactly once, including after an Engine restart.
+    for retry in (engine, Engine(engine.store)):
+        with (
+            patch.object(application, "atomic_file") as write,
+            patch.object(application, "write_json") as save,
+            patch.object(application, "command", wraps=command) as git,
+        ):
+            retry.apply_changes(task, workspace, changes, repair, expected_head=before)
+            write.assert_not_called()
+            save.assert_not_called()
+            case.assertFalse(
+                any(
+                    call.args[0][:2] in (["git", "add"], ["git", "commit"])
+                    for call in git.call_args_list
+                )
+            )
+        case.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), head)
+        case.assertEqual(path.read_bytes(), receipt)
+
+
 class InterruptedProposalTests(unittest.TestCase):
     setUp = test_flow.IntegrationTests.setUp
     tearDown = test_flow.IntegrationTests.tearDown
@@ -209,14 +233,12 @@ class InterruptedProposalTests(unittest.TestCase):
             before = command(["git", "rev-parse", "HEAD"], workspace)
             engine.apply_changes(task, workspace, changes, expected_head=before)
             head = command(["git", "rev-parse", "HEAD"], workspace)
-            receipt = application.journal_path(engine, task["track"]).read_bytes()
-            engine.apply_changes(task, workspace, changes, expected_head=before)
-            self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), head)
-            self.assertEqual(application.journal_path(engine, task["track"]).read_bytes(), receipt)
+            assert_retry_reuses_receipt(self, engine, task, workspace, changes, before)
         # A no-op produces a receipt without an empty commit.
         engine.apply_changes(task, workspace, changes, expected_head=head)
         self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), head)
         self.assertFalse(application.read(engine, task["track"])["commit"])
+        assert_retry_reuses_receipt(self, engine, task, workspace, changes, head)
 
     def test_commit_recovery_rejects_wrong_parent_marker_result_or_changed_paths(self):
         for tamper in ("parent", "marker", "result", "paths"):
@@ -282,6 +304,109 @@ class InterruptedRepairTests(unittest.TestCase):
     tearDown = test_flow.IntegrationTests.tearDown
     ready = test_integration_repair.IntegrationRepairTests.ready
     repair_task = test_integration_repair.IntegrationRepairTests.repair_task
+
+    def prepare_merge_after_noop(self):
+        self.ready(conflict=False)
+        task, workspace = self.repair_task()
+        head = self.before["head"]
+        self.e.apply_changes(task, workspace, [], expected_head=head)
+        prior = application.read(self.e, task["track"])
+        self.assertEqual(prior["phase"], "committed")
+        self.assertFalse(prior["commit"])
+        self.assertIsNone(prior["intent"]["merge_head"])
+        self.assertEqual(prior["head"], head)
+        repair = integration.prepare(self.e, task, workspace)
+        self.assertEqual(repair["conflicts"], [])
+        self.assertEqual(integration.merge_head(workspace), self.base)
+        return task, workspace, repair, prior
+
+    def test_new_merge_after_empty_receipt_commits_both_parents_and_retries_once(self):
+        task, workspace, repair, prior = self.prepare_merge_after_noop()
+        # merge-context-distinct: the same [] at H must adopt the new H/B merge.
+        # Before the fix this raises "Proposal still has unresolved merge state".
+        self.e.apply_changes(task, workspace, [], repair, expected_head=prior["head"])
+        head = command(["git", "rev-parse", "HEAD"], workspace)
+        receipt = application.read(self.e, task["track"])
+        self.assertNotEqual(head, prior["head"])
+        self.assertEqual(
+            command(["git", "show", "-s", "--format=%P", "HEAD"], workspace).split(),
+            [prior["head"], self.base],
+        )
+        self.assertEqual(receipt["phase"], "committed")
+        self.assertTrue(receipt["commit"])
+        self.assertNotEqual(receipt["id"], prior["id"])
+        self.assertEqual(receipt["head"], head)
+        self.assertEqual(receipt["intent"]["proposal"], [])
+        self.assertEqual(receipt["intent"]["merge_head"], self.base)
+        self.assertIsNone(integration.merge_head(workspace))
+        self.assertEqual(
+            (workspace / "upstream.txt").read_text(),
+            "Upstream addition outside the write surface\n",
+        )
+        # A completed merge has no MERGE_HEAD, but is still the same adopted proposal.
+        assert_retry_reuses_receipt(self, self.e, task, workspace, [], prior["head"], repair)
+        integration.finish_repair(self.e, task, workspace, repair)
+        track = self.s.track(task["track"])
+        self.assertEqual(track["head"], head)
+        self.assertIsNone(track["landing"])
+        self.assertIsNone(track["verification"])
+        self.assertIsNone(track["review"])
+
+    def test_new_merge_after_empty_receipt_preserves_changed_checkout_and_stale_claim(self):
+        # merge-adoption-fences: skipping reuse must still validate the prepared merge.
+        for tamper, message in (
+            ("file", "checkout/index changed"),
+            ("index", "checkout/index changed"),
+            ("parent", "merge changed"),
+            ("head", "Proposal HEAD changed"),
+            ("claim", "Stale claim"),
+        ):
+            with self.subTest(tamper=tamper):
+                case = InterruptedRepairTests()
+                case.setUp()
+                try:
+                    task, workspace, repair, prior = case.prepare_merge_after_noop()
+                    path = application.journal_path(case.e, task["track"])
+                    receipt = path.read_bytes()
+                    if tamper == "file":
+                        (workspace / "calc.py").write_text("# User edit\n")
+                    elif tamper == "index":
+                        command(["git", "reset", "HEAD", "--", "upstream.txt"], workspace)
+                    elif tamper == "parent":
+                        gitdir = Path(
+                            command(["git", "rev-parse", "--absolute-git-dir"], workspace)
+                        )
+                        (gitdir / "MERGE_HEAD").write_text(prior["head"] + "\n")
+                    elif tamper == "head":
+                        command(["git", "update-ref", "HEAD", case.base], workspace)
+                    else:
+                        case.s.control(task["track"], "cancel")
+                    before = snapshot(workspace)
+                    merging = integration.merge_head(workspace)
+                    landing = case.s.track(task["track"])["landing"]
+                    with (
+                        patch.object(application, "atomic_file") as write,
+                        patch.object(application, "write_json") as save,
+                        patch.object(application, "command", wraps=command) as git,
+                    ):
+                        with case.assertRaisesRegex(Conflict, message):
+                            case.e.apply_changes(
+                                task, workspace, [], repair, expected_head=prior["head"]
+                            )
+                        write.assert_not_called()
+                        save.assert_not_called()
+                        case.assertFalse(
+                            any(
+                                call.args[0][:2] in (["git", "add"], ["git", "commit"])
+                                for call in git.call_args_list
+                            )
+                        )
+                    case.assertEqual(snapshot(workspace), before)
+                    case.assertEqual(integration.merge_head(workspace), merging)
+                    case.assertEqual(path.read_bytes(), receipt)
+                    case.assertEqual(case.s.track(task["track"])["landing"], landing)
+                finally:
+                    case.tearDown()
 
     def test_merge_commit_interrupt_preserves_both_parents_and_resolved_tree(self):
         self.ready()
