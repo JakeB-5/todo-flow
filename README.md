@@ -180,6 +180,16 @@ Intermediate change proposals run these related checks after configured prefligh
 
 Omitting `verify_related` or setting it to `[]` preserves full verification after each change. Records bind scope and the ordered related-check policy to verification identity; partial results cannot satisfy a full cache lookup or an effect gate. Policy changes invalidate prior evidence. Legacy full records with matching supported identity remain valid when no related policy is configured; records without identity still require fresh verification. Declare external related-check scripts through `--verify-identity` too. No wall-clock speedup is promised: the local regression fixture compares two intermediate changes and one final candidate, reducing full calls from three to one while still detecting a final defect.
 
+### Limit verification concurrency
+
+For new state, add `--verify-concurrency 1` to `init`. The optional `verify_concurrency` configuration must be a positive integer; omission keeps the existing unlimited verification admission. Existing state cannot be reconfigured with `init`.
+
+Drivers sharing the same STATE share this limit independently of each driver's `--jobs`. Each host verification command reserves one slot, including preflight, related, final and combined integration verification. A command's supervised process group retains its slot until attributed termination is confirmed; this is not a limit on the number of descendants a verifier may create. Worker/model processes and other project states are outside this limit.
+
+Commands wait in durable registration order and release capacity between stages. Eligible cached results return before joining the queue. `STATE/verification-capacity.json` retains task, attempt and execution IDs, stage, workspace, HEAD, wait reason and release evidence. Waiting checks cancellation; the claim, clean HEAD and verification inputs are checked again before execution. The verification timeout starts with execution, not queueing. Partial results still cannot authorize publication, review, landing or completion.
+
+Driver exit, a missing PID or lease expiry alone never frees a running slot. The surviving supervisor must confirm cleanup. An interrupted request that never dispatched is reclaimed after the existing claim recovery fences and seals its launch inventory. Uncertain or unreadable cleanup evidence keeps capacity reserved and records the reason; reconcile the referenced process evidence instead of deleting the queue. Local filesystem locking is required; distributed filesystem operation is not validated. This setting controls resource admission and does not promise faster verification.
+
 ### Verification outcomes
 
 Verification records retain `ok` and add `outcome` (`passed`, `failed`, or `inconclusive`) and `reason`. Only `passed` with `ok:true` can supply success, subject to the existing scope, clean HEAD, input identity, process and independent-review gates. Explicit non-pass, cancellation, incomplete evidence or a non-passing recorded check cannot be overridden by `ok:true`.
@@ -328,7 +338,7 @@ Latest release: **0.1.1**. Small-project full cycles, recovery and two–three i
 - Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.
 - Source contents and full evidence are not injected into the prompt; there is no aggregate 150,000-byte source limit on `main`. Provider context limits still apply to what a worker chooses to read. File deletion and binary edits are not supported.
 - Workers have no default time limit. `init --worker-timeout SECONDS` opts into one; existing projects retain their configured limit (`worker_timeout: null` disables it). Cancellation and driver-loss cleanup remain active. Default driver task-assignment limit: 100; remaining requests survive for the next run.
-- No shared slot budget across drivers, separate heavy-verification queue or validated distributed-filesystem operation.
+- Optional verification command capacity is shared by drivers using the same STATE; worker slots remain driver-local. Distributed-filesystem operation is not validated.
 
 ## Documentation and contributing
 

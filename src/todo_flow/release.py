@@ -117,6 +117,10 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
     validate_verify_identity(config)
     validate_verify_preflight(config)
     validate_verify_related(config)
+    if "verify_concurrency" in config:
+        limit = config["verify_concurrency"]
+        if type(limit) is not int or limit < 1:
+            raise ValueError("verify_concurrency must be a positive integer")
     timeout = config.get("worker_timeout")
     if timeout is not None and (type(timeout) is not int or timeout < 0):
         raise ValueError("worker_timeout must be null (unlimited) or nonnegative seconds")
