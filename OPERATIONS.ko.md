@@ -4,7 +4,7 @@
 
 [시작하기](README.ko.md#quick-start) · [에이전트 설치](AGENT_INSTALL.ko.md) · [업데이트](UPDATES.ko.md) · [데모](DEMO.ko.md)
 
-<!-- translation-source: OPERATIONS.md; source-sha256: dc80dbfa42b0f3ac15e014939c1ffe60ef2c86c74080c9e2c76be1213271fdbe; status: translated -->
+<!-- translation-source: OPERATIONS.md; source-sha256: d92dfeb564038ad3b628ef5165da6b8a9ef74c63e22e2087176ac00d7769e82c; status: translated -->
 
 <a id="project-state-and-language"></a>
 
@@ -93,7 +93,11 @@ todo-flow --state STATE run --daemon
 
 이 절은 `0.0.2`를 설명합니다. 공개된 `0.0.1` wheel은 스냅샷 워커를 유지합니다. 이제 워커는 할당된 구현/리뷰 체크아웃에서 시작하며, triage는 가져온 기준 커밋의 정확한 체크아웃에서 시작합니다. 입력에는 작업, workspace, head, 언어, 탐색 힌트, 쓰기 경계와 `paths` 맵이 들어 있습니다. 목표/조건, 풍부한 트랙 문서, 전체 diff, 검증, 결정, 이전 결과와 triage 근거는 경로로 읽습니다. 프로젝트 소스를 모아 stdin에 넣지 않으며, 소스 전체에 대한 150 KB 제한도 없습니다. 선택해서 읽는 내용에는 모델의 맥락 한도가 여전히 적용됩니다.
 
-Codex는 `rg`를 포함한 읽기 전용 셸 도구를 사용하고, Claude는 Read, Glob, Grep을 제공합니다. `context_patterns` / `--context`는 탐색 힌트이며 읽기 접근 제어가 아닙니다. 프로젝트에 적합한 접근 권한으로 실행하세요. 워커는 JSON 제안을 반환합니다. 승인된 쓰기 적용, 검증 실행, 커밋과 원격 작업 처리는 여전히 엔진이 담당합니다. 실시간 로그가 있는 자동 워커이며, 대화형 에이전트 채팅은 아닙니다.
+Codex는 `rg`를 포함한 읽기 전용 셸 도구를 사용하고, Claude는 Read, Glob, Grep을 제공합니다. `context_patterns` / `--context`는 탐색 힌트이며 읽기 접근 제어가 아닙니다. 프로젝트에 적합한 접근 권한으로 실행하세요. 워커는 JSON 제안을 반환합니다. 승인된 쓰기 적용, 검증 실행, 커밋과 원격 작업 처리는 여전히 엔진이 담당합니다. 지원되는 Orca 경로에서는 관리 워크트리에 연결된 화면 표시 세션을 사용합니다. 호환 명령 워커는 실시간 로그를 표시합니다. 두 경로 모두 호스트를 통해 제안을 반환하며, 터미널이 보인다고 해서 추가 쓰기나 프롬프트 전송이 허용되는 것은 아닙니다.
+
+Claude의 Orca 경로는 실제 터미널, 새로운 `--session-id`, `--safe-mode`, `--restricted`와 Read/Glob/Grep 전용 도구로 CLI를 시작합니다. `-p`나 `--no-session-persistence`는 사용하지 않습니다. 기존 Claude 로그인을 재사용하며 자격 증명을 읽거나 복사하지 않습니다. 호스트는 활성 Claude 설정 디렉터리에서 해당 세션의 기록만 읽습니다. 정확한 최초 프롬프트, 세션·작업공간 식별자, 도구 결과와 턴 완료 기록이 일치해야 제안을 받아들입니다. `claude-session.json`과 복사된 `claude-transcript.jsonl`이 이 근거를 보존하며, `terminal-process.json`·`terminal-retirement.json`과는 별개입니다. 수집 후, 취소 시, 드라이버가 사라졌을 때 해당 프로세스 그룹을 종료합니다. 독립 리뷰는 공급자·모델이 같아도 별도의 새 세션을 사용합니다.
+
+헤드리스는 명시적 재정의 또는 `launch.json`에 실행 전 사유가 기록된 fallback입니다. 관리 소유권이 없거나 Claude 격리 옵션을 지원하지 않는 경우는 호환 경로의 사유이며, 세션 시작 후의 오류는 해당하지 않습니다. 60초 동안 최초 프롬프트가 세션 기록에 나타나지 않으면 터미널의 신뢰·인증 요구를 확인할 수 있는 시작 진단을 남깁니다. 두 번째 실행은 하지 않습니다. 턴 수락 후에는 `worker_timeout` 외에 추가 실행 시간 제한이 없습니다. 알 수 없는 기록 형식, 후보 변경, 추가 프롬프트는 결과 채택을 중단합니다. 대화형 작업의 실행 의도를 보존하고 원래 attempt를 확인하세요. 재전송을 위해 그 기록을 삭제하지 마세요. 터미널 내용이나 사이드바 상태만으로 완료를 판단할 수 없습니다.
 
 `init --launcher auto`가 기본값이며 `worker_launcher`가 없는 기존 설정에도 적용됩니다. 각 드라이버는 프로젝트 설정을 바꾸지 않고 이를 재정의할 수 있습니다.
 

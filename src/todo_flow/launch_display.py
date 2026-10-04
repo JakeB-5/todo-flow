@@ -14,6 +14,15 @@ BACKENDS = {
     "terminal": ("Configured terminal", "설정된 터미널"),
 }
 REASONS = {
+    "claude_interactive_supported": (
+        "Interactive Claude session selected",
+        "Claude 대화형 세션 선택됨",
+    ),
+    "claude_executable_missing": ("Claude executable not found", "Claude 실행 파일 없음"),
+    "claude_interactive_contract_unavailable": (
+        "Installed Claude lacks the required interactive isolation flags",
+        "설치된 Claude에 필요한 대화형 격리 옵션이 없음",
+    ),
     "native_supported": ("Supported native route selected", "지원되는 Native 세션 경로 선택"),
     "native_managed_workspace_required": (
         "Existing checkout has no managed ownership receipt",
@@ -113,18 +122,24 @@ def describe_launch(record, language="en"):
             else text("Orca Codex terminal client", "Orca Codex 터미널 클라이언트")
         )
         if record.get("execution_mode") == "orca-native"
+        else text("Orca Claude terminal session", "Orca Claude 터미널 세션")
+        if record.get("execution_mode") == "orca-interactive"
         else label(BACKENDS, backend)
         if backend
         else text("No backend selected", "선택된 backend 없음"),
         "reason": label(REASONS, selection["reason"]) if selection.get("reason") else unknown,
         "status": label(STATUSES, record["status"]) if record.get("status") else unknown,
         "native": text(
-            "Host-owned App Server; sidebar lifecycle is projected by the host."
+            "Interactive Claude; completed session records supply the proposal."
+            if record.get("execution_mode") == "orca-interactive"
+            else "Host-owned App Server; sidebar lifecycle is projected by the host."
             if selection.get("native_ready")
             else "Compatibility worker route selected."
             if backend
             else "Native session selection not recorded.",
-            "호스트 소유 App Server 사용; 호스트가 사이드바 세션 상태를 전달함."
+            "Claude 대화형 실행; 완료된 세션 기록에서 제안을 수집함."
+            if record.get("execution_mode") == "orca-interactive"
+            else "호스트 소유 App Server 사용; 호스트가 사이드바 세션 상태를 전달함."
             if selection.get("native_ready")
             else "호환 워커 경로 선택됨."
             if backend

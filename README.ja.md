@@ -12,7 +12,7 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 7193d083a4c1fdc34579b18d47d27e1a3c4e22771053a049286e47253616c796; status: translated -->
+<!-- translation-source: README.md; source-sha256: aefd0ce465b7b121be183288604a7290c89b385a674cf5ebf8230702a3141ce5; status: translated -->
 
 ## 37秒で見る TODO Flow
 
@@ -362,3 +362,5 @@ uv tool としてインストールした場合、`todo-flow upgrade --wheel /ab
 **[MIT ライセンス](LICENSE)** · Copyright © 2026 TODO Flow contributors.
 
 native Orca 実行は、所有権を持つ管理対象チェックアウトと専用の Codex App Server セッションを使います。可視の Codex クライアントはターンが受理された後に、そのサーバーとスレッドに接続します。読み取り専用の提案はサーバープロトコルで返ります。明示的なヘッドレス指定は維持されます。Codex のバージョンや認証情報の保存方式で実行経路は選びません。アダプターは既存の Codex ログインを再利用し、実際のプロトコル応答を検証します。既存の Git チェックアウトやレビューの来歴がない場合には、明示的に報告される互換経路を維持します。CLI の起動証拠とダッシュボードには、記録済みのワークスペース、セッション、ターン、ターミナルの関連付けを表示します。合成データによるプロトコル・プロセステストを含みますが、外部モデルの受け入れテストを行ったとは主張しません。
+
+Claude ワーカーも、自分の Orca ワークツリー内の実際のターミナルセッションを優先します。対話型経路では Read/Glob/Grep のみを許可し、試行ごとに新しいセッション ID を割り当て、対応するトランスクリプトの完了したターンから提案を取得します。提案の適用は引き続きホストが行います。ヘッドレスは明示的な選択、または起動前に理由を記録したフォールバックであり、Claude の既定経路ではありません。起動後の初期化・認証・トランスクリプトの失敗によって、2 つ目のワーカーを起動することはありません。記録と復旧については[ワーカーの実行](OPERATIONS.ja.md#worker-context-and-terminal-launchers)を参照してください。

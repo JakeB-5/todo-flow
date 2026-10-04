@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 7193d083a4c1fdc34579b18d47d27e1a3c4e22771053a049286e47253616c796; status: translated -->
+<!-- translation-source: README.md; source-sha256: aefd0ce465b7b121be183288604a7290c89b385a674cf5ebf8230702a3141ce5; status: translated -->
 
 ## 37 秒了解 TODO Flow
 
@@ -362,3 +362,5 @@ todo-flow --state /absolute/project/todo compatibility --target /absolute/projec
 **[MIT 许可证](LICENSE)** · Copyright © 2026 TODO Flow contributors.
 
 原生 Orca 执行使用有明确所有权的托管检出目录和专用 Codex App Server 会话。可见的 Codex 客户端在轮次被接受后连接到准确的服务器、线程；只读提案通过服务器协议返回。显式选择的无界面执行仍保持无界面。Codex 版本和凭据存储方式不决定执行路线：适配器复用现有 Codex 登录并验证实际协议响应。现有 Git 检出目录以及缺少评审来源记录的情况，会保留明确报告的兼容路线。CLI 启动证据和仪表盘展示已记录的工作空间、会话、轮次和终端关联。包含合成协议、进程测试；不声称已进行外部模型验收测试。
+
+Claude 工作器也优先在自己的 Orca 工作树中使用真正的终端会话。交互式路径仅允许 Read/Glob/Grep 工具，为每次尝试分配新的会话 ID，并从对应会话记录中已完成的轮次收集提案；提案仍由宿主应用。无界面模式是显式选择或记录了启动前原因的回退路径，不是 Claude 的默认模式。启动后的初始化、身份验证或会话记录错误不会触发第二个工作器。记录与恢复方式请参阅[工作器执行](OPERATIONS.zh-CN.md#worker-context-and-terminal-launchers)。

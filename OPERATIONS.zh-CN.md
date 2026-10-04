@@ -4,7 +4,7 @@
 
 [从这里开始](README.zh-CN.md#quick-start) · [代理安装](AGENT_INSTALL.zh-CN.md) · [更新](UPDATES.zh-CN.md) · [演示](DEMO.zh-CN.md)
 
-<!-- translation-source: OPERATIONS.md; source-sha256: dc80dbfa42b0f3ac15e014939c1ffe60ef2c86c74080c9e2c76be1213271fdbe; status: translated -->
+<!-- translation-source: OPERATIONS.md; source-sha256: d92dfeb564038ad3b628ef5165da6b8a9ef74c63e22e2087176ac00d7769e82c; status: translated -->
 
 <a id="project-state-and-language"></a>
 
@@ -93,7 +93,11 @@ todo-flow --state STATE run --daemon
 
 本节描述 `0.0.2`；已发布的 `0.0.1` wheel 仍使用快照工作器。现在，工作器会在分配的实现或审查检出目录中启动，triage 则使用已获取的精确基线检出目录。输入包含任务、workspace、head、language、探索提示、写入边界和 `paths` 映射。目标与条件、富内容轨道文档、完整差异、验证、决策、历史结果和 triage 证据都通过路径读取。项目源码不会被收集到标准输入中，也没有源码总量 150 KB 的限制。模型上下文限制仍适用于所选择的读取内容。
 
-Codex 使用包括 `rg` 在内的只读 shell 工具；Claude 提供 Read、Glob 和 Grep。`context_patterns` / `--context` 是导航提示，不是读取权限控制。请以适合项目的访问权限运行。工作器返回 JSON 提案；引擎仍负责应用获准的写入、运行验证、提交和处理远程操作。这些是带实时日志的自动工作器，不是交互式代理聊天。
+Codex 使用包括 `rg` 在内的只读 shell 工具；Claude 提供 Read、Glob 和 Grep。`context_patterns` / `--context` 是导航提示，不是读取权限控制。请以适合项目的访问权限运行。工作器返回 JSON 提案；引擎仍负责应用获准的写入、运行验证、提交和处理远程操作。在受支持的 Orca 路径中，工作器使用绑定到其托管工作树的可见会话。兼容命令工作器显示实时日志。两种路径均通过宿主返回提案；可见终端本身并不授权额外写入或发送提示。
+
+Claude 的 Orca 路径使用真正的终端、新的 `--session-id`、`--safe-mode`、`--restricted` 以及仅包含 Read/Glob/Grep 的工具集启动 CLI，不使用 `-p` 或 `--no-session-persistence`。它复用现有 Claude 登录，不读取或复制凭据。宿主仅从当前 Claude 配置目录读取对应会话的记录。只有初始提示、会话与工作区身份、工具结果以及轮次完成记录均匹配后，才接受提案。`claude-session.json` 和复制的 `claude-transcript.jsonl` 保存这些证据，与 `terminal-process.json` 和 `terminal-retirement.json` 相互独立。收集后、取消时或驱动程序丢失时，都会停止同一进程组。独立审查使用另一个新会话，即使提供方和模型相同也是如此。
+
+无界面模式是显式覆盖或在 `launch.json` 中记录了启动前原因的回退路径。缺少托管所有权或 Claude 不支持所需的隔离选项属于兼容路径原因；会话启动后的错误不属于此类原因。若 60 秒后初始提示仍未出现在记录中，将报告启动诊断以便在终端检查信任或认证要求，而不会再次启动。接受轮次后，除 `worker_timeout` 外不设额外执行时限。未知记录格式、候选变更和额外提示都会阻止采纳结果。请保留交互式任务的启动意图并核对原始尝试，不要为了重发任务而删除记录。终端内容和侧栏状态本身不能证明完成。
 
 `init --launcher auto` 是默认值，也适用于没有 `worker_launcher` 的现有配置。每个驱动进程都可以在不修改项目配置的情况下覆盖它：
 

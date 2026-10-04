@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 7193d083a4c1fdc34579b18d47d27e1a3c4e22771053a049286e47253616c796; status: translated -->
+<!-- translation-source: README.md; source-sha256: aefd0ce465b7b121be183288604a7290c89b385a674cf5ebf8230702a3141ce5; status: translated -->
 
 ## 37초로 보는 TODO Flow
 
@@ -362,3 +362,5 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 **[MIT 라이선스](LICENSE)** · Copyright © 2026 TODO Flow contributors.
 
 Orca native 실행은 소유권이 확인된 관리 체크아웃과 전용 Codex App Server 세션을 사용합니다. 화면의 Codex 클라이언트는 턴 수락 후 정확한 서버·스레드에 연결되고, 읽기 전용 제안은 서버 프로토콜로 반환됩니다. 명시적 headless는 유지합니다. Codex 버전이나 인증 저장 방식으로 실행 경로를 선택하지 않습니다. 어댑터는 기존 Codex 로그인을 사용하고 실제 프로토콜 응답을 검증합니다. 기존 Git 체크아웃과 리뷰 출처가 없는 경우에는 이유를 명시한 호환 경로를 유지합니다. CLI 실행 근거와 대시보드는 기록된 작업 공간·세션·턴·터미널 연결을 보여 줍니다. 합성 프로토콜·프로세스 테스트를 포함하며 외부 모델 인수 테스트를 수행했다고 주장하지 않습니다.
+
+Claude 워커도 자신의 Orca 워크트리에서 실제 대화형 터미널 세션을 우선 사용합니다. Read/Glob/Grep만 허용하고 각 attempt에 새 세션 ID를 부여하며, 해당 세션 기록의 완료된 턴에서 제안을 수집합니다. 변경 적용은 계속 호스트가 담당합니다. 헤드리스는 명시적 선택 또는 실행 전 사유가 기록된 fallback이며 Claude의 기본 경로가 아닙니다. 실행 후 시작·인증·세션 기록 오류가 발생해도 두 번째 워커를 실행하지 않습니다. 영수증과 복구는 [워커 실행](OPERATIONS.ko.md#worker-context-and-terminal-launchers)을 참고하세요.

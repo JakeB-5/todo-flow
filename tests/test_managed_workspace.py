@@ -91,6 +91,19 @@ class ManagedWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.s.track("addition")["head"], head)
         self.assertEqual(self.created, 1)
 
+    def test_claude_project_default_still_creates_an_owned_orca_worktree(self):
+        self.start()
+        self.engine.config["worker"] = {"type": "claude"}
+        self.assertEqual(self.engine.ensure_workspace(self.task), self.candidate)
+        self.assertTrue(managed.receipt_path(self.gate).exists())
+        self.assertEqual(self.created, 1)
+
+    def test_workspace_preference_does_not_depend_on_the_adapter_name(self):
+        self.start()
+        self.engine.config["worker"] = {"type": "command", "argv": ["synthetic-provider"]}
+        self.assertEqual(self.engine.ensure_workspace(self.task), self.candidate)
+        self.assertEqual(self.created, 1)
+
     def test_receipt_recovers_interruption_before_registration(self):
         self.start()
         with patch.object(managed, "_register", side_effect=RuntimeError("crash")):

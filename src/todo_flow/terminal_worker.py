@@ -12,6 +12,7 @@ import threading
 import time
 
 if __package__:
+    from .claude_terminal import ClaudeTerminal
     from .process_supervisor import _finish
     from .owned_process_group import OwnedProcessGroup
     from .process_launch import LaunchGate
@@ -22,6 +23,7 @@ else:
     # available even when this file is executed from an unrelated workspace.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from todo_flow.process_supervisor import _finish
+    from todo_flow.claude_terminal import ClaudeTerminal
     from todo_flow.owned_process_group import OwnedProcessGroup
     from todo_flow.process_launch import LaunchGate
     from todo_flow.verification import VerificationCleanupError
@@ -98,6 +100,8 @@ def main(spec_path):
 
         code = 1
         leader_completed = False
+        interactive = None
+        proposal_received = False
         try:
             env = dict(os.environ)
             env.pop("CLAUDECODE", None)
@@ -105,8 +109,10 @@ def main(spec_path):
             if lease_closed(lease):
                 gate.cancel_pending()
                 raise KeyboardInterrupt
+            if spec.get("interactive") is not None:
+                interactive = ClaudeTerminal(folder, spec["interactive"])
             with (
-                (folder / "input.json").open("rb") as inp,
+                nullcontext(None) if interactive else (folder / "input.json").open("rb") as inp,
                 gate.launching() if gate is not None else nullcontext(),
             ):
                 proc = OwnedProcessGroup(
@@ -114,18 +120,28 @@ def main(spec_path):
                     cwd=spec["cwd"],
                     env=env,
                     stdin=inp,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stdout=None if interactive else subprocess.PIPE,
+                    stderr=None if interactive else subprocess.PIPE,
                 )
             state.update(pid=proc.pid, status="running")
             save(receipt, state)
-            for stream, name in ((proc.stdout, "output.json"), (proc.stderr, "stderr.log")):
+            streams = (
+                () if interactive else ((proc.stdout, "output.json"), (proc.stderr, "stderr.log"))
+            )
+            for stream, name in streams:
                 thread = threading.Thread(target=relay, args=(stream, folder / name), daemon=True)
                 thread.start()
                 readers.append(thread)
             while True:
                 if cancelled.exists() or lease_closed(lease):
                     raise KeyboardInterrupt
+                if interactive and interactive.poll():
+                    # Recheck cancellation immediately before accepting a complete turn.
+                    if cancelled.exists() or lease_closed(lease):
+                        raise KeyboardInterrupt
+                    proposal_received = True
+                    code = 0
+                    break
                 if proc.leader_exited():
                     leader_completed = True
                     break
@@ -134,6 +150,8 @@ def main(spec_path):
             code = 130
         except Exception as error:
             state["error"] = str(error)
+            if spec.get("interactive") is not None:
+                (folder / "stderr.log").write_text(f"{type(error).__name__}: {error}\n")
         finally:
             state.update(status="cleaning", worker_returncode=code)
             try:
@@ -153,14 +171,22 @@ def main(spec_path):
                         # Readers own the pipes, so communicate must not consume them.
                         child_code = (
                             _finish(
-                                gate, proc, "leader-exited" if leader_completed else "cancelled"
+                                gate,
+                                proc,
+                                "proposal-received"
+                                if proposal_received
+                                else "leader-exited"
+                                if leader_completed
+                                else "cancelled",
                             )
                             if gate is not None
                             else proc.stop()
                         )
                         if leader_completed:
-                            code = child_code
+                            code = child_code if not interactive else (child_code or 1)
                             state["worker_returncode"] = code
+                        if interactive:
+                            state["worker_returncode"] = child_code
                     deadline = time.monotonic() + 5
                     for thread in readers:
                         thread.join(timeout=max(0, deadline - time.monotonic()))
@@ -175,6 +201,8 @@ def main(spec_path):
                     if lease is not None:
                         os.close(lease)
                         lease = None
+                    if interactive is not None:
+                        interactive.finish(proposal_received and code == 0)
                 except BaseException as error:
                     save(
                         receipt,

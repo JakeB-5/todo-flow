@@ -5,6 +5,26 @@ Unknown runtime codes and authored content are never looked up here.
 """
 
 MESSAGES = {
+    "Interactive Claude session selected": (
+        "Claude の対話型セッションを選択",
+        "已选择 Claude 交互式会话",
+    ),
+    "Claude executable not found": (
+        "Claude 実行ファイルが見つかりません",
+        "找不到 Claude 可执行文件",
+    ),
+    "Installed Claude lacks the required interactive isolation flags": (
+        "インストール済みの Claude に必要な対話型隔離オプションがありません",
+        "已安装的 Claude 缺少所需的交互式隔离选项",
+    ),
+    "Orca Claude terminal session": (
+        "Orca Claude ターミナルセッション",
+        "Orca Claude 终端会话",
+    ),
+    "Interactive Claude; completed session records supply the proposal.": (
+        "対話型 Claude。完了したセッション記録から提案を取得します。",
+        "交互式 Claude；从已完成的会话记录中获取提案。",
+    ),
     "Orca terminal (command worker)": (
         "Orca ターミナル（コマンドワーカー）",
         "Orca 终端（命令工作进程）",

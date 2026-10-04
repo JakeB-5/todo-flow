@@ -269,9 +269,13 @@ class TerminalProcess:
             time.sleep(0.1)
 
 
-def spawn_terminal(launcher, argv, workspace, folder, title, *, launch_identity=None):
+def spawn_terminal(
+    launcher, argv, workspace, folder, title, *, launch_identity=None, interactive=None
+):
     argv = [shutil.which(argv[0]) or argv[0], *argv[1:]]
     spec = {"argv": argv, "cwd": workspace, "title": title}
+    if interactive is not None:
+        spec["interactive"] = interactive
     if launch_identity is not None:
         # The caller supplies the canonical store/track/attempt and a fresh
         # execution ID. Persist intent before exposing the bridge command.

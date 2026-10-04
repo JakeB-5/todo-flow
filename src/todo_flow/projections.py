@@ -396,8 +396,8 @@ class Dashboard:
         launch = read_launch(self.store.path, a["id"] if a else None)
         record = launch["record"] or {}
         public = {}
-        if record.get("execution_mode") == "orca-native":
-            public["execution_mode"] = "orca-native"
+        if record.get("execution_mode") in ("orca-native", "orca-interactive"):
+            public["execution_mode"] = record["execution_mode"]
             for key in ("worktree", "session", "turn"):
                 if isinstance(record.get(key), str):
                     public[key] = record[key]

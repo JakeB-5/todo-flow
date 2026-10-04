@@ -188,9 +188,9 @@ def ensure(engine, task):
     track = engine.store.track(task["track"])
     if track["branch"] or track["workspace"]:
         return None
-    if engine.config.get("worker", {}).get("type") != "codex" or engine.config.get(
-        "worker_launcher", "auto"
-    ) not in {"auto", "orca"}:
+    # Workspace ownership is provider-independent. Role routing may select a
+    # different provider from the project default, including future adapters.
+    if engine.config.get("worker_launcher", "auto") not in {"auto", "orca"}:
         return None
     launcher = select_launcher(engine.config, str(engine.root))
     advertised = launcher.get("selection", {}).get("orca", {}).get("advertised", {})

@@ -361,8 +361,9 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     # Delivery uncertainty belongs to the task, regardless of the replacement
     # attempt's adapter, launcher or current native capability. Do not parse an
     # existing intent: even a malformed file or dangling symlink must block replay.
-    if task.get("id") and os.path.lexists(Path(state) / ("native-task-" + task["id"] + ".json")):
-        raise FileExistsError("Native task intent already exists; reconcile before retrying")
+    for prefix in ("native-task-", "interactive-task-"):
+        if task.get("id") and os.path.lexists(Path(state) / (prefix + task["id"] + ".json")):
+            raise FileExistsError("Native task intent already exists; reconcile before retrying")
     from .worker_routing import apply, validate_adapter
 
     config = apply(config, task.get("worker_selection"))
@@ -491,7 +492,23 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     # Record selection before any launch. Selection is not proof of process start;
     # process ownership and cleanup remain the supervisor/bridge's responsibility.
     write_json(folder / "launch.json", {**launcher, "status": "selected"})
-    if adapter["type"] == "codex" and launcher["backend"] == "orca":
+    interactive = None
+    if adapter["type"] == "claude" and launcher["backend"] == "orca":
+        from .claude_session import prepare
+
+        prepared, reason = prepare(
+            config, context, task, state, folder, launcher, instructions, SCHEMA
+        )
+        if prepared is not None:
+            args, interactive = prepared["argv"], prepared["session"]
+        else:
+            launcher["selection"] = {
+                **launcher.get("selection", {}),
+                "reason": reason,
+                "execution_mode": "headless-compatibility",
+            }
+        write_json(folder / "launch.json", {**launcher, "status": "selected"})
+    elif adapter["type"] == "codex" and launcher["backend"] == "orca":
         from .native_worker import run_native
 
         native = run_native(config, context, task, state, folder, launcher, heartbeat, observation)
@@ -528,6 +545,7 @@ def _run_worker(config, context, task, state, heartbeat, observation):
                 folder,
                 title,
                 launch_identity=observation.launch(state),
+                **({"interactive": interactive} if interactive else {}),
             )
         try:
             while proc.poll() is None:
@@ -546,6 +564,10 @@ def _run_worker(config, context, task, state, heartbeat, observation):
             else:
                 proc.stop()
     observation.phase = "decoding"
+    if interactive is not None:
+        from .claude_session import adopt
+
+        adopt(folder, context, task, state)
     if adapter["type"] == "codex":
         result = json.loads((folder / "final.json").read_text())
         if isinstance(result, dict):

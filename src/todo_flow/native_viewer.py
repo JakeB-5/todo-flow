@@ -61,7 +61,7 @@ def observe_sidebar(spec, pane, expected_state):
         for agent in workspace.get("agents", []):
             if (
                 agent.get("paneKey") == pane
-                and agent.get("agentType") == "codex"
+                and agent.get("agentType") == spec.get("provider", "codex")
                 and agent.get("prompt") == spec["title"]
                 and agent.get("state") == expected_state
             ):
