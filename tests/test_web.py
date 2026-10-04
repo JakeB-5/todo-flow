@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from runtime_home import isolate_runtime_home
 from todo_flow.store import Store
 
 DOC = {
@@ -21,7 +22,9 @@ DOC = {
 
 class HttpTests(unittest.TestCase):
     def setUp(self):
+        isolate_runtime_home(self)
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.s = Store(Path(self.tmp.name) / "state")
         self.s.configure(
             {
@@ -47,12 +50,19 @@ class HttpTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
         )
+        self.addCleanup(self.stop_server)
         self.url = self.proc.stdout.readline().strip().split("Dashboard: ")[1]
 
-    def tearDown(self):
+    def stop_server(self):
         self.proc.terminate()
-        self.proc.communicate(timeout=5)
-        self.tmp.cleanup()
+        try:
+            self.proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.communicate(timeout=5)
+
+    def tearDown(self):
+        self.doCleanups()
 
     def get(self, path="/api/state"):
         with urllib.request.urlopen(self.url + path) as r:

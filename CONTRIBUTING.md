@@ -88,6 +88,10 @@ Jev guidance in todo/watchlist is optional. Do not turn a recommendation into an
 
 ## Checks
 
+Runtime tests must isolate registration and maintenance state as well as project files. Call `runtime_home.isolate_runtime_home(self)` from `tests/runtime_home.py` at the start of a unittest fixture's `setUp`, before calling the CLI, engine, dashboard or updater. It replaces an inherited `TODO_FLOW_HOME` with a fresh temporary home, passes it to child processes through the environment, and registers cleanup that restores the caller's value (or absence), including when `setUp` fails. Register temporary project directories and child shutdown with `addCleanup` too, so children stop before the home is restored or removed. Fixtures used through direct `setUp`/`tearDown` calls must call `doCleanups` from `tearDown`; direct callers must also use `doCleanups` if setup fails.
+
+Keep the explicit temporary homes in update and skill coexistence tests. Nested fixtures must finish in reverse order. Set the home before starting threads or children and join/stop them before cleanup; all concurrent work inside one fixture shares that home. Run independent fixtures concurrently in separate processes, since `os.environ` is process-wide. Child calls that supply `env` must copy the fixture environment before adding overrides. Do not rely on teardown to remove registrations from a user's home: a killed test must leave any residual state only in its temporary directories. The standard discovery command and individual test modules use the same fixtures; no shell-level home override is required.
+
 ```sh
 uv run python scripts/check_translations.py
 uv run python -m unittest discover -s tests -p test_document_translations.py -v

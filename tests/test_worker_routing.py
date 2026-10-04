@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runtime_home import isolate_runtime_home
 from todo_flow import documents
 from todo_flow.cli import main
 from todo_flow.process_inventory import ProcessInventory
@@ -40,6 +41,7 @@ def choice(provider, effort="medium"):
 
 class WorkerRoutingTests(unittest.TestCase):
     def setUp(self):
+        isolate_runtime_home(self)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)

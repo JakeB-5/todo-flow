@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runtime_home import isolate_runtime_home
 from todo_flow.adapters import command, permitted
 from todo_flow.engine import Engine
 from todo_flow.process_barrier import ProcessBarrierError
@@ -264,7 +265,9 @@ class StoreTests(unittest.TestCase):
 
 class IntegrationTests(unittest.TestCase):
     def setUp(self):
+        isolate_runtime_home(self)
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.remote = self.root / "remote.git"
         command(["git", "init", "--bare", str(self.remote)])
@@ -300,7 +303,8 @@ class IntegrationTests(unittest.TestCase):
         self.s.register(DOC)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        # Several tests call this fixture directly instead of using TestCase.run.
+        self.doCleanups()
 
     def test_context_points_to_large_checkout_without_loading_source(self):
         source = "# SOURCE_CONTENT_SENTINEL\n" * 10000
