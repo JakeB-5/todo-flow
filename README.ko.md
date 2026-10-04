@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: a69f417dbfbee6c1e46370f1a88643ebdf164460b26b2f61d576bd1ada634a0d; status: translated -->
+<!-- translation-source: README.md; source-sha256: 7193d083a4c1fdc34579b18d47d27e1a3c4e22771053a049286e47253616c796; status: translated -->
 
 ## 37초로 보는 TODO Flow
 
