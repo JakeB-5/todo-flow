@@ -570,6 +570,142 @@ Object.assign(additionalMessages, {
   "Unreadable worker evidence": ["ワーカーの根拠を読み取れません", "无法读取工作进程依据"],
   "Source": ["出典", "来源"]
 });
+const deliveryMessages = {
+  "Delivery status": [
+    "전달 단계",
+    "反映・後処理の状態",
+    "交付阶段"
+  ],
+  "Awaiting landing": [
+    "반영 대기",
+    "反映待ち",
+    "等待合入"
+  ],
+  "Landed": [
+    "반영됨",
+    "反映済み",
+    "已合入"
+  ],
+  "Triage": [
+    "트리아지",
+    "トリアージ",
+    "分诊"
+  ],
+  "Cleaning up": [
+    "정리 중",
+    "後処理中",
+    "正在清理"
+  ],
+  "Cleanup deferred": [
+    "정리 보류",
+    "後処理保留",
+    "清理暂缓"
+  ],
+  "Run complete": [
+    "실행 완료",
+    "実行完了",
+    "执行完成"
+  ],
+  "Check needed": [
+    "확인 필요",
+    "確認が必要",
+    "需要确认"
+  ],
+  "Current request evidence is missing.": [
+    "현재 요청의 근거가 없습니다.",
+    "現在の要求の根拠がありません。",
+    "缺少当前请求的依据。"
+  ],
+  "Delivery evidence is unreadable.": [
+    "전달 근거를 읽을 수 없습니다.",
+    "反映・後処理の根拠を読み取れません。",
+    "无法读取交付依据。"
+  ],
+  "Landing evidence is missing.": [
+    "반영 근거가 없습니다.",
+    "反映の根拠がありません。",
+    "缺少合入依据。"
+  ],
+  "Landing is not confirmed for this candidate.": [
+    "현재 후보의 반영이 확인되지 않았습니다.",
+    "現在の候補の反映は確認されていません。",
+    "尚未确认当前候选的合入。"
+  ],
+  "Awaiting triage.": [
+    "트리아지 대기 중입니다.",
+    "トリアージ待ちです。",
+    "正在等待分诊。"
+  ],
+  "Triage is not confirmed for this candidate.": [
+    "현재 후보의 트리아지가 확인되지 않았습니다.",
+    "現在の候補のトリアージは確認されていません。",
+    "尚未确认当前候选的分诊。"
+  ],
+  "Awaiting completion check.": [
+    "완료 확인을 기다리고 있습니다.",
+    "完了確認を待っています。",
+    "正在等待完成检查。"
+  ],
+  "The execution request has not finished.": [
+    "실행 요청이 끝나지 않았습니다.",
+    "実行要求が終了していません。",
+    "执行请求尚未结束。"
+  ],
+  "Unfinished work remains.": [
+    "미완료 작업이 남아 있습니다.",
+    "未完了の作業が残っています。",
+    "仍有未完成的工作。"
+  ],
+  "Cleanup requested.": [
+    "정리가 요청되었습니다.",
+    "後処理が要求されました。",
+    "已请求清理。"
+  ],
+  "Cleanup is in progress.": [
+    "정리를 진행 중입니다.",
+    "後処理を進めています。",
+    "正在进行清理。"
+  ],
+  "Cleanup has not finished.": [
+    "정리가 끝나지 않았습니다.",
+    "後処理は終了していません。",
+    "清理尚未结束。"
+  ],
+  "Cleanup evidence is missing.": [
+    "정리 근거가 없습니다.",
+    "後処理の根拠がありません。",
+    "缺少清理依据。"
+  ],
+  "Cleanup evidence is for an earlier request or candidate.": [
+    "정리 근거가 이전 요청 또는 후보에 해당합니다.",
+    "後処理の根拠は以前の要求または候補のものです。",
+    "清理依据属于之前的请求或候选。"
+  ],
+  "Cleanup was only simulated.": [
+    "정리 모의 실행 결과만 있습니다.",
+    "後処理の模擬実行結果しかありません。",
+    "只有清理模拟运行的结果。"
+  ],
+  "Cleanup is not confirmed.": [
+    "정리 완료가 확인되지 않았습니다.",
+    "後処理の完了は確認されていません。",
+    "尚未确认清理完成。"
+  ],
+  "Current delivery evidence is unavailable.": [
+    "현재 전달 근거를 확인할 수 없습니다.",
+    "現在の反映・後処理の根拠を確認できません。",
+    "无法确认当前交付依据。"
+  ],
+  "Connection lost. Delivery needs a fresh observation.": [
+    "통신이 끊겼습니다. 전달 단계를 다시 확인해야 합니다.",
+    "接続が切れました。反映・後処理の状態を再確認する必要があります。",
+    "连接已断开，需要重新确认交付阶段。"
+  ]
+};
+for (const [key, [ko, ja, zh]] of Object.entries(deliveryMessages)) {
+  koreanMessages[key] = ko;
+  additionalMessages[key] = [ja, zh];
+}
 const catalogs = {
   en: {},
   ko: koreanMessages,

@@ -37,6 +37,21 @@ nav a>span{min-width:0}.sidebar nav a{gap:4px}.sidebar nav a>span{overflow-wrap:
 @media(max-width:700px){.topbar{height:auto;min-height:38px;gap:6px;flex-wrap:wrap}.connection{gap:6px}.connection time{font-size:10px}.archive-nav{max-width:42%}}
 .badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 
+/* Delivery reasons remain visible in the archive and narrow work lists. */
+.delivery-status{display:block;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.delivery-reason{display:block;margin-top:4px;font-size:11px;color:var(--muted);white-space:normal;overflow-wrap:anywhere}
+.delivery-reason:empty{display:none}
+.status-cell .delivery-status{margin-top:6px}
+.archive-table th.priority-col{width:230px}
+.delivery-panel{margin-bottom:12px}
+@media(max-width:700px){
+  .status-cell{min-width:0}
+  .archive-table .priority-cell{display:block;grid-column:2/4;grid-row:2;text-align:left;min-width:0}
+  .archive-table .links-cell{grid-column:2/4;grid-row:3;min-width:0}
+  .archive-table .date-cell{grid-column:2/4;grid-row:4;text-align:left}
+}
+
+
 /* Activity summaries never contain task instructions; details keep the full text. */
 .activity-track{border:1px solid var(--line);border-radius:7px;background:var(--paper);padding:12px;margin-bottom:8px;min-width:0;overflow-wrap:anywhere}
 .activity-track .work-track{display:block;font-size:14px;margin-bottom:7px}
