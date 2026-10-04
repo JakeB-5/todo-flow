@@ -799,7 +799,7 @@ test('disconnect and offline language switches invalidate completion until that 
     assert.ok(e.html(target).includes('Run complete'));
     const before=JSON.stringify([e.track,e.data]);
     const navigation=e.context.location.hash;
-    const focused={dataset:{},tagName:'SELECT'};
+    const focused={dataset:{},tagName:'SELECT',closest:()=>null};
     e.document.activeElement=focused;
     e.setOffline(true);
     await e.run('refresh()');
