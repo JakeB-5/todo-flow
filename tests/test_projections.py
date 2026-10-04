@@ -278,7 +278,11 @@ class DeliveryProjectionTests(unittest.TestCase):
             c.execute(
                 "INSERT INTO tracks(id,revision,document,status,control,request,head,review,landing,updated)"
                 " VALUES('delivery',1,?,'open','active','request-current','candidate',?,?,1)",
-                (encode({"id": "delivery", "title": "Delivery"}), encode(review), encode(self.landing)),
+                (
+                    encode({"id": "delivery", "title": "Delivery"}),
+                    encode(review),
+                    encode(self.landing),
+                ),
             )
             c.execute(
                 "INSERT INTO effects(id,track,kind,intent,receipt,updated)"

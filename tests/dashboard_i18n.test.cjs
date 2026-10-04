@@ -818,8 +818,22 @@ test('disconnect and offline language switches invalidate completion until that 
     }
     e.setOffline(false);
     await e.run('refresh()');
-    assert.ok(e.html(target).includes('执行完成'),hash+' recovered');
-    assert.ok(!e.html(target).includes('需要确认'),hash+' recovered');
+    if(hash==='#activity') {
+      // cleanup-completion-proof / delivery-phases: only alpha has completion evidence;
+      // reconnecting must leave beta's absent evidence marked as needing confirmation.
+      const tracks=e.html(target).match(/<section class="activity-track">[\s\S]*?<\/section>/g)||[];
+      const alpha=tracks.find(track=>track.includes('href="#track/alpha"'));
+      const beta=tracks.find(track=>track.includes('href="#track/beta"'));
+      assert.ok(alpha,'alpha Activity region exists');
+      assert.ok(beta,'beta Activity region exists');
+      assert.ok(alpha.includes('执行完成'),'alpha recovered');
+      assert.ok(!alpha.includes('需要确认'),'alpha recovered');
+      assert.ok(beta.includes('需要确认'),'beta still lacks delivery evidence');
+      assert.ok(!beta.includes('执行完成'),'beta must not appear complete');
+    } else {
+      assert.ok(e.html(target).includes('执行完成'),hash+' recovered');
+      assert.ok(!e.html(target).includes('需要确认'),hash+' recovered');
+    }
     assert.equal(JSON.stringify([e.track,e.data]),before);
   }
 });
