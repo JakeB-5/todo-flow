@@ -11,7 +11,8 @@ from pathlib import Path
 from .adapters import GitHub, command, file_lock
 from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
-from . import proposal_application
+from . import clean_integration, proposal_application
+from .verification_artifacts import checkout_identity
 from .maintenance import guarded
 from . import integration as integration_repair
 from . import condition_evidence, verification_identity, verification_logs, verification_outcomes
@@ -455,6 +456,7 @@ class Engine:
             integration = self.store.path / "integrations" / task["attempt"]
             with file_lock(self.store.path / "locks/git-metadata.lock", blocking=True):
                 command(["git", "worktree", "add", "--detach", str(integration), base], self.root)
+                created = checkout_identity(integration)
             try:
                 command(["git", "merge", "--no-ff", "--no-edit", t["head"]], integration)
             except RuntimeError as e:
@@ -463,6 +465,7 @@ class Engine:
                 return integration_repair.request_repair(
                     self, task, integration, base, "Integration conflict: " + str(e)
                 )
+            clean_integration.capture(self.store, t, task, integration, base, created)
             verification = self.verify(task, integration)
             # Combined verification belongs to the integration, not the candidate head.
             combined = verification
