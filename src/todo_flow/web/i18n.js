@@ -706,6 +706,46 @@ for (const [key, [ko, ja, zh]] of Object.entries(deliveryMessages)) {
   koreanMessages[key] = ko;
   additionalMessages[key] = [ja, zh];
 }
+// Opt-in action-required notifications: each entry is [Korean, Japanese, Simplified Chinese].
+const notificationMessages = {
+  "Notifications": ["알림", "通知", "通知"],
+  "Notify me in this browser when this project needs action": [
+    "이 프로젝트에 조치가 필요할 때 이 브라우저에서 알림 받기",
+    "このプロジェクトで対応が必要になったら、このブラウザーで通知する",
+    "当此项目需要处理时，在此浏览器中通知我"
+  ],
+  "Decision requested": ["결정 요청", "判断の依頼", "请求决策"],
+  "Execution needs recovery": ["실행 복구 필요", "実行の復旧が必要", "执行需要恢复"],
+  "Notifications are on for this project. Earlier items will not be repeated.": [
+    "이 프로젝트의 알림을 켰습니다. 이전 항목은 다시 알리지 않습니다.",
+    "このプロジェクトの通知をオンにしました。以前の項目は再通知しません。",
+    "已为此项目开启通知。之前的事项不会重复通知。"
+  ],
+  "Notifications are off for this project.": [
+    "이 프로젝트의 알림을 껐습니다.",
+    "このプロジェクトの通知をオフにしました。",
+    "已关闭此项目的通知。"
+  ],
+  "Browser notifications are unavailable here. The dashboard still shows every item.": [
+    "이 브라우저에서는 알림을 사용할 수 없습니다. 대시보드에는 모든 항목이 그대로 표시됩니다.",
+    "このブラウザーでは通知を利用できません。ダッシュボードにはすべての項目が引き続き表示されます。",
+    "此浏览器无法使用通知。仪表板仍会显示所有事项。"
+  ],
+  "Notification permission was not granted. The dashboard still shows every item.": [
+    "알림 권한이 허용되지 않았습니다. 대시보드에는 모든 항목이 그대로 표시됩니다.",
+    "通知の権限が許可されませんでした。ダッシュボードにはすべての項目が引き続き表示されます。",
+    "未获得通知权限。仪表板仍会显示所有事项。"
+  ],
+  "Notification settings cannot be saved in this browser. The dashboard still shows every item.": [
+    "이 브라우저에 알림 설정을 저장할 수 없습니다. 대시보드에는 모든 항목이 그대로 표시됩니다.",
+    "このブラウザーには通知設定を保存できません。ダッシュボードにはすべての項目が引き続き表示されます。",
+    "无法在此浏览器中保存通知设置。仪表板仍会显示所有事项。"
+  ]
+};
+for (const [key, [ko, ja, zh]] of Object.entries(notificationMessages)) {
+  koreanMessages[key] = ko;
+  additionalMessages[key] = [ja, zh];
+}
 const catalogs = {
   en: {},
   ko: koreanMessages,
