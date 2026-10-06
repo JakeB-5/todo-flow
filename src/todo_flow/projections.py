@@ -10,6 +10,7 @@ from .language import LANGUAGES
 from .launch_display import describe_launch, read_launch
 from .verification_log_view import log_view, read_log_range
 from .worker_display import read_worker
+from .worker_routing import ROLES
 
 
 SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
@@ -18,7 +19,16 @@ SUMMARY = """t.id,t.revision,t.status,t.control,t.issue,t.pr,t.updated,
  json_extract(t.document,'$.trigger') AS trigger,
  json_extract(t.document,'$.group') AS track_group,
  COALESCE(json_extract(t.document,'$.priority'),'Unspecified') AS priority,
- COALESCE(json_extract(t.document,'$.area'),'General') AS area"""
+ COALESCE(json_extract(t.document,'$.area'),'General') AS area,
+ CASE json_type(t.document,'$.effort')
+ WHEN 'text' THEN json_quote(json_extract(t.document,'$.effort'))
+ WHEN 'object' THEN json_extract(t.document,'$.effort') END AS planning_effort,
+ json_type(t.document,'$.workerPlan') AS planning_plan,
+ CASE json_type(t.document,'$.workerPlan.roles')
+ WHEN 'object' THEN json_extract(t.document,'$.workerPlan.roles') END AS planning_roles"""
+PLANNING_COLUMNS = ("planning_effort", "planning_plan", "planning_roles")
+# Authored planning metadata is display-only: it never selects, confirms or routes workers.
+PLANNING_TEXT_LIMIT = 300
 
 
 # Only the runtime's explicit repair instruction has a more specific display intent.
@@ -58,6 +68,63 @@ def page(c, select, where, params, order, limit, offset):
         "offset": offset,
         "hasMore": offset + len(items) < total,
     }
+
+
+def planning_text(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if len(value) <= PLANNING_TEXT_LIMIT:
+        return value
+    end = PLANNING_TEXT_LIMIT - 1
+    return value[:end] + "…"
+
+
+def planning_field(selection, key):
+    # Absent means not recorded; an explicit null delegates to the provider default.
+    if key not in selection:
+        return {"status": "missing"}
+    if selection[key] is None:
+        return {"status": "default"}
+    value = planning_text(selection[key])
+    return {"status": "authored", "value": value} if value else {"status": "missing"}
+
+
+def planning_json(value):
+    try:
+        return json.loads(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def planning_summary(effort, plan, roles):
+    """Summarize authored document.effort and workerPlan.roles from one listing row."""
+    effort = planning_json(effort)
+    if isinstance(effort, str):
+        effort = {"estimate": effort}
+    if isinstance(effort, dict):
+        effort = {
+            "estimate": planning_text(effort.get("estimate")),
+            "basis": planning_text(effort.get("basis")),
+        }
+        if not effort["estimate"] and not effort["basis"]:
+            effort = None
+    else:
+        effort = None
+    if plan in (None, "null"):
+        return {"effort": effort, "roles": None}
+    roles = planning_json(roles)
+    roles = roles if isinstance(roles, dict) else {}
+    summary = {}
+    for role in ROLES:
+        selection = roles.get(role)
+        if isinstance(selection, dict):
+            summary[role] = {
+                "provider": planning_text(selection.get("provider")),
+                "model": planning_field(selection, "model"),
+                "effort": planning_field(selection, "effort"),
+                "basis": planning_text(selection.get("basis")),
+            }
+    return {"effort": effort, "roles": summary}
 
 
 class Dashboard:
@@ -169,6 +236,9 @@ class Dashboard:
             c.execute("BEGIN")
             result = page(c, "SELECT " + SUMMARY, source, params, order, limit, offset)
             for t in result["items"]:
+                # Planning comes from this page's rows; no per-track detail reads.
+                effort, plan, roles = (t.pop(key) for key in PLANNING_COLUMNS)
+                t["planning"] = planning_summary(effort, plan, roles)
                 t["delivery"] = delivery_summary(self.store, c, t["id"])
                 t["selectable"] = t["status"] != "done" and t["control"] not in (
                     "active",
