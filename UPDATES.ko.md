@@ -4,7 +4,7 @@
 
 [README](README.ko.md) · [에이전트 설치](AGENT_INSTALL.ko.md) · [운영](OPERATIONS.ko.md) · [데모](DEMO.ko.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: 448b7c9f6fe586ce98dc12164bbf74a5d7fced643909814f86f3bb475f53f4b2; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: b8f4847e9e26e9a8cb7225813e3f800ed9c4b86951f4ba9fc94420f645477723; status: translated -->
 
 공유 엔진을 한 번 업데이트한 뒤 각 프로젝트에 설치된 스킬을 업데이트합니다. 프로젝트 문서와 실행 기록은 기존 상태 디렉터리에 남습니다. 업데이트는 프로젝트를 다시 초기화하거나 대기 중인 작업을 시작하지 않습니다.
 
@@ -15,6 +15,7 @@
 | 기능 | 동작 |
 |---|---|
 | 버전 표시 | `todo-flow --version`과 `trackrun --version`은 설치된 패키지 버전을 표시합니다. |
+| 버전 진단 | `diagnose-versions`는 실행 중인 엔진, PATH의 `todo-flow`/`trackrun`, 설치된 스킬 매니페스트, 루프백 대시보드를 별도의 출처로 보고하고, 제공된 wheel의 업데이트 계획을 아무것도 바꾸지 않고 설명합니다. |
 | 호환성 확인 | `compatibility`는 엔진, 상태/설정 형식, 워커 프로토콜과 선택적으로 설치된 스킬의 차이를 보고합니다. |
 | 엔진 업데이트 | `upgrade --wheel`은 명시적으로 제공한 더 최신의 로컬 릴리스 wheel로 uv tool 설치를 교체합니다. |
 | 런타임 상호 배제 | 협력하는 CLI 작업, 드라이버, 대시보드는 프로세스 잠금을 유지합니다. 엔진 업데이트에는 이들 모두의 중지가, 스킬 업데이트에는 해당 프로젝트의 유휴 상태가 필요합니다. |
@@ -56,6 +57,17 @@ trackrun --version
 todo-flow --state /absolute/project/todo compatibility \
   --target /absolute/project/.agents/skills
 ```
+
+무엇이든 중지하기 전에 실제로 사용 중인 버전을 확인하려면 읽기 전용 진단을 실행하세요. 실행 중인 각 대시보드 URL과, 선택적으로 설치할 로컬 릴리스 wheel을 전달합니다:
+
+```sh
+todo-flow --state /absolute/project/todo diagnose-versions \
+  --target /absolute/project/.agents/skills \
+  --dashboard http://127.0.0.1:8765 \
+  --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl
+```
+
+`diagnose-versions`는 런타임 잠금을 잡지 않고, `TODO_FLOW_HOME`을 만들지 않으며, PATH 실행 파일을 실행하지 않고(인터프리터 환경의 패키지 메타데이터를 읽습니다), 토큰이 필요 없는 `/api/version`을 통해 `127.0.0.1`/`localhost` 대시보드에만 질의합니다. 각 항목은 `source`, `path`, `version`, `status`(`observed`, `unknown`, `unreachable`)를 보고합니다. `/api/version`이 없는 대시보드는 unknown으로 보고되며 이전 릴리스일 수 있습니다. `--wheel`을 지정하면 계획은 `applicable`, `blocked`(응답하는 대시보드, 실행 중인 작업, 대기 중인 트랜잭션 또는 중단된 업데이트), `conflict`(설치된 스킬의 편집이 wheel에 포함된 스킬과 충돌), `unknown`(불분명한 릴리스 매니페스트 또는 uv tool 설치가 아닌 엔진) 중 하나이고, 그 뒤에 실행할 명령이 이어집니다. wheel 검사, 프로젝트 호환성, 스킬 dry-run 검사를 재사용하며, 더 높은 버전 번호만으로 설치 가능하다고 판단하지 않습니다. 구조화된 출력이 필요하면 `--json`을 추가하세요.
 
 작업을 끝내거나 일시 중지한 다음 드라이버와 대시보드를 정상적으로 종료하세요. 업데이터가 워커를 대신 종료하지는 않습니다. 해결되지 않은 실행 중 작업과 기록된 살아 있는 워커 PID도 업데이트를 막습니다. 이들을 점검하고, 중지한 드라이버의 claim이 만료된 뒤 `reconcile`을 사용하세요. 대기 중 요청은 보존되며 업데이트로 실행되지 않습니다.
 

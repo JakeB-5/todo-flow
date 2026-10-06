@@ -12,7 +12,7 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: aefd0ce465b7b121be183288604a7290c89b385a674cf5ebf8230702a3141ce5; status: translated -->
+<!-- translation-source: README.md; source-sha256: 1ac6ad02d1538cb44ddbb462a89394f00d2e21e09ea1fba52e4fffc8edc767ad; status: translated -->
 
 ## 37秒で見る TODO Flow
 
@@ -296,6 +296,8 @@ trackrun retry-backoff request-error-message
 todo-flow --version
 todo-flow --state /absolute/project/todo compatibility --target /absolute/project/.agents/skills
 ```
+
+どのエンジン、PATH 上の CLI、プロジェクトのスキル、実行中のダッシュボードが使われているかを確認するには、`todo-flow --state STATE diagnose-versions --target PATH --dashboard http://127.0.0.1:8765` を実行します。`--wheel FILE` を追加すると、そのリリースが適用可能（`applicable`）、阻止（`blocked`）、競合（`conflict`）、不明（`unknown`）のどれに当たるかと、次に実行するコマンドがわかります。この診断は読み取り専用です。[バージョン診断](UPDATES.ja.md#1-関連プロセスを確認して停止する)を参照してください。
 
 uv tool としてインストールした場合、`todo-flow upgrade --wheel /absolute/new-release.whl --dry-run` でエンジン更新を計画します。すべてのドライバーとダッシュボードを停止した状態で `--dry-run` を省略すると適用します。更新処理は既知のプロジェクト形式を確認し、環境をバックアップして、インストールまたは検証に失敗すれば復元します。信頼できる新しいリリースの wheel を指定してください。リリースの自動検出はまだありません。
 

@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: aefd0ce465b7b121be183288604a7290c89b385a674cf5ebf8230702a3141ce5; status: translated -->
+<!-- translation-source: README.md; source-sha256: 1ac6ad02d1538cb44ddbb462a89394f00d2e21e09ea1fba52e4fffc8edc767ad; status: translated -->
 
 ## 37 秒了解 TODO Flow
 
@@ -296,6 +296,8 @@ trackrun retry-backoff request-error-message
 todo-flow --version
 todo-flow --state /absolute/project/todo compatibility --target /absolute/project/.agents/skills
 ```
+
+要查看正在使用的引擎、PATH CLI、项目技能和运行中的仪表盘，请运行 `todo-flow --state STATE diagnose-versions --target PATH --dashboard http://127.0.0.1:8765`。添加 `--wheel FILE` 可了解该发行版是可应用（`applicable`）、受阻（`blocked`）、冲突（`conflict`）还是未知（`unknown`），以及接下来要运行哪些命令。该诊断为只读；参阅[版本诊断](UPDATES.zh-CN.md#1-检查并停止相关进程)。
 
 通过 uv tool 安装时，`todo-flow upgrade --wheel /absolute/new-release.whl --dry-run` 用于规划引擎更新；在所有驱动进程和仪表盘停止后，省略 `--dry-run` 应用更新。更新器检查已知项目格式、备份环境，并在安装或验证失败时恢复环境。请提供可信的更新版本 wheel；尚不提供自动查找发行版的功能。
 

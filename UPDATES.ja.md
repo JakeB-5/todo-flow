@@ -4,7 +4,7 @@
 
 [README](README.ja.md) · [エージェントのインストール](AGENT_INSTALL.ja.md) · [運用](OPERATIONS.ja.md) · [デモ](DEMO.ja.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: 448b7c9f6fe586ce98dc12164bbf74a5d7fced643909814f86f3bb475f53f4b2; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: b8f4847e9e26e9a8cb7225813e3f800ed9c4b86951f4ba9fc94420f645477723; status: translated -->
 
 共有エンジンを一度更新してから、各プロジェクトにインストールされたスキルを更新します。プロジェクトの文書と実行記録は既存の状態ディレクトリに残ります。更新はプロジェクトを再初期化せず、保留中の作業も開始しません。
 
@@ -15,6 +15,7 @@
 | 機能 | 動作 |
 |---|---|
 | バージョン表示 | `todo-flow --version` と `trackrun --version` はインストール済みパッケージのバージョンを表示します。 |
+| バージョン診断 | `diagnose-versions` は実行中のエンジン、PATH 上の `todo-flow`/`trackrun`、インストール済みスキルのマニフェスト、ループバックのダッシュボードを別々のソースとして報告し、指定した wheel の更新計画を何も変更せずに説明します。 |
 | 互換性の確認 | `compatibility` はエンジン、状態/設定形式、ワーカープロトコル、および任意でインストール済みスキルの差分を報告します。 |
 | エンジン更新 | `upgrade --wheel` は、明示的に指定した新しいローカルリリース wheel で uv tool インストールを置き換えます。 |
 | ランタイムの排他制御 | 協調する CLI 操作、ドライバー、ダッシュボードはプロセスロックを保持します。エンジン更新にはそれらすべての停止が、スキル更新には対象プロジェクトのアイドル状態が必要です。 |
@@ -56,6 +57,17 @@ trackrun --version
 todo-flow --state /absolute/project/todo compatibility \
   --target /absolute/project/.agents/skills
 ```
+
+何かを停止する前に実際に使われているバージョンを確認するには、読み取り専用の診断を実行します。実行中の各ダッシュボードの URL と、必要に応じてインストール予定のローカルリリース wheel を渡します:
+
+```sh
+todo-flow --state /absolute/project/todo diagnose-versions \
+  --target /absolute/project/.agents/skills \
+  --dashboard http://127.0.0.1:8765 \
+  --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl
+```
+
+`diagnose-versions` はランタイムロックを取得せず、`TODO_FLOW_HOME` を作成せず、PATH 上の実行ファイルを実行しません（インタープリター環境のパッケージメタデータを読みます）。ダッシュボードへの問い合わせは、トークン不要の `/api/version` を通じた `127.0.0.1`/`localhost` に限られます。各項目は `source`、`path`、`version`、`status`（`observed`、`unknown`、`unreachable`）を報告します。`/api/version` のないダッシュボードは unknown と報告され、古いリリースの可能性があります。`--wheel` を指定すると、計画は `applicable`、`blocked`（応答するダッシュボード、実行中の作業、保留中のトランザクション、または中断された更新）、`conflict`（インストール済みスキルの編集が wheel 同梱のスキルと競合）、`unknown`（不明確なリリースマニフェスト、または uv tool インストールではないエンジン）のいずれかになり、続いて実行すべきコマンドが示されます。wheel の検査、プロジェクト互換性、スキルの dry-run チェックを再利用し、バージョン番号が大きいことだけでインストール可能とは判断しません。構造化された出力が必要な場合は `--json` を追加してください。
 
 作業を完了または一時停止してから、ドライバーとダッシュボードを通常の方法で停止してください。アップデーターがワーカーを代わりに終了することはありません。未解決の実行中タスクと、記録された生存中のワーカー PID も更新を阻止します。それらを確認し、停止したドライバーの claim が期限切れになった後で `reconcile` を使用してください。キュー内の要求は保存され、更新によって実行されません。
 
