@@ -62,3 +62,38 @@ PYTHONPATH=src python3 -m unittest discover -s tests -p test_quality_eval.py -v
 ```
 
 조건 연결: 입력과 별도 정답은 `eval-cases`, 지표와 관측 범위는 `eval-measures`, 결정적 명령과 원본 참조는 `eval-replay`, 고정 응답 전용 경로는 `eval-no-effects`, synthetic 표기와 미측정 한계는 `eval-scope`에 대응합니다.
+
+## 기록 비교 리포트
+
+`todo_flow.quality_compare`는 명령행에 직접 지정한 로컬 실행 기록 JSON만 읽습니다. 각 기록이 가리키는 사례·응답·기대값은 `quality_eval.replay`로 다시 집계합니다. 따라서 품질 지표는 계속 synthetic 고정 응답 기준이며 실제 모델 품질 측정값이 아닙니다. 모델·네트워크·프로세스를 호출하지 않고, 시각이나 임시 id를 출력하지 않습니다.
+
+```sh
+PYTHONPATH=src python3 -m todo_flow.quality_compare --format markdown examples/quality-run-a.json examples/quality-run-b.json examples/quality-run-c.json examples/quality-run-d.json
+```
+
+기본 출력은 JSON이고 `--format markdown`은 사람이 읽는 표를 출력합니다. 위 명령의 출력은 [quality-comparison-report.md](quality-comparison-report.md)와 바이트 단위로 같습니다. 마크다운 표는 해시를 생략합니다. id가 같은데 바이트가 다른 사례·기대값은 JSON 출력의 `cases_sha256`·`expectations_sha256`으로 구분합니다.
+
+| 기록 필드 | 의미 |
+| --- | --- |
+| `id`, `attempt`, `synthetic` | 기록 id, 원본 attempt id, 기록이 선언한 synthetic 표기입니다. 선언값은 JSON 출력의 `declared_synthetic`에 보존합니다. |
+| `fixture_id`, `expectations.id`, `expectations.sha256` | 사례 fixture와 기대값 버전입니다. `sha256`은 선택 항목이며, 있으면 기대값 파일 바이트와 일치해야 합니다. |
+| `verification` | 검증 조건 식별자 |
+| `inputs` | 기록 파일 위치를 기준으로 한 `cases`, `responses`, `expectations` 경로 |
+| `worker.selected`, `worker.provider_confirmed` | 선택값과 공급자 확인값의 `model`·`effort` |
+| `retries` | 사례 id별로 관측된 재시도 수입니다. 없거나 `null`이면 미관측입니다. |
+| `started_at`, `finished_at` | 시간대가 있는 ISO 8601 시각입니다. 하나라도 없으면 해당 attempt 시간은 미관측입니다. |
+
+- `(fixture_id, 사례 파일 sha256, 기대값 sha256, verification)`이 같은 기록이 둘 이상일 때만 `cohorts`로 묶습니다. 사례 id가 같아도 사례 파일 바이트가 다르면 다른 사례로 봅니다. 같은 키의 다른 기록이 없으면 `non_comparable`로 나열합니다. 그룹을 넘는 순위·성공률·가격·성능 점수는 만들지 않습니다.
+- 그룹 안의 행은 model·effort 값과 그 근거(`confirmed`, `selected`, `delegated`, `missing`)로 나눕니다. 근거가 `confirmed`가 되는 경우는 공급자 확인값이 있을 때뿐입니다. 선택값만 있는 기록은 `selected` 행에 남고, 확인값 행과 합쳐지지 않습니다.
+- 그룹과 행마다 `denominator`로 사례 수(`cases`)와 실행 상태별 `completed`·`failed`·`inconclusive`를 표시합니다. `inconclusive`는 `skipped`와 `missing_response`의 합입니다. `completed`는 실행 상태일 뿐 모델 판단이 맞았다는 근거가 아닙니다. 상세 `status_counts`, 관측/미관측 범위가 붙은 품질 지표, 재시도 합계도 함께 표시합니다. `quality_eval`의 `matches_expected`는 집계 fixture 검증이므로 모델 성공으로 해석하지 않으며 비교 리포트에서 사용하지 않습니다.
+- replay 입력은 항상 synthetic이므로 기록이 `synthetic: false`를 선언해도 행과 보고서의 `synthetic`은 `true`입니다.
+- `attempt_seconds_total`은 시작·종료가 모두 있는 attempt별 소요 시간의 합입니다. 시도가 겹치면 이 값은 벽시계 시간이 아닙니다. `wall_clock_seconds`는 관측 구간의 합집합입니다. 시각이 빠진 attempt는 `unobserved_attempts`로 셉니다.
+- 각 행에는 원본 attempt id와 `기록 경로#/attempt` JSON Pointer가 붙습니다. JSON 보고서는 기록 파일과 입력 파일의 경로·sha256을 보존합니다. `unmeasured`의 tokens·cost는 `null`입니다.
+
+샘플 구성은 다음과 같습니다. a와 c는 같은 비교 키에서 확인된 같은 model·effort를 쓰며 시도 구간이 겹칩니다. 그래서 attempt 시간 합계는 600초, 합집합은 480초입니다. b는 선택값만 있고 종료 시각이 없습니다. d는 다른 기대값 버전인 [quality-expectations-v2.json](quality-expectations-v2.json)을 써서 비교 불가로 분류됩니다. 모든 model 이름은 합성 라벨이며 실제 모델 기록이 아닙니다.
+
+```sh
+PYTHONPATH=src python3 -m unittest discover -s tests -p test_quality_compare.py -v
+```
+
+조건 연결: 비교 그룹, 분모, 비비교 분리는 `comparison-cohorts`, 선택·확인 출처와 시간·재시도 집계는 `comparison-provenance`, 결정적 출력과 미측정 유지는 `comparison-offline`에 대응합니다.

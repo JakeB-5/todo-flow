@@ -1,0 +1,34 @@
+{
+  "id": "quality-run-a",
+  "synthetic": true,
+  "attempt": "attempt-a",
+  "fixture_id": "quality-cases-v1",
+  "expectations": {
+    "id": "quality-expectations-v1",
+    "sha256": "2c4950430eaf956b98a3fa2394656acbc352ff7c175b46dff9af61c9bc134e70"
+  },
+  "verification": "eval-measures",
+  "inputs": {
+    "cases": "quality-cases.json",
+    "responses": "quality-responses.json",
+    "expectations": "quality-expectations.json"
+  },
+  "worker": {
+    "selected": {
+      "model": "sample-model-x",
+      "effort": "high"
+    },
+    "provider_confirmed": {
+      "model": "sample-model-x",
+      "effort": "high"
+    }
+  },
+  "retries": {
+    "clean": 0,
+    "missed": 1,
+    "caught": 0,
+    "failed": 2
+  },
+  "started_at": "2026-10-01T10:00:00Z",
+  "finished_at": "2026-10-01T10:05:00Z"
+}
