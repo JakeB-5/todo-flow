@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../src/todo_flow/web');
+require('./dashboard_track_id_badge.test.cjs');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const start = app.indexOf('function initializeTheme()');
 const end = app.indexOf("applyLanguage('en');", start);
