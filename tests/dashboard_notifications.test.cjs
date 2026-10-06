@@ -284,6 +284,31 @@ test('a decision backlog larger than notification memory alerts each decision on
   }
 });
 
+test('a partial cycle restarted by a closed decision does not repeat alerts beyond notification memory', async () => {
+  // notification-dedup: 1300 new decisions. After two polls the first, already alerted decision closes, so the
+  // stored cursor no longer matches and the cycle restarts from the oldest before `since` has advanced.
+  // Each decision must alert exactly once: 1300 alerts and 1300 unique tags (count-trimmed memory reached 2285).
+  const e = environment({permission: 'granted'});
+  await e.toggle(true);
+  for (let i = 0; i < 1300; i++) e.decide('b' + i, 'backlog' + i, 'Choice', 'Backlog ' + i);
+  const counts = [];
+  for (let i = 0; i < 10; i++) {
+    if (i === 2) e.data.decisions.shift();
+    const before = e.requests.length;
+    await e.poll(i % 2 === 1);
+    const pages = e.requests.slice(before).filter(request => request.url.startsWith('/api/decisions'));
+    assert.ok(pages.length <= 5, 'decision pages per poll: ' + pages.length);
+    assert.ok(pages.every(request => new URL(request.url, 'http://dashboard.test').searchParams.get('limit') === '100'));
+    counts.push(e.shown.length);
+  }
+  const tags = e.shown.map(shown => shown.options.tag);
+  assert.equal(new Set(tags).size, tags.length, 'duplicate alerts: ' + counts);
+  assert.equal(tags.length, 1300, 'alerts after each poll: ' + counts);
+  assert.deepEqual(counts.slice(-4), [1300, 1300, 1300, 1300]);
+  assert.ok(tags.includes('todo-flow:alpha:decision:b0'));
+  assert.ok(tags.includes('todo-flow:alpha:decision:b1299'));
+});
+
 test('preferences are per project, revocable and re-enabling starts a new baseline', async () => {
   const memory = new Map();
   const alpha = environment({memory, permission: 'granted'});

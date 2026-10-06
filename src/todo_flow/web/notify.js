@@ -1,6 +1,7 @@
 // Action-required notifications are a browser-local, per-project display preference.
 // They only read existing projections: decisions are never answered and execution is never changed.
 // Pure decisions (stored preference, consent, categories, deduplication) precede the startup marker.
+// Cleanup deferral keys remembered per project; decision keys are never trimmed by count.
 const notificationMemory = 500;
 // Each poll requests at most this many 100-item pages of decisions and of events.
 const notificationPages = 5;
@@ -10,6 +11,12 @@ let notificationBusy = false, notificationPending = false;
 function notificationStorageKey(project) {
   return 'todo-flow.notifications.' + project.key;
 }
+// An alerted decision newer than `since` stays remembered until a complete cycle advances `since` past it,
+// so decision keys are only forgotten all at once (`forgetDecisions`). Cleanup keys keep bounded memory.
+function rememberedKeys(keys, forgetDecisions) {
+  const cleanup = new Set(keys.filter(key => !key.startsWith('decision:')).slice(-notificationMemory));
+  return keys.filter(key => key.startsWith('decision:') ? !forgetDecisions : cleanup.has(key));
+}
 function readNotificationState(storage, project) {
   try {
     const value = JSON.parse(storage.getItem(notificationStorageKey(project)) || 'null');
@@ -18,7 +25,7 @@ function readNotificationState(storage, project) {
     return {enabled: true, baselined: value.baselined === true, seq: Number(value.seq) || 0,
       since: Number(value.since) || 0, offset: Math.max(0, Math.floor(Number(value.offset) || 0)),
       cursor: typeof value.cursor === 'string' ? value.cursor : null, top: Number(value.top) || 0,
-      seen: seen.slice(-notificationMemory)};
+      seen: rememberedKeys(seen, false)};
   } catch {
     // Blocked or unreadable storage cannot hold consent, so notifications stay off.
     return {enabled: false};
@@ -70,8 +77,7 @@ function planNotifications(state, snapshot) {
   for (const decision of snapshot.decisions || []) {
     const key = 'decision:' + decision.id;
     top = Math.max(top, Number(decision.created) || 0);
-    // Refresh open decisions so bounded memory forgets closed ones first.
-    const known = seen.delete(key);
+    const known = seen.has(key);
     seen.add(key);
     if (known || baseline || !(Number(decision.created) > since)) continue;
     alerts.push({key, category: decisionCategory(decision), track: decision.track,
@@ -81,11 +87,12 @@ function planNotifications(state, snapshot) {
   // Never move past an unread range: the sequence only advances to what was actually read.
   else if (Number.isFinite(snapshot.through)) seq = Math.max(seq, snapshot.through);
   // A cycle that read every open decision contiguously from the oldest has handled all decisions up to `top`.
-  // Advancing `since` keeps them from repeating after bounded memory forgets their keys.
+  // Advancing `since` protects every decision read in the cycle, so only then are decision keys forgotten;
+  // unread earlier keys belong to closed decisions. An unfinished cycle keeps every decision key.
   if (snapshot.complete) { since = Math.max(since, top); top = 0; }
   const offset = Math.max(0, Math.floor(Number(snapshot.offset) || 0));
   const cursor = offset > 0 && typeof snapshot.cursor === 'string' ? snapshot.cursor : null;
-  return {state: {enabled: true, baselined: true, seq, since, offset, cursor, top, seen: [...seen].slice(-notificationMemory)}, alerts};
+  return {state: {enabled: true, baselined: true, seq, since, offset, cursor, top, seen: rememberedKeys([...seen], snapshot.complete === true)}, alerts};
 }
 // Only the category and track title: never decision questions, logs, prompts or credentials.
 function notificationContent(alert, project) {
