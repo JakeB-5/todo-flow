@@ -122,3 +122,6 @@ tbody tr:has(input[data-select]:checked){background:var(--soft)}
   .table-shell{background:transparent}
   .selection-actions{flex-wrap:wrap;max-width:100%}
 }
+
+/* Canonical track ID badge: one line above the title, visible on every width and theme. */
+.track-id-badge{display:block;width:fit-content;max-width:100%;margin:0 0 2px;padding:0 5px;border:1px solid var(--line);border-radius:4px;background:var(--sidebar);color:var(--muted);font:10px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
