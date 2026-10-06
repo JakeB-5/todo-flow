@@ -136,11 +136,12 @@ def serve(store, port=8765):
                     self.reply(200, result)
                 except (ValueError, TypeError) as e:
                     self.reply(400, {"error": str(e)})
-            elif path in ("/", "/app.js", "/i18n.js", "/style.css"):
+            elif path in ("/", "/app.js", "/i18n.js", "/notify.js", "/style.css"):
                 file, mime = {
                     "/": ("index.html", "text/html"),
                     "/app.js": ("app.js", "text/javascript"),
                     "/i18n.js": ("i18n.js", "text/javascript"),
+                    "/notify.js": ("notify.js", "text/javascript"),
                     "/style.css": ("style.css", "text/css"),
                 }[path]
                 self.reply(200, (assets / file).read_text(), mime)

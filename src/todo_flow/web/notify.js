@@ -1,0 +1,191 @@
+// Action-required notifications are a browser-local, per-project display preference.
+// They only read existing projections: decisions are never answered and execution is never changed.
+// Pure decisions (stored preference, consent, categories, deduplication) precede the startup marker.
+const notificationMemory = 500;
+const notificationOff = new Set();
+let notificationBusy = false, notificationPending = false;
+
+function notificationStorageKey(project) {
+  return 'todo-flow.notifications.' + project.key;
+}
+function readNotificationState(storage, project) {
+  try {
+    const value = JSON.parse(storage.getItem(notificationStorageKey(project)) || 'null');
+    if (!value || value.enabled !== true) return {enabled: false};
+    const seen = Array.isArray(value.seen) ? value.seen.filter(item => typeof item === 'string') : [];
+    return {enabled: true, baselined: value.baselined === true, seq: Number(value.seq) || 0,
+      since: Number(value.since) || 0, seen: seen.slice(-notificationMemory)};
+  } catch {
+    // Blocked or unreadable storage cannot hold consent, so notifications stay off.
+    return {enabled: false};
+  }
+}
+function writeNotificationState(storage, project, state) {
+  try {
+    storage.setItem(notificationStorageKey(project), JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
+}
+// Consent requires this project's stored opt-in and the browser's current permission.
+function notificationsAllowed(state, notifier) {
+  return state?.enabled === true && !!notifier && notifier.permission === 'granted';
+}
+// engine.fail records recovery requests as decisions with this fixed English prefix.
+function decisionCategory(decision) {
+  return String(decision?.question || '').startsWith('Execution needs attention') ? 'recovery' : 'decision';
+}
+// Returns the next stored state and only the new action-required alerts.
+// The first run after opt-in is a baseline: existing history is recorded as seen, never replayed.
+// Only open decisions, recovery decisions and cleanup deferrals alert; progress events never do.
+// A cleanup deferral alerts once per track until cleanup completes or a new execution is accepted.
+function planNotifications(state, snapshot) {
+  const baseline = state.baselined !== true;
+  const seen = new Set(baseline ? [] : state.seen || []);
+  const since = baseline ? Number(snapshot.observedAt) || 0 : Number(state.since) || 0;
+  let seq = baseline ? 0 : Number(state.seq) || 0;
+  const alerts = [];
+  const events = (snapshot.events || []).filter(event => Number.isFinite(event?.seq)).sort((a, b) => a.seq - b.seq);
+  for (const event of events) {
+    if (event.seq <= seq) continue;
+    seq = event.seq;
+    const key = 'cleanup:' + event.track;
+    if (event.type === 'cleanup.complete' || event.type === 'execution.accepted') seen.delete(key);
+    else if (event.type === 'cleanup.deferred' && !seen.has(key)) {
+      seen.add(key);
+      if (!baseline) alerts.push({key, category: 'cleanup', track: event.track, title: event.track,
+        href: '#track/' + encodeURIComponent(event.track)});
+    }
+  }
+  for (const decision of snapshot.decisions || []) {
+    const key = 'decision:' + decision.id;
+    // Refresh open decisions so bounded memory forgets closed ones first.
+    const known = seen.delete(key);
+    seen.add(key);
+    if (known || baseline || !(Number(decision.created) > since)) continue;
+    alerts.push({key, category: decisionCategory(decision), track: decision.track,
+      title: decision.title || decision.track, href: '#activity?track=' + encodeURIComponent(decision.track)});
+  }
+  if (baseline) seq = Math.max(seq, Number(snapshot.revision) || 0);
+  return {state: {enabled: true, baselined: true, seq, since, seen: [...seen].slice(-notificationMemory)}, alerts};
+}
+// Only the category and track title: never decision questions, logs, prompts or credentials.
+function notificationContent(alert, project) {
+  const labels = {decision: tr("Decision requested"), recovery: tr("Execution needs recovery"), cleanup: tr("Cleanup deferred")};
+  return {title: 'TODO Flow', body: labels[alert.category] + ' · ' + alert.title,
+    tag: 'todo-flow:' + project.key + ':' + alert.key, href: alert.href};
+}
+function browserStorage() {
+  try { return localStorage; } catch { return null; }
+}
+function notificationApi() {
+  return typeof Notification === 'function' ? Notification : null;
+}
+function notificationState(project) {
+  return notificationOff.has(project.key) ? {enabled: false} : readNotificationState(browserStorage(), project);
+}
+function syncNotificationToggle(project) {
+  if (!notificationPending) $('notify').checked = notificationsAllowed(notificationState(project), notificationApi());
+}
+// Newest-first event pages, bounded, until the last processed sequence is reached.
+async function notificationEvents(after) {
+  const items = [];
+  let before = null;
+  for (let page = 0; page < 5; page++) {
+    const query = new URLSearchParams({limit: 100});
+    if (before) query.set('before', before);
+    const data = await api('events?' + query);
+    items.push(...data.items);
+    if (!data.next || data.items.some(event => event.seq <= after)) break;
+    before = data.next;
+  }
+  return items;
+}
+async function showNotification(notifier, alert, project) {
+  if (alert.category === 'cleanup') {
+    try {
+      const title = (await api('tracks/' + encodeURIComponent(alert.track))).document?.title;
+      if (title) alert = {...alert, title};
+    } catch { /* The track ID remains a safe fallback label. */ }
+  }
+  const content = notificationContent(alert, project);
+  try {
+    const shown = new notifier(content.title, {body: content.body, tag: content.tag});
+    shown.onclick = () => {
+      try { window.focus(); } catch { /* Focus can be refused by the browser. */ }
+      location.hash = content.href;
+      shown.close();
+    };
+  } catch { /* A failed display leaves the dashboard list as the record. */ }
+}
+async function checkNotifications(fresh = false) {
+  if (notificationBusy || !overview?.project) return;
+  const notifier = notificationApi();
+  syncNotificationToggle(overview.project);
+  // Disabled projects make no extra requests, including from hidden tabs.
+  if (!notificationsAllowed(notificationState(overview.project), notifier)) return;
+  notificationBusy = true;
+  try {
+    const current = fresh ? await api('overview') : overview;
+    const project = current.project;
+    const state = notificationState(project);
+    if (!notificationsAllowed(state, notifier)) return;
+    const open = Number(current.counts?.decisions) || 0;
+    const decisions = await api('decisions?' + new URLSearchParams({limit: 100, offset: Math.max(0, open - 100)}));
+    const changed = !state.baselined || (Number(current.revision) || 0) > state.seq;
+    const events = changed ? await notificationEvents(state.baselined ? state.seq : 0) : [];
+    const plan = planNotifications(state, {revision: current.revision, observedAt: current.observedAt,
+      decisions: decisions.items, events});
+    // A toggle or another tab may have changed the preference while these reads were pending.
+    if (JSON.stringify(notificationState(project)) !== JSON.stringify(state)) return;
+    // Remember before showing: an alert that cannot be remembered could repeat after reload.
+    if (!writeNotificationState(browserStorage(), project, plan.state)) return;
+    for (const alert of plan.alerts) await showNotification(notifier, alert, project);
+  } catch {
+    // Notifications are optional; the dashboard lists remain the source of truth.
+  } finally {
+    notificationBusy = false;
+  }
+}
+async function toggleNotifications(control) {
+  const project = overview?.project, wanted = control.checked;
+  control.checked = false;
+  if (!project) return;
+  if (!wanted) {
+    notificationOff.add(project.key);
+    writeNotificationState(browserStorage(), project, {enabled: false});
+    notice(tr("Notifications are off for this project."));
+    return;
+  }
+  const notifier = notificationApi();
+  if (!notifier) {
+    notice(tr("Browser notifications are unavailable here. The dashboard still shows every item."));
+    return;
+  }
+  notificationPending = true;
+  try {
+    let permission = notifier.permission;
+    // The browser prompt is requested only from this explicit user toggle.
+    if (permission !== 'granted') {
+      try { permission = (await notifier.requestPermission()) || notifier.permission; } catch { permission = 'denied'; }
+    }
+    if (permission !== 'granted') {
+      notice(tr("Notification permission was not granted. The dashboard still shows every item."));
+      return;
+    }
+    if (!writeNotificationState(browserStorage(), project, {enabled: true, baselined: false})) {
+      notice(tr("Notification settings cannot be saved in this browser. The dashboard still shows every item."));
+      return;
+    }
+    notificationOff.delete(project.key);
+    control.checked = true;
+    notice(tr("Notifications are on for this project. Earlier items will not be repeated."));
+  } finally {
+    notificationPending = false;
+  }
+  await checkNotifications();
+}
+// Startup
+$('notify').onchange = () => toggleNotifications($('notify'));
+setInterval(() => { checkNotifications(document.hidden); }, 5000);
