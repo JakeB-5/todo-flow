@@ -1,0 +1,30 @@
+{
+  "id": "quality-run-d",
+  "synthetic": true,
+  "attempt": "attempt-d",
+  "fixture_id": "quality-cases-v1",
+  "expectations": {
+    "id": "quality-expectations-v2"
+  },
+  "verification": "eval-measures",
+  "inputs": {
+    "cases": "quality-cases.json",
+    "responses": "quality-responses.json",
+    "expectations": "quality-expectations-v2.json"
+  },
+  "worker": {
+    "selected": {
+      "model": "sample-model-y",
+      "effort": "medium"
+    },
+    "provider_confirmed": {
+      "model": "sample-model-y",
+      "effort": "medium"
+    }
+  },
+  "retries": {
+    "clean": 1
+  },
+  "started_at": "2026-10-01T11:00:00Z",
+  "finished_at": "2026-10-01T11:02:00Z"
+}
