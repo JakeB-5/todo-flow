@@ -2,6 +2,8 @@
 // They only read existing projections: decisions are never answered and execution is never changed.
 // Pure decisions (stored preference, consent, categories, deduplication) precede the startup marker.
 const notificationMemory = 500;
+// Each poll requests at most this many 100-item pages of decisions and of events.
+const notificationPages = 5;
 const notificationOff = new Set();
 let notificationBusy = false, notificationPending = false;
 
@@ -14,7 +16,8 @@ function readNotificationState(storage, project) {
     if (!value || value.enabled !== true) return {enabled: false};
     const seen = Array.isArray(value.seen) ? value.seen.filter(item => typeof item === 'string') : [];
     return {enabled: true, baselined: value.baselined === true, seq: Number(value.seq) || 0,
-      since: Number(value.since) || 0, seen: seen.slice(-notificationMemory)};
+      since: Number(value.since) || 0, offset: Math.max(0, Math.floor(Number(value.offset) || 0)),
+      seen: seen.slice(-notificationMemory)};
   } catch {
     // Blocked or unreadable storage cannot hold consent, so notifications stay off.
     return {enabled: false};
@@ -46,7 +49,10 @@ function planNotifications(state, snapshot) {
   const since = baseline ? Number(snapshot.observedAt) || 0 : Number(state.since) || 0;
   let seq = baseline ? 0 : Number(state.seq) || 0;
   const alerts = [];
-  const events = (snapshot.events || []).filter(event => Number.isFinite(event?.seq)).sort((a, b) => a.seq - b.seq);
+  // `through` is the highest sequence whose whole range was read; later events wait for the next poll.
+  const through = Number.isFinite(snapshot.through) ? snapshot.through : Infinity;
+  const events = (snapshot.events || []).filter(event => Number.isFinite(event?.seq) && event.seq <= through)
+    .sort((a, b) => a.seq - b.seq);
   for (const event of events) {
     if (event.seq <= seq) continue;
     seq = event.seq;
@@ -68,7 +74,10 @@ function planNotifications(state, snapshot) {
       title: decision.title || decision.track, href: '#activity?track=' + encodeURIComponent(decision.track)});
   }
   if (baseline) seq = Math.max(seq, Number(snapshot.revision) || 0);
-  return {state: {enabled: true, baselined: true, seq, since, seen: [...seen].slice(-notificationMemory)}, alerts};
+  // Never move past an unread range: the sequence only advances to what was actually read.
+  else if (Number.isFinite(snapshot.through)) seq = Math.max(seq, snapshot.through);
+  const offset = Math.max(0, Math.floor(Number(snapshot.offset) || 0));
+  return {state: {enabled: true, baselined: true, seq, since, offset, seen: [...seen].slice(-notificationMemory)}, alerts};
 }
 // Only the category and track title: never decision questions, logs, prompts or credentials.
 function notificationContent(alert, project) {
@@ -88,11 +97,12 @@ function notificationState(project) {
 function syncNotificationToggle(project) {
   if (!notificationPending) $('notify').checked = notificationsAllowed(notificationState(project), notificationApi());
 }
-// Newest-first event pages, bounded, until the last processed sequence is reached.
+// Baseline only: newest-first event pages, bounded, until the last processed sequence is reached.
+// Older history is never replayed because the baseline sequence jumps to the current revision.
 async function notificationEvents(after) {
   const items = [];
   let before = null;
-  for (let page = 0; page < 5; page++) {
+  for (let page = 0; page < notificationPages; page++) {
     const query = new URLSearchParams({limit: 100});
     if (before) query.set('before', before);
     const data = await api('events?' + query);
@@ -101,6 +111,33 @@ async function notificationEvents(after) {
     before = data.next;
   }
   return items;
+}
+// Oldest-first windows after the last processed sequence, bounded per poll; the rest waits for the next poll.
+// Sequences are unique integers, so `before: end + 1` with limit 100 returns every event in (through, end].
+async function notificationEventsAfter(after, revision) {
+  const items = [];
+  let through = after;
+  for (let page = 0; page < notificationPages && through < revision; page++) {
+    const end = Math.min(through + 100, revision);
+    const data = await api('events?' + new URLSearchParams({limit: 100, before: end + 1}));
+    const start = through;
+    items.push(...data.items.filter(event => event.seq > start && event.seq <= end));
+    through = end;
+  }
+  return {items, through};
+}
+// Open decisions are oldest-first: read bounded offset pages and resume from the stored offset next poll.
+async function notificationDecisions(offset) {
+  const items = [];
+  for (let page = 0; page < notificationPages; page++) {
+    const data = await api('decisions?' + new URLSearchParams({limit: 100, offset}));
+    // The server moves an offset past the end to the last page; restart from the oldest instead.
+    if (offset > 0 && Number(data.offset) !== offset) { offset = 0; continue; }
+    items.push(...data.items);
+    if (!data.hasMore || !data.items.length) return {items, offset: 0};
+    offset += data.items.length;
+  }
+  return {items, offset};
 }
 async function showNotification(notifier, alert, project) {
   if (alert.category === 'cleanup') {
@@ -131,12 +168,17 @@ async function checkNotifications(fresh = false) {
     const project = current.project;
     const state = notificationState(project);
     if (!notificationsAllowed(state, notifier)) return;
-    const open = Number(current.counts?.decisions) || 0;
-    const decisions = await api('decisions?' + new URLSearchParams({limit: 100, offset: Math.max(0, open - 100)}));
-    const changed = !state.baselined || (Number(current.revision) || 0) > state.seq;
-    const events = changed ? await notificationEvents(state.baselined ? state.seq : 0) : [];
+    const decisions = await notificationDecisions(state.baselined ? state.offset || 0 : 0);
+    const revision = Number(current.revision) || 0;
+    let events = [], through;
+    if (!state.baselined) events = await notificationEvents(0);
+    else if (revision > state.seq) {
+      const read = await notificationEventsAfter(state.seq, revision);
+      events = read.items;
+      through = read.through;
+    }
     const plan = planNotifications(state, {revision: current.revision, observedAt: current.observedAt,
-      decisions: decisions.items, events});
+      decisions: decisions.items, offset: decisions.offset, events, through});
     // A toggle or another tab may have changed the preference while these reads were pending.
     if (JSON.stringify(notificationState(project)) !== JSON.stringify(state)) return;
     // Remember before showing: an alert that cannot be remembered could repeat after reload.

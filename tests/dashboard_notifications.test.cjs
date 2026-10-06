@@ -222,6 +222,42 @@ test('first opt-in records history as seen; new actions notify once across polli
   assert.equal(reloaded.shown[0].options.body, 'Decision requested · Beta <title>');
 });
 
+test('backlogs beyond one bounded poll continue in later polls without dropping or repeating actions', async () => {
+  // notification-dedup: new actions are shown exactly once, never lost at a page boundary.
+  const bounded = requests => {
+    for (const kind of ['/api/events', '/api/decisions']) {
+      const pages = requests.filter(request => request.url.startsWith(kind));
+      assert.ok(pages.length <= 5, kind + ' pages per poll: ' + pages.length);
+      assert.ok(pages.every(request => new URL(request.url, 'http://dashboard.test').searchParams.get('limit') === '100'));
+    }
+  };
+  // 101 new open decisions: the oldest (d0) is not dropped by reading only the newest 100.
+  const decisions = environment({permission: 'granted'});
+  await decisions.toggle(true);
+  for (let i = 0; i < 101; i++) decisions.decide('d' + i, 'track' + i, 'Choice', 'Track ' + i);
+  for (let i = 0; i < 4; i++) {
+    const before = decisions.requests.length;
+    await decisions.poll(i % 2 === 1);
+    bounded(decisions.requests.slice(before));
+  }
+  const tags = decisions.shown.map(shown => shown.options.tag);
+  assert.equal(tags.length, 101);
+  assert.equal(new Set(tags).size, 101);
+  assert.ok(tags.includes('todo-flow:alpha:decision:d0'));
+  // One cleanup deferral followed by 501 ordinary events: the deferral alerts once and is not skipped.
+  const events = environment({permission: 'granted'});
+  await events.toggle(true);
+  events.event('cleanup.deferred', 'target');
+  for (let i = 0; i < 501; i++) events.event('worker.claimed', 'ordinary');
+  for (let i = 0; i < 4; i++) {
+    const before = events.requests.length;
+    await events.poll(i % 2 === 1);
+    bounded(events.requests.slice(before));
+  }
+  assert.deepEqual(events.shown.map(shown => shown.options.body), ['Cleanup deferred · target']);
+  assert.equal(events.stored().seq, 502);
+});
+
 test('preferences are per project, revocable and re-enabling starts a new baseline', async () => {
   const memory = new Map();
   const alpha = environment({memory, permission: 'granted'});
