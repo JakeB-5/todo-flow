@@ -115,7 +115,7 @@ Normal code changes run one Linux/Python 3.11 job, using uv 0.10.11 and explicit
 
 Automatic checks run on pushes to `main` and pull requests, except root-level Markdown guides, `assets/` presentation files and local `docs/` changes alone. `scripts/ci_changes.py` compares metadata contents: changing only the project version in `pyproject.toml`, the editable package version in `uv.lock`, and the fallback version in `release.py` runs lint, build and clean wheel installation checks without the runtime suite. Dependency, build configuration and real source changes still run tests. Bundled skill and updater changes also run the isolated update smoke, once on Python 3.11 per selected OS. Run the focused document checks explicitly for guide-only changes skipped by CI.
 
-Tag pushes do not repeat release-commit CI. Newer runs cancel older runs for the same event and branch or pull request. Before making these checks required in branch protection, add an always-reported gate: workflow-level path skips leave required checks pending.
+Tag pushes do not repeat the Checks workflow for the release commit. A `v*` tag push runs only the separate Release workflow described in [Release preparation](#release-preparation), so Checks must already have passed on that commit. Newer runs cancel older runs for the same event and branch or pull request. Before making these checks required in branch protection, add an always-reported gate: workflow-level path skips leave required checks pending.
 
 ## Demos and external acceptance
 
@@ -155,7 +155,23 @@ uv build --out-dir dist/0.1.1
 uv run python scripts/check_translations.py --sdist dist/0.1.1/todo_flow-0.1.1.tar.gz
 ```
 
-Verify the wheel installs in a clean environment and includes skill templates, dashboard translations and the MIT license. Confirm the source distribution includes the public guides and excludes local `docs/`. Keep the changelog under `Unreleased` until publication. Tagging, GitHub Releases and package-index uploads are separate release actions.
+Verify the wheel installs in a clean environment and includes skill templates, dashboard translations and the MIT license. Confirm the source distribution includes the public guides and excludes local `docs/`. Keep the changelog under `Unreleased` until the release commit assigns the version and date. These local builds are pre-release checks only; never upload them as release files.
+
+### Publishing a GitHub Release
+
+Tagging and publishing are separate, explicitly authorized release actions. Land the release commit, let Checks pass on it, then push the tag `vX.Y.Z` pointing at that commit. `.github/workflows/release.yml` runs only for `v*` tag pushes; pull requests and branch pushes cannot start it. The workflow:
+
+1. stops if a GitHub Release for the tag already exists;
+2. requires the checked-out HEAD to equal the tag commit (`github.sha`) and the tag to equal `v` plus the `pyproject.toml` version;
+3. builds that commit with `uv build --out-dir dist/release`, requires exactly one wheel and one source archive, checks the archive's guides and a clean wheel installation, and writes `SHA256SUMS`;
+4. attests exactly that wheel and source archive with `actions/attest` pinned to commit `1e69f48acb82d1966a394da916b4c1698aa569d6` (v4), using the default SLSA build provenance without SBOM or custom predicate inputs;
+5. rechecks `SHA256SUMS` and creates the release with `gh release create --verify-tag` from the same files, naming the source commit in the release notes.
+
+The top-level token has only `contents: read`. The release job alone receives `contents: write` (create the release), `id-token: write` (signing certificate) and `attestations: write` (store the attestation). `artifact-metadata: write` is omitted: in the pinned action's `action.yml`, storage records are created only when `push-to-registry` is true, which does not apply to release files. Re-check these permissions in `action.yml` before changing the pin. The workflow uses the job's `GITHUB_TOKEN`, no repository secrets, and does not trace shell commands.
+
+Published tags, releases and files are immutable. The workflow has no `--clobber`, upload or edit step, so re-running it for an existing release fails before building or attesting. Publish a corrected build under a new version. Do not create releases or upload files by hand: they would have no provenance. `v0.1.1` and earlier releases stay as published, without attestations.
+
+`tests/test_release_workflow.py` checks the workflow triggers, permissions, action pin, attested and uploaded files, immutability and the documented verification commands as text. It does not sign or verify an attestation. Exercise signing and the [consumer verification](UPDATES.md#verify-release-provenance) only on an approved release or a newly created public-safe fixture, and report that live result separately. Package-index uploads are not configured.
 
 
 ## Update compatibility checks

@@ -4,7 +4,7 @@
 
 [README](README.zh-CN.md) · [代理安装](AGENT_INSTALL.zh-CN.md) · [运行指南](OPERATIONS.zh-CN.md) · [演示](DEMO.zh-CN.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: b8f4847e9e26e9a8cb7225813e3f800ed9c4b86951f4ba9fc94420f645477723; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: e0039bd400632ee32c96480283835c0299cdb8669c58e31925ead1e79af4c06c; status: translated -->
 
 先更新一次共享引擎，再更新每个项目中安装的技能。项目文档和执行记录保留在原有状态目录中。更新不会重新初始化项目，也不会启动待办工作。
 
@@ -81,7 +81,7 @@ todo-flow --state /absolute/project/todo diagnose-versions \
 
 此路径要求已有 **`uv tool install` 安装**，且 PATH 中可找到 `uv`。源码检出目录、editable 环境、普通虚拟环境安装，以及具有自定义额外要求/选项或入口点的 uv tool 安装会收到诊断信息，不会被覆盖。请在空闲时按原有工作流程更新这些环境，再检查项目兼容性和技能。
 
-从 [v0.1.1 发行版](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1)下载 wheel 和 `SHA256SUMS`，验证校验和后传入本地 wheel 路径：
+从 [v0.1.1 发行版](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1)下载 wheel 和 `SHA256SUMS`，验证校验和（对带有 attestation 的发行版还要验证其[来源](#verify-release-provenance)）后传入本地 wheel 路径：
 
 ```sh
 todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl --dry-run
@@ -97,6 +97,41 @@ todo-flow upgrade --rollback ENGINE_BACKUP_ID
 ```
 
 回滚要求当前发行版符合预期，并检查旧引擎是否仍能读取已知项目数据。它绝不会撤销代码合入或远程操作，也不会回滚项目状态。引擎回滚和项目技能回滚是独立操作。
+
+<a id="verify-release-provenance"></a>
+
+### 验证发行版来源
+
+从 `v0.1.1` 之后的第一个发行版开始，由标签触发的[发布工作流](.github/workflows/release.yml)发布的发行版会为 wheel 和源码归档提供 GitHub artifact attestation（SLSA 构建来源）。`v0.1.1` 及更早的发行版在发布时没有 attestation：请只用 `SHA256SUMS` 验证它们，对它们运行 `gh attestation verify` 会失败。
+
+先检查校验和，再用 GitHub CLI（`gh`；以下参数已在 2.88.1 中确认）验证下载的每个文件。将 `X.Y.Z` 替换为发行版本：
+
+```sh
+cd /absolute/releases
+shasum -a 256 -c SHA256SUMS
+gh attestation verify todo_flow-X.Y.Z-py3-none-any.whl \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+gh attestation verify todo_flow-X.Y.Z.tar.gz \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+```
+
+只有在每条命令都成功时才安装。`--repo`、`--signer-workflow` 和 `--source-ref` 都是此策略的必需部分；不要省略或放宽它们（例如改用 `--owner`）。仅凭摘要匹配无法确定发布者。按此策略，以下情况验证会失败：
+
+- 字节被修改：文件摘要不再匹配任何 attestation 的 subject；
+- 来自其他仓库的 attestation（`--repo`）；
+- 来自其他工作流的 attestation，包括本仓库中的其他工作流文件（`--signer-workflow`）；
+- 从其他 ref（例如分支或其他标签）生成的 attestation（`--source-ref`）；
+- 在自托管运行器上生成的 attestation（`--deny-self-hosted-runners`）。
+
+发行说明会写明工作流所构建的源码提交。若指定了经批准的源码提交，请在两条命令中都加上 `--source-digest COMMIT_SHA`，并将该提交与你独立获得的值比较，例如在自己的克隆中运行 `git rev-parse vX.Y.Z^{commit}`；发行说明由同一工作流写入。
+
+信任判断应基于已验证的签名证书（仓库、工作流、ref 和提交），而不是 `--format json` 输出中的 `statement.predicate` 字段：生成 attestation 的工作流可以控制这些 predicate 字段。attestation 只记录文件在何处、如何构建，并不表明软件安全或没有缺陷。此公开仓库的 attestation 还会记录在公开的 Sigstore 透明日志中，其中会公开每次发布构建的仓库、工作流、ref 和提交。
 
 <a id="3-update-each-projects-installed-skills"></a>
 
@@ -180,11 +215,11 @@ uv run python scripts/update_smoke.py --artifacts dist/update-check --root /abso
 | 优先级 | 准备事项 | 原因 / 完成标准 |
 |---|---|---|
 | 公开发布前 | 选择权威分发渠道和软件包/仓库名称 | 公布一个规范安装 URL 和一个升级来源；宣传包索引安装前先确认名称所有权。 |
-| 公开发布前 | 不可变的发行版本、校验和、可复现的标签/构建关系 | 让用户能验证下载的 wheel。更新器摘要可检测产物变化，但不是发布者签名。 |
+| 公开发布前 | 不可变的发行版本和可复现构建 | 发布工作流构建标签指向的提交、拒绝已存在的发行版，并为发布的 wheel 和源码归档生成 attestation（见[验证发行版来源](#verify-release-provenance)）。尚未建立由仓库强制的标签/发行版不可变性和逐字节可复现构建。 |
 | 公开发布前 | 在受支持的托管运行器上执行更新验收任务 | 本地成功不能替代配置的 Linux/macOS 矩阵。 |
 | 任何数据格式变更前 | 明确的迁移注册表，包含预检、状态备份、可恢复检查点和降级规则 | 定义实际的旧→新转换，并在交付前测试中断。绝不能仅从软件包版本推断迁移。 |
 | 下一步 | 版本发现及 stable/preview 渠道 | 显示可用发行版及变更，在获取更新锁前确定精确产物。 |
-| 下一步 | 签名的发行版来源和可信发布 | 除了匹配所提供文件的哈希，还要确定产物由谁生成。 |
+| 下一步 | 向包索引的可信发布 | GitHub Release 文件已带有构建来源 attestation；尚未配置通过可信发布（trusted publishing）向包索引发布。 |
 | 下一步 | 依赖/Python 兼容性及回滚覆盖 | 测试真实依赖变更和解释器切换，而不只是契约相同的软件包版本。 |
 | 下一步 | 项目清单管理和批量更新 | 列出、移除登记或迁移已知项目；提供各项目的计划与回执，不靠目录猜测。 |
 | 下一步 | 项目/技能协议迁移与混合版本支持政策 | 定义旧版已安装技能和工作器与每个引擎保持兼容的期限。 |

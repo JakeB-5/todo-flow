@@ -4,7 +4,7 @@
 
 [README](README.ja.md) · [エージェントのインストール](AGENT_INSTALL.ja.md) · [運用](OPERATIONS.ja.md) · [デモ](DEMO.ja.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: b8f4847e9e26e9a8cb7225813e3f800ed9c4b86951f4ba9fc94420f645477723; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: e0039bd400632ee32c96480283835c0299cdb8669c58e31925ead1e79af4c06c; status: translated -->
 
 共有エンジンを一度更新してから、各プロジェクトにインストールされたスキルを更新します。プロジェクトの文書と実行記録は既存の状態ディレクトリに残ります。更新はプロジェクトを再初期化せず、保留中の作業も開始しません。
 
@@ -81,7 +81,7 @@ todo-flow --state /absolute/project/todo diagnose-versions \
 
 この方法には既存の **`uv tool install` によるインストール**と、PATH 上の `uv` が必要です。ソースチェックアウト、editable 環境、通常の仮想環境へのインストール、追加要件/オプションやエントリーポイントをカスタマイズした uv tool インストールは、上書きせず診断します。それらの環境はアイドル状態で元の方法を使って更新し、その後プロジェクトの互換性とスキルを確認してください。
 
-[v0.1.1 リリース](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1)から wheel と `SHA256SUMS` をダウンロードし、チェックサムを確認してからローカルの wheel パスを渡します。
+[v0.1.1 リリース](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1)から wheel と `SHA256SUMS` をダウンロードし、チェックサム（attestation のあるリリースでは[来歴](#verify-release-provenance)も）を確認してからローカルの wheel パスを渡します。
 
 ```sh
 todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl --dry-run
@@ -97,6 +97,41 @@ todo-flow upgrade --rollback ENGINE_BACKUP_ID
 ```
 
 ロールバックは想定された現在のリリースを要求し、古いエンジンが既知のプロジェクトデータを引き続き読めるか確認します。コードの取り込みやリモートへの作用は取り消さず、プロジェクト状態も戻しません。エンジンとプロジェクトスキルのロールバックは別々の操作です。
+
+<a id="verify-release-provenance"></a>
+
+### リリース来歴の検証
+
+`v0.1.1` の次のリリース以降、タグで起動する[リリースワークフロー](.github/workflows/release.yml)が公開したリリースには、wheel とソースアーカイブに対する GitHub artifact attestation（SLSA ビルド来歴）が含まれます。`v0.1.1` 以前のリリースは attestation なしで公開されたため、`SHA256SUMS` だけで確認してください。これらに対しては `gh attestation verify` が失敗します。
+
+まずチェックサムを確認し、次に GitHub CLI（`gh`。以下のフラグは 2.88.1 で確認）でダウンロードした各ファイルを検証します。`X.Y.Z` はリリースバージョンに置き換えてください。
+
+```sh
+cd /absolute/releases
+shasum -a 256 -c SHA256SUMS
+gh attestation verify todo_flow-X.Y.Z-py3-none-any.whl \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+gh attestation verify todo_flow-X.Y.Z.tar.gz \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+```
+
+すべてのコマンドが成功した場合にのみインストールしてください。`--repo`、`--signer-workflow`、`--source-ref` はいずれもこのポリシーの必須要素です。省略したり、`--owner` などに緩めたりしないでください。ダイジェストの一致だけでは発行者を特定できません。このポリシーでは、次の場合に検証が失敗します。
+
+- バイトが変更されたファイル: ファイルのダイジェストがどの attestation の subject とも一致しません。
+- 別のリポジトリの attestation（`--repo`）
+- このリポジトリ内の別のワークフローファイルを含む、別のワークフローの attestation（`--signer-workflow`）
+- ブランチや別のタグなど、別の ref から作られた attestation（`--source-ref`）
+- セルフホストランナーで作られた attestation（`--deny-self-hosted-runners`）
+
+リリースノートには、ワークフローがビルドしたソースコミットが記載されます。承認されたソースコミットが指定されている場合は、両方のコマンドに `--source-digest COMMIT_SHA` を追加し、そのコミットを独自に入手した値（例: 自分のクローンでの `git rev-parse vX.Y.Z^{commit}`）と比較してください。リリースノートは同じワークフローが書き込みます。
+
+信頼の判断は検証済みの署名証明書（リポジトリ、ワークフロー、ref、コミット）に基づかせ、`--format json` 出力の `statement.predicate` フィールドは根拠にしないでください。attestation を生成したワークフローはその predicate フィールドを制御できます。attestation はファイルがどこでどのようにビルドされたかを記録するだけで、ソフトウェアが安全である、または欠陥がないことを示すものではありません。この公開リポジトリの attestation は公開の Sigstore 透明性ログにも記録され、各リリースビルドのリポジトリ、ワークフロー、ref、コミットが公開されます。
 
 <a id="3-update-each-projects-installed-skills"></a>
 
@@ -180,11 +215,11 @@ uv run python scripts/update_smoke.py --artifacts dist/update-check --root /abso
 | 優先度 | 準備 | 理由 / 完了基準 |
 |---|---|---|
 | 公開リリース前 | 正式な配布チャネルとパッケージ/リポジトリ名の選定 | 正式なインストール URL と更新元をそれぞれ 1 つ公開します。パッケージインデックスからのインストールを案内する前に、名前の所有権を確認します。 |
-| 公開リリース前 | 不変のリリースバージョン、チェックサム、再現可能なタグとビルドの関係 | ユーザーがダウンロードした wheel を確認できるようにします。アップデーターのダイジェストはアーティファクトの変更を検出しますが、発行者の署名ではありません。 |
+| 公開リリース前 | 不変のリリースバージョンと再現可能なビルド | リリースワークフローはタグのコミットをビルドし、既存のリリースを拒否し、公開する wheel とソースアーカイブに attestation を作成します（[リリース来歴の検証](#verify-release-provenance)を参照）。リポジトリで強制されるタグ/リリースの不変性と、バイト単位で再現可能なビルドはまだ確立されていません。 |
 | 公開リリース前 | 対応するホスト型ランナーで更新の受け入れジョブを実行 | ローカルでの成功は、設定された Linux/macOS マトリックスの代わりにはなりません。 |
 | データ形式変更前 | 事前検査、状態バックアップ、再開可能なチェックポイント、ダウングレード規則を備えた明示的な移行レジストリ | 実際の旧→新の変換を定義し、出荷前に中断をテストします。パッケージバージョンだけから移行を推測しません。 |
 | 次 | バージョン検出と stable/preview チャネル | 利用可能なリリースと変更を表示し、更新ロックを取得する前に正確なアーティファクトを解決します。 |
-| 次 | 署名付きリリース来歴と信頼された公開 | 提供されたファイルのハッシュ一致に加え、誰がアーティファクトを生成したか確認します。 |
+| 次 | パッケージインデックスへの信頼された公開 | GitHub Release のファイルにはビルド来歴の attestation があります。信頼された公開（trusted publishing）によるパッケージインデックスへの公開は設定されていません。 |
 | 次 | 依存関係/Python の互換性とロールバック検証 | 同一契約のパッケージバージョンだけでなく、実際の依存関係変更とインタープリター移行をテストします。 |
 | 次 | プロジェクト一覧管理と一括更新 | 既知のプロジェクトを一覧表示・登録解除・移動し、フォルダーから推測せずプロジェクト別の計画とレシートを提供します。 |
 | 次 | プロジェクト/スキルプロトコルの移行と混在バージョン対応方針 | 古いインストール済みスキルとワーカーが各エンジンと互換性を保つ期間を定義します。 |

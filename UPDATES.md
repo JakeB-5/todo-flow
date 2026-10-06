@@ -73,7 +73,7 @@ All cooperating processes must use the same `TODO_FLOW_HOME`. Process locks are 
 
 This path requires an existing **`uv tool install` installation** and `uv` on PATH. Source checkouts, editable environments, ordinary virtualenv installations and uv tool installs with custom extra requirements/options or entrypoints are diagnosed rather than overwritten. Update those environments using their original workflow while idle, then run project compatibility and skill checks.
 
-Download the wheel and `SHA256SUMS` from the [v0.1.1 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1), verify its checksum, then pass the local wheel path:
+Download the wheel and `SHA256SUMS` from the [v0.1.1 release](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1), verify its checksum (and, for releases with attestations, its [provenance](#verify-release-provenance)), then pass the local wheel path:
 
 ```sh
 todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl --dry-run
@@ -89,6 +89,39 @@ todo-flow upgrade --rollback ENGINE_BACKUP_ID
 ```
 
 Rollback requires the expected current release and checks that the old engine can still read known project data. It never reverses code landing or remote effects, and it does not roll back project state. Engine and project skill rollbacks are separate operations.
+
+### Verify release provenance
+
+Starting with the first release after `v0.1.1`, releases published by the tag-triggered [release workflow](.github/workflows/release.yml) include a GitHub artifact attestation (SLSA build provenance) for the wheel and the source archive. `v0.1.1` and earlier releases were published without attestations: verify them with `SHA256SUMS` only, and expect `gh attestation verify` to fail for them.
+
+Check the checksums first, then verify each downloaded file with GitHub CLI (`gh`; these flags were checked against 2.88.1). Replace `X.Y.Z` with the release version:
+
+```sh
+cd /absolute/releases
+shasum -a 256 -c SHA256SUMS
+gh attestation verify todo_flow-X.Y.Z-py3-none-any.whl \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+gh attestation verify todo_flow-X.Y.Z.tar.gz \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+```
+
+Install only when every command succeeds. `--repo`, `--signer-workflow` and `--source-ref` are all required parts of this policy; do not drop or loosen them (for example to `--owner`). A matching digest alone does not identify the publisher. With this policy, verification fails for:
+
+- changed bytes: the file's digest no longer matches any attestation subject;
+- an attestation from another repository (`--repo`);
+- an attestation from another workflow, including another workflow file in this repository (`--signer-workflow`);
+- an attestation produced from another ref, such as a branch or a different tag (`--source-ref`);
+- an attestation produced on a self-hosted runner (`--deny-self-hosted-runners`).
+
+The release notes name the source commit the workflow built. When the approved source commit is specified, also pass `--source-digest COMMIT_SHA` to both commands, and compare that commit with one obtained independently, for example `git rev-parse vX.Y.Z^{commit}` in your own clone; the notes are written by the same workflow.
+
+Base trust decisions on the verified signing certificate (repository, workflow, ref and commit), not on `statement.predicate` fields from `--format json` output: the workflow that produced an attestation can control those predicate fields. An attestation records where and how a file was built; it does not show that the software is safe or free of defects. Attestations for this public repository are also recorded in the public Sigstore transparency log, which exposes the repository, workflow, ref and commit of each release build.
 
 ## 3. Update each project's installed skills
 
@@ -162,11 +195,11 @@ These are follow-up items, not capabilities already provided by the current impl
 | Priority | Preparation | Reason / completion criterion |
 |---|---|---|
 | Before public release | Select the authoritative distribution channel and package/repository names | Publish one canonical installation URL and one upgrade source; verify name ownership before advertising package-index installation. |
-| Before public release | Immutable release versions, checksums and a reproducible tag/build relationship | Let users verify the downloaded wheel. The updater's digest detects artifact changes, but is not a publisher signature. |
+| Before public release | Immutable release versions and reproducible builds | The release workflow builds the tagged commit, refuses an existing release and attests the published wheel and source archive (see [Verify release provenance](#verify-release-provenance)). Repository-enforced tag/release immutability and byte-for-byte reproducible builds are not yet established. |
 | Before public release | Exercise the update acceptance job on supported hosted runners | Local success does not substitute for the configured Linux/macOS matrix. |
 | Before any data-format change | An explicit migration registry with preflight, state backup, resumable checkpoints and downgrade rules | Define a real old→new transformation and test interruption before shipping it. Never infer migrations from package version alone. |
 | Next | Version discovery and stable/preview channels | Show available releases and changes; resolve an exact artifact before acquiring update locks. |
-| Next | Signed release provenance and trusted publishing | Establish who produced an artifact, beyond matching a supplied file's hash. |
+| Next | Trusted publishing to a package index | GitHub Release files carry build provenance attestations; publishing to a package index with trusted publishing is not configured. |
 | Next | Dependency/Python compatibility and rollback coverage | Test real dependency changes and interpreter transitions, not only same-contract package versions. |
 | Next | Project inventory management and batch updates | List, forget or relocate known projects; provide per-project plans and receipts instead of guessing from folders. |
 | Next | Project/skill protocol migration and mixed-version support policy | Define how long older installed skills and workers remain compatible with each engine. |

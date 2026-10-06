@@ -1,0 +1,119 @@
+name: Release
+# Runs only when a version tag is pushed. Checks must already have passed on the
+# tagged release commit; this workflow does not repeat the test suite.
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Only this job can write. Scopes were checked against the action.yml of
+    # actions/attest v4 (commit 1e69f48acb82d1966a394da916b4c1698aa569d6), observed 2026-10-06:
+    #   id-token: write      OIDC token for the Sigstore signing certificate
+    #   attestations: write  store the attestation for this repository
+    #   contents: write      create the GitHub Release and attach its files
+    # artifact-metadata: write is intentionally omitted. It is needed only for storage
+    # records, and create-storage-record applies only with push-to-registry: true;
+    # these wheel and source archive subjects are never pushed to a registry.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Refuse an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; published releases and files are immutable." >&2
+            exit 1
+          fi
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: '0.10.11'
+      - name: Check tag commit and package version
+        id: release
+        env:
+          REF: ${{ github.ref }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          case "$REF" in
+            refs/tags/v*) ;;
+            *) echo "Releases run only for v* tags, not $REF." >&2; exit 1 ;;
+          esac
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$EXPECTED_SHA" ]; then
+            echo "Checked-out commit $head is not the tag commit $EXPECTED_SHA." >&2
+            exit 1
+          fi
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match the package version $version." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build the tagged commit
+        run: uv build --out-dir dist/release
+      - name: Check release files and wheel installation
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -f "dist/release/todo_flow-$VERSION-py3-none-any.whl"
+          test -f "dist/release/todo_flow-$VERSION.tar.gz"
+          test "$(find dist/release -type f ! -name .gitignore | wc -l)" -eq 2
+          uv run --frozen python scripts/check_translations.py --sdist "dist/release/todo_flow-$VERSION.tar.gz"
+          uv venv "$RUNNER_TEMP/todo-flow-install"
+          uv pip install --python "$RUNNER_TEMP/todo-flow-install/bin/python" "dist/release/todo_flow-$VERSION-py3-none-any.whl"
+          "$RUNNER_TEMP/todo-flow-install/bin/todo-flow" --version
+          "$RUNNER_TEMP/todo-flow-install/bin/trackrun" --version
+      - name: Write SHA256SUMS
+        working-directory: dist/release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: sha256sum "todo_flow-$VERSION-py3-none-any.whl" "todo_flow-$VERSION.tar.gz" > SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4
+        with:
+          subject-path: |
+            dist/release/todo_flow-*.whl
+            dist/release/todo_flow-*.tar.gz
+      - name: Publish the attested files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          (cd dist/release && sha256sum --check --strict SHA256SUMS)
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "Built by .github/workflows/release.yml from source commit $SOURCE_SHA (refs/tags/$TAG)."
+            echo
+            echo "Check SHA256SUMS, then verify each file:"
+            echo
+            echo "    gh attestation verify FILE --repo $GITHUB_REPOSITORY --signer-workflow $GITHUB_REPOSITORY/.github/workflows/release.yml --source-ref refs/tags/$TAG --source-digest $SOURCE_SHA --deny-self-hosted-runners"
+          } > "$notes"
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "TODO Flow $TAG" \
+            --notes-file "$notes" \
+            dist/release/todo_flow-*.whl \
+            dist/release/todo_flow-*.tar.gz \
+            dist/release/SHA256SUMS
