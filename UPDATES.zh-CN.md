@@ -4,7 +4,7 @@
 
 [README](README.zh-CN.md) · [代理安装](AGENT_INSTALL.zh-CN.md) · [运行指南](OPERATIONS.zh-CN.md) · [演示](DEMO.zh-CN.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: 448b7c9f6fe586ce98dc12164bbf74a5d7fced643909814f86f3bb475f53f4b2; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: b8f4847e9e26e9a8cb7225813e3f800ed9c4b86951f4ba9fc94420f645477723; status: translated -->
 
 先更新一次共享引擎，再更新每个项目中安装的技能。项目文档和执行记录保留在原有状态目录中。更新不会重新初始化项目，也不会启动待办工作。
 
@@ -15,6 +15,7 @@
 | 功能 | 行为 |
 |---|---|
 | 版本显示 | `todo-flow --version` 和 `trackrun --version` 显示已安装的软件包版本。 |
+| 版本诊断 | `diagnose-versions` 将运行中的引擎、PATH 中的 `todo-flow`/`trackrun`、已安装的技能清单和回环地址仪表盘作为独立来源报告，并在不做任何更改的情况下说明所提供 wheel 的更新计划。 |
 | 兼容性检查 | `compatibility` 报告引擎、状态/配置格式、工作器协议，以及可选的已安装技能差异。 |
 | 引擎更新 | `upgrade --wheel` 使用明确提供的、更新的本地发行版 wheel 替换 uv tool 安装。 |
 | 运行时互斥 | 遵循协调机制的 CLI 操作、驱动进程和仪表盘持有进程锁。引擎更新要求它们全部停止；技能更新要求对应项目空闲。 |
@@ -56,6 +57,17 @@ trackrun --version
 todo-flow --state /absolute/project/todo compatibility \
   --target /absolute/project/.agents/skills
 ```
+
+要在停止任何进程之前查看实际使用的版本，请运行只读诊断。传入每个运行中仪表盘的 URL，并可选地传入计划安装的本地发行版 wheel：
+
+```sh
+todo-flow --state /absolute/project/todo diagnose-versions \
+  --target /absolute/project/.agents/skills \
+  --dashboard http://127.0.0.1:8765 \
+  --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl
+```
+
+`diagnose-versions` 不获取运行时锁，不创建 `TODO_FLOW_HOME`，从不运行 PATH 中的可执行文件（而是读取其解释器环境的软件包元数据），并且只通过无需令牌的 `/api/version` 查询 `127.0.0.1`/`localhost` 仪表盘。每个条目报告 `source`、`path`、`version` 和 `status`（`observed`、`unknown` 或 `unreachable`）；没有 `/api/version` 的仪表盘报告为 unknown，可能是旧版发行版。使用 `--wheel` 时，计划为 `applicable`、`blocked`（仪表盘有响应、有运行中的工作、有待处理事务或中断的更新）、`conflict`（已安装技能的编辑与 wheel 内置技能冲突）或 `unknown`（发行版清单不明确，或引擎不是 uv tool 安装），随后列出要运行的命令。它复用 wheel 检查、项目兼容性和技能 dry-run 检查；绝不会仅凭更高的版本号就认定可以安装。添加 `--json` 可获得结构化输出。
 
 让工作完成或暂停，然后正常停止驱动进程和仪表盘。更新器不会替你终止工作器。未解决的运行中任务和记录中仍存活的工作器 PID 也会阻止更新；请检查它们，并在已停止驱动进程的 claim 过期后使用 `reconcile`。排队的请求会保留，不会由更新执行。
 
