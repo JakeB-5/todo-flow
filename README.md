@@ -288,6 +288,8 @@ todo-flow --version
 todo-flow --state /absolute/project/todo compatibility --target /absolute/project/.agents/skills
 ```
 
+To see which engine, PATH CLI, project skills and running dashboards are in use, run `todo-flow --state STATE diagnose-versions --target PATH --dashboard http://127.0.0.1:8765`. Add `--wheel FILE` to learn whether that release is applicable, blocked, conflicting or unknown, and which commands to run next. The diagnostic is read-only; see [version diagnostics](UPDATES.md#1-inspect-and-stop-relevant-processes).
+
 For an installed uv tool, `todo-flow upgrade --wheel /absolute/new-release.whl --dry-run` plans an engine update; omit `--dry-run` to apply it while all drivers and dashboards are stopped. The updater checks known project formats, backs up the environment and restores it if installation or validation fails. Supply a trusted newer release wheel; automatic release discovery is not yet provided.
 
 Then use `todo-flow --state STATE update-skills --target PATH --dry-run` for each project and apply without `--dry-run`. Local edits and language/state bindings are preserved; conflicting changes stop before any file is replaced. Engine and skill updates return separate rollback IDs.

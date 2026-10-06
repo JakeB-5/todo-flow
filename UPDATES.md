@@ -11,6 +11,7 @@ Update the shared engine once, then update the installed skills of each project.
 | Capability | Behavior |
 |---|---|
 | Version reporting | `todo-flow --version` and `trackrun --version` report the installed package version. |
+| Version diagnostics | `diagnose-versions` reports the running engine, PATH `todo-flow`/`trackrun`, installed skill manifests and loopback dashboards as separate sources, and explains a supplied wheel's update plan without changing anything. |
 | Compatibility inspection | `compatibility` reports engine, state/config formats, worker protocol and optional installed skill differences. |
 | Engine update | `upgrade --wheel` replaces a uv tool installation with an explicitly supplied newer local release wheel. |
 | Runtime exclusion | Cooperative CLI operations, drivers and dashboards hold process locks. An engine update requires all of them to stop; a skill update requires its project to be idle. |
@@ -50,6 +51,17 @@ trackrun --version
 todo-flow --state /absolute/project/todo compatibility \
   --target /absolute/project/.agents/skills
 ```
+
+To see which versions are actually in use before stopping anything, run the read-only diagnostic. Pass each running dashboard URL and, optionally, the local release wheel you plan to install:
+
+```sh
+todo-flow --state /absolute/project/todo diagnose-versions \
+  --target /absolute/project/.agents/skills \
+  --dashboard http://127.0.0.1:8765 \
+  --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl
+```
+
+`diagnose-versions` takes no runtime lock, does not create `TODO_FLOW_HOME`, never runs the PATH executables (it reads their interpreter environment's package metadata) and queries only `127.0.0.1`/`localhost` dashboards through the token-free `/api/version`. Each entry reports `source`, `path`, `version` and `status` (`observed`, `unknown` or `unreachable`); a dashboard without `/api/version` is reported as unknown, possibly an older release. With `--wheel`, the plan is `applicable`, `blocked` (responding dashboard, running work, pending transaction or interrupted update), `conflict` (installed skill edits conflict with the wheel's bundled skills) or `unknown` (unclear release manifest or an engine that is not a uv tool installation), followed by the commands to run. It reuses the wheel inspection, project compatibility and skill dry-run checks; a higher version number alone is never treated as installable. Add `--json` for structured output.
 
 Let work finish or pause it, then stop the driver and dashboard normally. The updater does not kill workers for you. Unresolved running tasks and recorded live worker PIDs also block updates; inspect them and use `reconcile` after a stopped driver's claims have expired. A queued request is preserved, not executed by an update.
 

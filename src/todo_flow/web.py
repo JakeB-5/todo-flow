@@ -11,6 +11,7 @@ from . import documents
 from .store import Conflict, encode
 from .projections import Dashboard
 from .maintenance import guarded
+from .release import CONTRACTS, VERSION
 
 
 @guarded
@@ -102,7 +103,10 @@ def serve(store, port=8765):
                     self.reply(404, {"error": "Document or asset not found"})
             elif path.startswith("/api/"):
                 try:
-                    if path in ("/api/overview", "/api/state"):
+                    if path == "/api/version":
+                        # Token-free: version diagnostics must not receive the session token.
+                        result = {"version": VERSION, "contracts": CONTRACTS}
+                    elif path in ("/api/overview", "/api/state"):
                         result = dashboard.overview()
                         result["token"] = token
                         if path == "/api/state":

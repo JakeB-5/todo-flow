@@ -234,6 +234,17 @@ def parser():
     restore.add_argument("--recover", action="store_true")
     check = sub.add_parser("compatibility", help="Inspect engine and project format compatibility")
     check.add_argument("--target", help="Also check this installed skill bundle")
+    diag = sub.add_parser("diagnose-versions", help="Read-only version inventory and update plan")
+    diag.add_argument("--target", help="Installed project skill directory to inspect")
+    diag.add_argument("--wheel", help="Local release wheel to evaluate; never installed")
+    diag.add_argument(
+        "--dashboard",
+        action="append",
+        default=[],
+        metavar="URL",
+        help="Loopback dashboard URL; repeat as needed",
+    )
+    diag.add_argument("--json", action="store_true", help="Print the structured result")
     upgrade = sub.add_parser(
         "upgrade", help="Guarded uv tool update from an explicit local release wheel"
     )
@@ -533,6 +544,13 @@ def skill_context(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == "diagnose-versions":
+            # Read-only: no runtime lease, TODO_FLOW_HOME creation or project registration.
+            from .version_diagnostics import diagnose, render
+
+            result = diagnose(args.state, args.target, args.wheel, args.dashboard)
+            print(encode(result) if args.json else render(result))
+            return
         if args.command == "upgrade":
             from .engine_updates import launch
 
