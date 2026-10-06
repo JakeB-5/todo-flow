@@ -17,6 +17,7 @@ function readNotificationState(storage, project) {
     const seen = Array.isArray(value.seen) ? value.seen.filter(item => typeof item === 'string') : [];
     return {enabled: true, baselined: value.baselined === true, seq: Number(value.seq) || 0,
       since: Number(value.since) || 0, offset: Math.max(0, Math.floor(Number(value.offset) || 0)),
+      cursor: typeof value.cursor === 'string' ? value.cursor : null, top: Number(value.top) || 0,
       seen: seen.slice(-notificationMemory)};
   } catch {
     // Blocked or unreadable storage cannot hold consent, so notifications stay off.
@@ -46,7 +47,7 @@ function decisionCategory(decision) {
 function planNotifications(state, snapshot) {
   const baseline = state.baselined !== true;
   const seen = new Set(baseline ? [] : state.seen || []);
-  const since = baseline ? Number(snapshot.observedAt) || 0 : Number(state.since) || 0;
+  let since = baseline ? Number(snapshot.observedAt) || 0 : Number(state.since) || 0;
   let seq = baseline ? 0 : Number(state.seq) || 0;
   const alerts = [];
   // `through` is the highest sequence whose whole range was read; later events wait for the next poll.
@@ -64,8 +65,11 @@ function planNotifications(state, snapshot) {
         href: '#track/' + encodeURIComponent(event.track)});
     }
   }
+  // `top` is the newest decision read in the current oldest-first cycle; a fresh cycle starts from zero.
+  let top = (baseline || snapshot.fresh) ? 0 : Number(state.top) || 0;
   for (const decision of snapshot.decisions || []) {
     const key = 'decision:' + decision.id;
+    top = Math.max(top, Number(decision.created) || 0);
     // Refresh open decisions so bounded memory forgets closed ones first.
     const known = seen.delete(key);
     seen.add(key);
@@ -76,8 +80,12 @@ function planNotifications(state, snapshot) {
   if (baseline) seq = Math.max(seq, Number(snapshot.revision) || 0);
   // Never move past an unread range: the sequence only advances to what was actually read.
   else if (Number.isFinite(snapshot.through)) seq = Math.max(seq, snapshot.through);
+  // A cycle that read every open decision contiguously from the oldest has handled all decisions up to `top`.
+  // Advancing `since` keeps them from repeating after bounded memory forgets their keys.
+  if (snapshot.complete) { since = Math.max(since, top); top = 0; }
   const offset = Math.max(0, Math.floor(Number(snapshot.offset) || 0));
-  return {state: {enabled: true, baselined: true, seq, since, offset, seen: [...seen].slice(-notificationMemory)}, alerts};
+  const cursor = offset > 0 && typeof snapshot.cursor === 'string' ? snapshot.cursor : null;
+  return {state: {enabled: true, baselined: true, seq, since, offset, cursor, top, seen: [...seen].slice(-notificationMemory)}, alerts};
 }
 // Only the category and track title: never decision questions, logs, prompts or credentials.
 function notificationContent(alert, project) {
@@ -127,17 +135,30 @@ async function notificationEventsAfter(after, revision) {
   return {items, through};
 }
 // Open decisions are oldest-first: read bounded offset pages and resume from the stored offset next poll.
-async function notificationDecisions(offset) {
-  const items = [];
+// Each later page overlaps the last processed decision (`cursor`). If it moved, an earlier decision closed or
+// appeared and offsets shifted, so the cycle restarts from the oldest instead of skipping decisions.
+// A fresh cycle that reaches the end has read every open decision contiguously (`complete`).
+async function notificationDecisions(offset, cursor) {
+  let items = [], fresh = !(offset > 0 && typeof cursor === 'string');
+  if (fresh) { offset = 0; cursor = null; }
   for (let page = 0; page < notificationPages; page++) {
-    const data = await api('decisions?' + new URLSearchParams({limit: 100, offset}));
-    // The server moves an offset past the end to the last page; restart from the oldest instead.
-    if (offset > 0 && Number(data.offset) !== offset) { offset = 0; continue; }
-    items.push(...data.items);
-    if (!data.hasMore || !data.items.length) return {items, offset: 0};
-    offset += data.items.length;
+    const start = cursor ? offset - 1 : offset;
+    const data = await api('decisions?' + new URLSearchParams({limit: 100, offset: start}));
+    let rows = data.items || [];
+    if (cursor) {
+      // The server also moves an offset past the end to the last page; both cases restart the cycle.
+      if (Number(data.offset) !== start || rows[0]?.id !== cursor) {
+        items = []; offset = 0; cursor = null; fresh = true;
+        continue;
+      }
+      rows = rows.slice(1);
+    }
+    items.push(...rows);
+    if (!data.hasMore || !rows.length) return {items, fresh, complete: true, offset: 0, cursor: null};
+    offset += rows.length;
+    cursor = rows[rows.length - 1].id;
   }
-  return {items, offset};
+  return {items, fresh, complete: false, offset, cursor};
 }
 async function showNotification(notifier, alert, project) {
   if (alert.category === 'cleanup') {
@@ -168,7 +189,7 @@ async function checkNotifications(fresh = false) {
     const project = current.project;
     const state = notificationState(project);
     if (!notificationsAllowed(state, notifier)) return;
-    const decisions = await notificationDecisions(state.baselined ? state.offset || 0 : 0);
+    const decisions = await notificationDecisions(state.baselined ? state.offset || 0 : 0, state.baselined ? state.cursor : null);
     const revision = Number(current.revision) || 0;
     let events = [], through;
     if (!state.baselined) events = await notificationEvents(0);
@@ -178,7 +199,8 @@ async function checkNotifications(fresh = false) {
       through = read.through;
     }
     const plan = planNotifications(state, {revision: current.revision, observedAt: current.observedAt,
-      decisions: decisions.items, offset: decisions.offset, events, through});
+      decisions: decisions.items, offset: decisions.offset, cursor: decisions.cursor, fresh: decisions.fresh,
+      complete: decisions.complete, events, through});
     // A toggle or another tab may have changed the preference while these reads were pending.
     if (JSON.stringify(notificationState(project)) !== JSON.stringify(state)) return;
     // Remember before showing: an alert that cannot be remembered could repeat after reload.

@@ -258,6 +258,32 @@ test('backlogs beyond one bounded poll continue in later polls without dropping 
   assert.equal(events.stored().seq, 502);
 });
 
+test('a decision backlog larger than notification memory alerts each decision once, even when decisions close mid-cycle', async () => {
+  // notification-dedup: 600 new decisions exceed the 500-key memory. Each alerts exactly once and the total stays 600.
+  for (const close of [false, true]) {
+    const e = environment({permission: 'granted'});
+    await e.toggle(true);
+    for (let i = 0; i < 600; i++) e.decide('b' + i, 'backlog' + i, 'Choice', 'Backlog ' + i);
+    const counts = [];
+    for (let i = 0; i < 8; i++) {
+      const before = e.requests.length;
+      await e.poll(i % 2 === 1);
+      const pages = e.requests.slice(before).filter(request => request.url.startsWith('/api/decisions'));
+      assert.ok(pages.length <= 5, 'decision pages per poll: ' + pages.length);
+      counts.push(e.shown.length);
+      // Closing an already alerted decision shifts later offsets; no unread decision may be skipped.
+      if (close && i === 0) e.data.decisions.splice(10, 1);
+    }
+    const tags = e.shown.map(shown => shown.options.tag);
+    assert.equal(new Set(tags).size, tags.length, 'duplicate alerts: ' + counts);
+    assert.equal(tags.length, 600, (close ? 'with' : 'without') + ' a closed decision: ' + counts);
+    assert.deepEqual(counts.slice(-4), [600, 600, 600, 600]);
+    assert.ok(tags.includes('todo-flow:alpha:decision:b0'));
+    assert.ok(tags.includes('todo-flow:alpha:decision:b496'));
+    assert.ok(tags.includes('todo-flow:alpha:decision:b599'));
+  }
+});
+
 test('preferences are per project, revocable and re-enabling starts a new baseline', async () => {
   const memory = new Map();
   const alpha = environment({memory, permission: 'granted'});
