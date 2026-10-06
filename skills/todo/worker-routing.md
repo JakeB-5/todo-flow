@@ -16,6 +16,12 @@ These are selection heuristics, not benchmarks. A fresh independent review can u
 
 Record only needed roles in `workerPlan.roles`, each with `provider` (`codex` or `claude`), `model`, `effort` and a nonempty `basis`. Use `workerPlan.version: 1`. Model and effort may be null, explicitly accepting the provider default; that is not a claim about which model ran. Top-level document `effort` estimates human/work scope and has no routing effect. `routingAdvice` remains advisory legacy metadata.
 
+## Work size and the dashboard
+
+Top-level `effort` is `{"estimate": "...", "basis": "..."}`; older documents may hold a plain string. Estimate it from change scope (files, callers and persisted or public contracts touched), verification burden (focused tests, full checks, browser or manual review) and uncertainty (unknown causes, unresolved design or external behavior). It is not a duration, price or token forecast and never routes workers. Per-role `workerPlan.roles.*.effort` is model reasoning effort, a separate choice.
+
+The dashboard track list shows the authored work size and the `work` role recommendation in each row; expanding the row lists the other recorded roles with their basis. A missing plan or estimate appears as not recorded, and a null model/effort as the provider default. These are authored recommendations only: the resolver below applies the execution mode, explicit role options and project settings first, and Activity shows what each attempt actually selected and what the provider confirmed.
+
 ## Supported snapshot and its limits
 
 Inspected locally on **2026-10-02**, without network or live model calls:

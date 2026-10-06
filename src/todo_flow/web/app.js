@@ -182,9 +182,27 @@ function selectionUI() {
   const visible=(listing?.items||[]).filter(t=>t.selectable), count=visible.filter(t=>selected.has(t.id)).length;
   const all=$('selectPage'); if(all){all.checked=!!visible.length&&count===visible.length;all.indeterminate=count>0&&count<visible.length;all.disabled=!visible.length;}
 }
+// Authored plan only: execution choices and provider-confirmed values stay in Activity.
+function planValue(field) {
+  if(field?.status==='authored'&&typeof field.value==='string')return field.value;
+  return field?.status==='default'?tr("Provider default"):tr("Not recorded");
+}
+function planRole(value) {
+  return [value?.provider||tr("Not recorded"),planValue(value?.model),tr("Reasoning effort")+' '+planValue(value?.effort)].join(' · ');
+}
+function planningSummary(t, open = new Set()) {
+  const effort=t.planning?.effort, plan=t.planning?.roles;
+  const work=!plan?tr("No worker plan recorded"):plan.work?planRole(plan.work):tr("Not recorded");
+  const rows=Object.entries(plan||{}).map(([role,value])=>`<span><b>${esc(roles[role]||role)}</b> · ${esc(planRole(value))}${value?.basis?' · '+esc(tr("Basis"))+': '+esc(value.basis):''}</span>`);
+  if(effort?.basis)rows.push(`<span><b>${esc(tr("Work size"))}</b> · ${esc(tr("Basis"))}: ${esc(effort.basis)}</span>`);
+  const guide=`<span>${esc(tr("This is the authored recommendation, not the worker that ran. trackrun applies the execution mode, explicit role options and project settings first, so the actual choice can differ."))}</span><span>${esc(tr("Work size estimates change scope, verification burden and uncertainty. It is not a duration or price."))}</span><span>${esc(tr("Reasoning effort is a per-role model setting, separate from work size. Recommendations weigh complexity, risk, needed roles and user constraints."))}</span><span><a href="#activity">${esc(tr("Actual runs are recorded in Activity"))} →</a> · ${esc(tr("Selection guide"))}: <code>skills/todo/worker-routing.md</code></span>`;
+  return `<details class="plan-summary" data-plan="${esc(t.id)}"${open.has(t.id)?' open':''}><summary><span class="badge">${esc(tr("Work size"))}: ${esc(effort?.estimate||tr("Not recorded"))}</span> <span class="badge">${esc(tr("Implementation recommendation"))}: ${esc(work)}</span></summary><span class="worker-summary subtle">${rows.join('')}${guide}</span></details>`;
+}
 function renderList(data, r) {
   listing=data;
   const completed=r.view==='completed';
+  // Keep expanded authored plans open across polling and language changes.
+  const planOpen=new Set([...document.querySelectorAll('#rows details[data-plan][open]')].map(x=>x.dataset.plan));
   $('filter').hidden=completed; $('selection').hidden=completed;
   $('listLabel').textContent=completed?tr("Completed tracks"):tr("Active tracks");
   $('resultCount').textContent=tr(r.query.get('q')?'{count} results':'{count} tracks',{count:number(data.total)});
@@ -193,7 +211,7 @@ function renderList(data, r) {
   $('rows').innerHTML=data.items.map(t=>{
     const [kind,label,reason]=stateOf(t);
     if(!t.selectable)selected.delete(t.id);
-    return `<tr><td class="check-cell">${completed?`<span class="subtle" aria-label="${tr("Completed tracks")}">·</span>`:`<input type="checkbox" data-select="${esc(t.id)}" aria-label="${esc(tr('Select {title}',{title:t.title}))}" ${selected.has(t.id)?'checked':''} ${t.selectable?'':'disabled'}>`}</td><td class="title-cell"><span class="track-id-badge">${esc(t.id)}</span><a class="track-title" href="${trackHref(t.id)}">${esc(t.title)}</a><span class="track-id" title="${esc(t.id)}">${esc(t.area==='General'?tr('General'):t.area)}</span><span class="track-goal">${esc(t.goal)}</span></td>${completed?`<td class="priority-cell">${deliveryMarkup(t)}</td><td class="links-cell">${resultLinks(t)}</td>`:`<td class="priority-cell"><span class="priority ${['높음','HIGH','high'].includes(t.priority)?'high':''}">${esc(priorityLabel(t.priority))}</span></td><td class="status-cell">${badge(kind,label)}${deliveryMarkup(t)}<div class="status-note">${t.activity?.[0]?.owner?esc(t.activity[0].owner.slice(-8)):'—'}</div></td><td class="reason-col"><div class="reason" title="${esc(reason)}">${esc(reason)}</div></td>`}<td class="date-cell"><time class="subtle" title="${date(t.updated,true)}">${date(t.updated)}</time></td></tr>`;
+    return `<tr><td class="check-cell">${completed?`<span class="subtle" aria-label="${tr("Completed tracks")}">·</span>`:`<input type="checkbox" data-select="${esc(t.id)}" aria-label="${esc(tr('Select {title}',{title:t.title}))}" ${selected.has(t.id)?'checked':''} ${t.selectable?'':'disabled'}>`}</td><td class="title-cell"><span class="track-id-badge">${esc(t.id)}</span><a class="track-title" href="${trackHref(t.id)}">${esc(t.title)}</a><span class="track-id" title="${esc(t.id)}">${esc(t.area==='General'?tr('General'):t.area)}</span><span class="track-goal">${esc(t.goal)}</span>${planningSummary(t,planOpen)}</td>${completed?`<td class="priority-cell">${deliveryMarkup(t)}</td><td class="links-cell">${resultLinks(t)}</td>`:`<td class="priority-cell"><span class="priority ${['높음','HIGH','high'].includes(t.priority)?'high':''}">${esc(priorityLabel(t.priority))}</span></td><td class="status-cell">${badge(kind,label)}${deliveryMarkup(t)}<div class="status-note">${t.activity?.[0]?.owner?esc(t.activity[0].owner.slice(-8)):'—'}</div></td><td class="reason-col"><div class="reason" title="${esc(reason)}">${esc(reason)}</div></td>`}<td class="date-cell"><time class="subtle" title="${date(t.updated,true)}">${date(t.updated)}</time></td></tr>`;
   }).join('');
   $('empty').hidden=!!data.items.length;
   $('empty').innerHTML=`<div class="empty-symbol">${completed?'✓':'▤'}</div><strong>${r.query.get('q')||r.query.get('control')?tr("No tracks match these filters"):completed?tr("No completed tracks yet"):tr("No active TODOs")}</strong>${completed?tr("Completed tracks are preserved here."):overview.counts.completed?tr("Find past work in the completed archive."):tr("Ask your agent to register a requirement with the todo skill.")}${r.query.size?`<br><button class="text-button" data-reset>${tr("Reset search and filters")}</button>`:''}`;

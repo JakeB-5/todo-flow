@@ -746,6 +746,35 @@ for (const [key, [ko, ja, zh]] of Object.entries(notificationMessages)) {
   koreanMessages[key] = ko;
   additionalMessages[key] = [ja, zh];
 }
+// Authored planning summary and guidance: each entry is [Korean, Japanese, Simplified Chinese].
+const planningMessages = {
+  "Work size": ["작업 규모", "作業規模", "工作规模"],
+  "Implementation recommendation": ["구현 추천", "実装の推奨", "实现建议"],
+  "Not recorded": ["미작성", "未記入", "未填写"],
+  "No worker plan recorded": ["워커 계획 미작성", "ワーカー計画は未記入", "未填写工作进程计划"],
+  "Basis": ["근거", "根拠", "依据"],
+  "This is the authored recommendation, not the worker that ran. trackrun applies the execution mode, explicit role options and project settings first, so the actual choice can differ.": [
+    "작성 시 추천값이며 실제로 실행한 워커가 아닙니다. trackrun은 실행 모드, 명시한 역할 옵션, 프로젝트 설정을 먼저 적용하므로 실제 선택은 다를 수 있습니다.",
+    "作成時の推奨値であり、実際に動作したワーカーではありません。trackrun は実行モード、明示したロールのオプション、プロジェクト設定を先に適用するため、実際の選択は異なる場合があります。",
+    "这是编写时的建议，并非实际运行的工作进程。trackrun 会优先应用执行模式、显式角色选项和项目设置，因此实际选择可能不同。"
+  ],
+  "Work size estimates change scope, verification burden and uncertainty. It is not a duration or price.": [
+    "작업 규모는 변경 범위·검증 부담·불확실성에 대한 추정이며 소요 시간이나 가격이 아닙니다.",
+    "作業規模は変更範囲・検証の負担・不確実性の見積もりであり、所要時間や価格ではありません。",
+    "工作规模是对变更范围、验证负担和不确定性的估计，并非耗时或价格。"
+  ],
+  "Reasoning effort is a per-role model setting, separate from work size. Recommendations weigh complexity, risk, needed roles and user constraints.": [
+    "추론 에포트는 역할별 모델 설정이며 작업 규모와 별개입니다. 추천은 복잡도·위험·필요한 역할·사용자 제약을 기준으로 합니다.",
+    "推論エフォートはロールごとのモデル設定であり、作業規模とは別です。推奨は複雑さ・リスク・必要なロール・ユーザーの制約に基づきます。",
+    "推理强度是按角色设置的模型参数，与工作规模无关。建议依据复杂度、风险、所需角色和用户约束。"
+  ],
+  "Actual runs are recorded in Activity": ["실제 실행 기록은 실행 현황에서 확인", "実際の実行記録は実行状況で確認", "实际运行记录请在活动中查看"],
+  "Selection guide": ["선정 기준", "選定の目安", "选择指南"]
+};
+for (const [key, [ko, ja, zh]] of Object.entries(planningMessages)) {
+  koreanMessages[key] = ko;
+  additionalMessages[key] = [ja, zh];
+}
 const catalogs = {
   en: {},
   ko: koreanMessages,

@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../src/todo_flow/web');
+// dashboard_i18n.test.cjs loads this file; planning summary and track ID badge checks run with the same suite.
+require('./dashboard_planning.test.cjs');
 require('./dashboard_track_id_badge.test.cjs');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const start = app.indexOf('function initializeTheme()');
