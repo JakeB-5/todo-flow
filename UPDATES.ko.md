@@ -4,7 +4,7 @@
 
 [README](README.ko.md) · [에이전트 설치](AGENT_INSTALL.ko.md) · [운영](OPERATIONS.ko.md) · [데모](DEMO.ko.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: b8f4847e9e26e9a8cb7225813e3f800ed9c4b86951f4ba9fc94420f645477723; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: e0039bd400632ee32c96480283835c0299cdb8669c58e31925ead1e79af4c06c; status: translated -->
 
 공유 엔진을 한 번 업데이트한 뒤 각 프로젝트에 설치된 스킬을 업데이트합니다. 프로젝트 문서와 실행 기록은 기존 상태 디렉터리에 남습니다. 업데이트는 프로젝트를 다시 초기화하거나 대기 중인 작업을 시작하지 않습니다.
 
@@ -81,7 +81,7 @@ todo-flow --state /absolute/project/todo diagnose-versions \
 
 이 경로에는 기존 **`uv tool install` 설치**와 PATH에서 찾을 수 있는 `uv`가 필요합니다. 소스 체크아웃, editable 환경, 일반 가상환경 설치, 사용자 정의 추가 요구사항/옵션 또는 진입점을 가진 uv tool 설치는 덮어쓰지 않고 진단합니다. 해당 환경이 유휴 상태일 때 원래의 설치 방식으로 업데이트한 다음 프로젝트 호환성과 스킬을 확인하세요.
 
-[v0.1.1 릴리스](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1)에서 wheel과 `SHA256SUMS`를 다운로드하고 체크섬을 확인한 뒤 로컬 wheel 경로를 전달하세요.
+[v0.1.1 릴리스](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1)에서 wheel과 `SHA256SUMS`를 다운로드하고 체크섬(attestation이 있는 릴리스는 [출처](#verify-release-provenance)도)을 확인한 뒤 로컬 wheel 경로를 전달하세요.
 
 ```sh
 todo-flow upgrade --wheel /absolute/releases/todo_flow-0.1.1-py3-none-any.whl --dry-run
@@ -97,6 +97,41 @@ todo-flow upgrade --rollback ENGINE_BACKUP_ID
 ```
 
 롤백은 예상한 현재 릴리스를 요구하며 이전 엔진이 알려진 프로젝트 데이터를 여전히 읽을 수 있는지 확인합니다. 코드 합입이나 원격 효과를 되돌리지 않으며 프로젝트 상태도 롤백하지 않습니다. 엔진 롤백과 프로젝트 스킬 롤백은 별도 작업입니다.
+
+<a id="verify-release-provenance"></a>
+
+### 릴리스 출처 확인
+
+`v0.1.1` 이후 첫 릴리스부터, 태그로 실행되는 [릴리스 워크플로](.github/workflows/release.yml)가 게시한 릴리스에는 wheel과 소스 압축본에 대한 GitHub artifact attestation(SLSA 빌드 출처)이 포함됩니다. `v0.1.1`과 그 이전 릴리스는 attestation 없이 게시되었으므로 `SHA256SUMS`로만 확인하세요. 이들에 대해서는 `gh attestation verify`가 실패합니다.
+
+먼저 체크섬을 확인한 다음 GitHub CLI(`gh`, 아래 플래그는 2.88.1에서 확인)로 다운로드한 각 파일을 검증하세요. `X.Y.Z`는 릴리스 버전으로 바꿉니다.
+
+```sh
+cd /absolute/releases
+shasum -a 256 -c SHA256SUMS
+gh attestation verify todo_flow-X.Y.Z-py3-none-any.whl \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+gh attestation verify todo_flow-X.Y.Z.tar.gz \
+  --repo JakeB-5/todo-flow \
+  --signer-workflow JakeB-5/todo-flow/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
+```
+
+모든 명령이 성공했을 때만 설치하세요. `--repo`, `--signer-workflow`, `--source-ref`는 모두 이 정책의 필수 요소입니다. 이를 빼거나 `--owner` 등으로 완화하지 마세요. digest가 일치한다는 사실만으로는 배포자를 식별할 수 없습니다. 이 정책에서는 다음 경우 검증이 실패합니다.
+
+- 바이트가 바뀐 파일: 파일 digest가 어떤 attestation subject와도 일치하지 않습니다.
+- 다른 저장소의 attestation(`--repo`)
+- 이 저장소의 다른 워크플로 파일을 포함한, 다른 워크플로의 attestation(`--signer-workflow`)
+- 브랜치나 다른 태그 등 다른 ref에서 만든 attestation(`--source-ref`)
+- self-hosted runner에서 만든 attestation(`--deny-self-hosted-runners`)
+
+릴리스 노트에는 워크플로가 빌드한 소스 커밋이 적혀 있습니다. 승인된 소스 커밋이 지정되어 있으면 두 명령 모두에 `--source-digest COMMIT_SHA`를 추가하고, 그 커밋을 별도로 얻은 값(예: 자신의 클론에서 `git rev-parse vX.Y.Z^{commit}`)과 비교하세요. 릴리스 노트는 같은 워크플로가 작성합니다.
+
+신뢰 판단은 검증된 서명 인증서(저장소, 워크플로, ref, 커밋)에 근거하고, `--format json` 출력의 `statement.predicate` 필드는 근거로 쓰지 마세요. attestation을 만든 워크플로가 그 predicate 필드를 제어할 수 있습니다. attestation은 파일이 어디서 어떻게 빌드되었는지를 기록할 뿐이며 소프트웨어가 안전하거나 결함이 없음을 보여주지 않습니다. 이 공개 저장소의 attestation은 공개 Sigstore transparency log에도 기록되며, 각 릴리스 빌드의 저장소, 워크플로, ref, 커밋이 공개됩니다.
 
 <a id="3-update-each-projects-installed-skills"></a>
 
@@ -180,11 +215,11 @@ uv run python scripts/update_smoke.py --artifacts dist/update-check --root /abso
 | 우선순위 | 준비 | 이유 / 완료 기준 |
 |---|---|---|
 | 공개 릴리스 전 | 공식 배포 채널과 패키지/저장소 이름 선택 | 하나의 정식 설치 URL과 업그레이드 출처를 공개하고, 패키지 인덱스 설치를 안내하기 전에 이름 소유권을 확인합니다. |
-| 공개 릴리스 전 | 불변 릴리스 버전, 체크섬, 재현 가능한 태그/빌드 관계 | 사용자가 다운로드한 wheel을 확인할 수 있게 합니다. 업데이터의 해시는 아티팩트 변경을 감지하지만 배포자 서명은 아닙니다. |
+| 공개 릴리스 전 | 불변 릴리스 버전과 재현 가능한 빌드 | 릴리스 워크플로는 태그 커밋을 빌드하고, 이미 있는 릴리스를 거부하며, 게시한 wheel과 소스 압축본에 attestation을 만듭니다([릴리스 출처 확인](#verify-release-provenance) 참고). 저장소 차원에서 강제하는 태그/릴리스 불변성과 바이트 단위로 재현 가능한 빌드는 아직 갖추지 않았습니다. |
 | 공개 릴리스 전 | 지원되는 호스팅 실행기에서 업데이트 인수 작업 실행 | 로컬 성공은 설정된 Linux/macOS 매트릭스를 대체하지 않습니다. |
 | 데이터 형식 변경 전 | 사전 검사, 상태 백업, 재개 가능한 체크포인트, 다운그레이드 규칙을 갖춘 명시적 마이그레이션 레지스트리 | 실제 이전→새 형식 변환을 정의하고 출시 전에 중단을 시험합니다. 패키지 버전만으로 마이그레이션을 추정하지 않습니다. |
 | 다음 | 버전 탐색과 stable/preview 채널 | 사용 가능한 릴리스와 변경을 보여주고 업데이트 잠금을 얻기 전에 정확한 아티팩트를 결정합니다. |
-| 다음 | 서명된 릴리스 출처와 신뢰할 수 있는 게시 | 제공된 파일의 해시 일치를 넘어 누가 아티팩트를 만들었는지 확인합니다. |
+| 다음 | 패키지 인덱스로의 신뢰할 수 있는 게시 | GitHub Release 파일에는 빌드 출처 attestation이 있습니다. 신뢰할 수 있는 게시(trusted publishing)를 사용한 패키지 인덱스 게시는 설정되어 있지 않습니다. |
 | 다음 | 의존성/Python 호환성과 롤백 검증 | 같은 계약의 패키지 버전뿐 아니라 실제 의존성 변경과 인터프리터 전환을 시험합니다. |
 | 다음 | 프로젝트 목록 관리와 일괄 업데이트 | 알려진 프로젝트를 나열·제외·이동하고 폴더로 추정하는 대신 프로젝트별 계획과 영수증을 제공합니다. |
 | 다음 | 프로젝트/스킬 프로토콜 마이그레이션과 혼합 버전 지원 정책 | 이전 설치 스킬과 워커가 각 엔진과 호환되는 기간을 정의합니다. |
