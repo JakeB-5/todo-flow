@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 1ac6ad02d1538cb44ddbb462a89394f00d2e21e09ea1fba52e4fffc8edc767ad; status: translated -->
+<!-- translation-source: README.md; source-sha256: 769d173714e489f9355d95f769142bc09a7f826f711001817776a827aed26bd8; status: translated -->
 
 ## 37초로 보는 TODO Flow
 
@@ -101,11 +101,11 @@ https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.ko.md에 따라
 **Python 3.11+, uv, Git과 인증된 Claude 또는 Codex CLI**가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다.
 
 ```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.1/todo_flow-0.1.1-py3-none-any.whl
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
 todo-flow --version
 ```
 
-[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.1). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
+[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
 
 **대상 프로젝트**의 실제 검증 명령·기준 브랜치·관련 파일 범위를 사용하세요. 아래는 테스트 모음, 초기 Git 커밋과 `origin` 원격이 있는 기존 Python 프로젝트 예시입니다.
 
@@ -345,7 +345,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 완료된 트랙의 임시 체크아웃과 변경되지 않은 워커 터미널은 자동 정리하며 문서·로그·결과·Git 브랜치는 보존합니다. 사용자 변경이 있거나 소유권을 확인할 수 없는 리소스는 이유를 기록하고 남깁니다. 점검을 위해 리소스를 유지하려면 `--no-auto-cleanup`을 사용하세요. [정리와 재시도](OPERATIONS.ko.md#cleanup-migration-and-hooks)를 참고하세요.
 
-최신 릴리스는 **0.1.1**입니다. 소규모 프로젝트의 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 UI 데이터로 검증했습니다.
+최신 릴리스는 **0.1.2**입니다. 소규모 프로젝트의 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 UI 데이터로 검증했습니다.
 
 - 상태 하나당 저장소 하나입니다. Forgejo·서브모듈·복수 저장소 결합 랜딩은 구현하지 않았습니다.
 - 개발 브랜치의 워커는 읽기 전용 도구로 체크아웃을 탐색하고 JSON 제안을 반환합니다. 런타임이 변경 적용·검증·게시를 담당하며 브라우저 워크플로는 구현하지 않았습니다.
