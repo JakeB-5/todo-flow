@@ -12,11 +12,17 @@ Turn selected TODOs into parallel work, independent reviews and verified deliver
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![Status: development](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-## TODO Flow in 37 seconds
+## TODO Flow in 15 seconds
 
-https://github.com/user-attachments/assets/8b5acf19-292a-4205-aef1-f48b75305327
+<!-- gitreels:start -->
+<p align="center">
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="TODO Flow in 15 seconds" width="100%"></a>
+  <br>
+  <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="Made with GitReels" height="24"></a>
+</p>
+<!-- gitreels:end -->
 
-*Animated subway-map overview: track selection, parallel agents, session handoffs, verification, review and landing.*
+*A 15-second overview generated from the README by GitReels.*
 
 ## Development activity, up to 33×.
 

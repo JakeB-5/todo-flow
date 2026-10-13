@@ -12,13 +12,19 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 769d173714e489f9355d95f769142bc09a7f826f711001817776a827aed26bd8; status: translated -->
+<!-- translation-source: README.md; source-sha256: 65ac7eb712145c15cd9c3230d3314dfe62edbad515cf3bea7ef18385b9bb3f41; status: translated -->
 
-## 37 秒了解 TODO Flow
+## 15 秒了解 TODO Flow
 
-https://github.com/user-attachments/assets/8b5acf19-292a-4205-aef1-f48b75305327
+<!-- gitreels:start -->
+<p align="center">
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="15 秒了解 TODO Flow" width="100%"></a>
+  <br>
+  <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="由 GitReels 制作" height="24"></a>
+</p>
+<!-- gitreels:end -->
 
-*地铁线路图风格的动画概览：选择轨道、并行智能体、会话交接、验证、评审和合入。*
+*GitReels 根据 README 生成的 15 秒简介。*
 
 ## 开发活动，最高增长至 33 倍
 

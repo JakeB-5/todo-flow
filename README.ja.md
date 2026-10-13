@@ -12,13 +12,19 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 769d173714e489f9355d95f769142bc09a7f826f711001817776a827aed26bd8; status: translated -->
+<!-- translation-source: README.md; source-sha256: 65ac7eb712145c15cd9c3230d3314dfe62edbad515cf3bea7ef18385b9bb3f41; status: translated -->
 
-## 37秒で見る TODO Flow
+## 15秒で見る TODO Flow
 
-https://github.com/user-attachments/assets/8b5acf19-292a-4205-aef1-f48b75305327
+<!-- gitreels:start -->
+<p align="center">
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="15秒で見る TODO Flow" width="100%"></a>
+  <br>
+  <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="GitReelsで作成" height="24"></a>
+</p>
+<!-- gitreels:end -->
 
-*地下鉄路線図風のアニメーションで、トラックの選択、並列エージェント、セッションの引き継ぎ、検証、レビュー、統合を紹介します。*
+*GitReelsがREADMEをもとに生成した15秒の紹介です。*
 
 ## 開発活動は最大33倍に
 

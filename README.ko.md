@@ -12,13 +12,19 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 769d173714e489f9355d95f769142bc09a7f826f711001817776a827aed26bd8; status: translated -->
+<!-- translation-source: README.md; source-sha256: 65ac7eb712145c15cd9c3230d3314dfe62edbad515cf3bea7ef18385b9bb3f41; status: translated -->
 
-## 37초로 보는 TODO Flow
+## 15초로 보는 TODO Flow
 
-https://github.com/user-attachments/assets/bb7d4605-90cd-4e4c-8374-7d22495a0e8a
+<!-- gitreels:start -->
+<p align="center">
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="15초로 보는 TODO Flow" width="100%"></a>
+  <br>
+  <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="GitReels로 제작" height="24"></a>
+</p>
+<!-- gitreels:end -->
 
-*트랙 선정부터 병렬 작업, 세션 인계, 검증·리뷰와 반영까지 보여주는 지하철 노선도 형식의 모션 인포그래픽입니다.*
+*GitReels가 README를 바탕으로 생성한 15초 소개입니다.*
 
 ## 개발 활동, 최대 33배.
 
