@@ -8,7 +8,7 @@ Turn selected TODOs into parallel work, independent reviews and verified deliver
 
 [Installation](AGENT_INSTALL.md) · [Operations](OPERATIONS.md) · [Updates](UPDATES.md) · [Demo](DEMO.md)
 
-[Get started](#quick-start) · [See it in action](#see-it-in-action) · [For agents](#for-agents) · [Operations](OPERATIONS.md)
+[Get started](#quick-start) · [Use skills](#use-skills) · [See it in action](#see-it-in-action) · [For agents](#for-agents) · [Operations](OPERATIONS.md)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![Status: development](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
@@ -19,10 +19,92 @@ Turn selected TODOs into parallel work, independent reviews and verified deliver
   <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="TODO Flow in 15 seconds" width="100%"></a>
   <br>
   <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="Made with GitReels" height="24"></a>
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/api/badges/rotw/JakeB-5/todo-flow.svg" alt="Reel of the Week #1 on GitReels" height="24"></a>
 </p>
 <!-- gitreels:end -->
 
 *A 15-second overview generated from the README by GitReels.*
+
+## Quick start
+
+Choose **English (`en`), Korean (`ko`), Japanese (`ja`) or Simplified Chinese (`zh-CN`) during project setup**. This sets the project's default dashboard language and the language requested from agents for reports and new track documents. Skill instructions remain English. The dashboard also has an English / 한국어 / 日本語 / 简体中文 switch for your personal display preference.
+
+### Let your agent set it up
+
+Paste this into your coding-agent chat, replacing the project path:
+
+```text
+Install TODO Flow in /absolute/my-project following
+https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md.
+Ask me to choose en, ko, ja or zh-CN if I have not specified a language.
+Install the skills for the agent I am using and verify the CLI, dashboard
+and skill discovery. Report the result; I will register my first TODO next.
+```
+
+[For agents](#for-agents) explains the installation contract.
+
+<details>
+<summary>Install manually</summary>
+
+### Install manually
+
+Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Install the published release:
+
+```sh
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
+todo-flow --version
+```
+
+[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
+
+In the **target project**, use its real verification command, base branch and relevant file patterns. This example assumes an existing Python project with a test suite, an initial Git commit and an `origin` remote:
+
+```sh
+cd /absolute/my-project
+todo-flow init --repo . --base main --worker codex \
+  --language en \
+  --verify '["python3","-m","unittest","discover","-v"]' \
+  --write 'src/*.py' --write 'tests/*.py' \
+  --context 'src/*.py' --context 'tests/*.py' --context README.md
+
+todo-flow install-skills --target .agents/skills
+todo-flow serve --port 8765
+```
+
+Use `--language ko`, `--language ja` or `--language zh-CN` for the other supported languages. Omitting it prompts in an interactive terminal and defaults to English without a terminal. For Claude sessions, install to `.claude/skills`. Skills inherit the configured language. Add `--github OWNER/REPOSITORY` to `init` for GitHub issues and PRs.
+
+Keep the dashboard server running and open **http://127.0.0.1:8765**. Continue with the skill examples below. [Detailed setup and recovery](AGENT_INSTALL.md).
+
+</details>
+
+<a id="use-skills"></a>
+
+### From the first TODO to a result
+
+Open your **target project** in the agent after installation. Enter the examples below in the **agent's chat input**. [Codex](https://developers.openai.com/plugins/build/skills) uses `$skill-name`; [Claude Code](https://code.claude.com/docs/en/skills) uses `/skill-name`. These are chat requests, not shell commands.
+
+| Purpose | Codex | Claude Code |
+|---|---|---|
+| Investigate and register a plan; no execution | `$todo REQUIREMENT` | `/todo REQUIREMENT` |
+| Recommend tracks to select; no execution | `$track-picks` | `/track-picks` |
+| Execute the track IDs you selected | `$trackrun TRACK_ID` | `/trackrun TRACK_ID` |
+| Reassess conditional observations | `$watchlist` | `/watchlist` |
+
+1. **Register:** send `$todo Add bounded retries for temporary network failures, with tests.` in Codex, or `/todo Add bounded retries for temporary network failures, with tests.` in Claude Code. You receive a track ID and a reviewable HTML plan.
+2. **Review and select:** open the returned document link or the dashboard at **http://127.0.0.1:8765**. Check the scope and acceptance conditions ([example plan](examples/retry-backoff.html)), then choose a track yourself or request `$track-picks` / `/track-picks` for recommendations.
+3. **Run:** send `$trackrun TRACK_ID` / `/trackrun TRACK_ID` with the actual selected ID. Multiple IDs are supported. Watch progress and respond to decision requests in the dashboard.
+
+Alternatively, run the installed command in a **terminal in the target project** instead of sending the chat execution request:
+
+```sh
+trackrun TRACK_ID
+```
+
+`REQUIREMENT` and `TRACK_ID` are placeholders. Plain-language requests such as “use the todo skill to register this requirement” also name the skill explicitly. `trackpicks` elsewhere in this guide is a conversational shorthand; the installed skill name is `track-picks`.
+
+If a skill is missing, check that it was installed in `.agents/skills` for Codex or `.claude/skills` for Claude Code, then reopen the agent session in that project. If you installed an alias, use that name (for example, `$flow-todo` / `/flow-todo`).
+
+The default endpoint is **`review`**, which preserves a reviewed candidate. To authorize automatic landing during initialization, add **`--endpoint land --allow-land`**. After landing, triage handles original-scope repairs, separate follow-ups and conditional watches. New follow-up TODOs await your selection.
 
 ## Development activity, up to 33×.
 
@@ -77,52 +159,7 @@ The tour shows a dense, continuous TODO list, selection for `trackrun`, current 
 
 Useful for a backlog of independent changes, work that spans sessions, and reviewing several candidate changes before integration. On the development branch, workers receive workspace and evidence paths, then search and read relevant files themselves. See [current scope](#current-scope) for release availability and remaining boundaries.
 
-## Quick start
-
-Choose **English (`en`), Korean (`ko`), Japanese (`ja`) or Simplified Chinese (`zh-CN`) during project setup**. This sets the project's default dashboard language and the language requested from agents for reports and new track documents. Skill instructions remain English. The dashboard also has an English / 한국어 / 日本語 / 简体中文 switch for your personal display preference.
-
-### Let your agent set it up
-
-Paste this into your coding-agent session, filling in the project and first task:
-
-```text
-Install TODO Flow in /absolute/my-project following
-https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.md. Ask me to choose en, ko, ja or zh-CN if I have not specified it.
-My first task is: [the change and expected result].
-Register a reviewable HTML TODO and show me its link. Select and run the
-track that covers this request, then report the actual result and next steps.
-```
-
-[For agents](#for-agents) explains the installation contract. Setup-only requests stop after setup; the prompt above also requests the first run.
-
-### Install manually
-
-Prerequisites: **Python 3.11+, uv, Git, and an authenticated Claude or Codex CLI**. GitHub issues and PRs additionally need authenticated `gh`. Install the published release:
-
-```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
-todo-flow --version
-```
-
-[Release assets and checksums](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2). This installs the CLI and bundled dashboard/skills; no checkout is needed. For source development, clone this repository and use `uv sync --frozen` and `uv tool install .`.
-
-In the **target project**, use its real verification command, base branch and relevant file patterns. This example assumes an existing Python project with a test suite, an initial Git commit and an `origin` remote:
-
-```sh
-cd /absolute/my-project
-todo-flow init --repo . --base main --worker codex \
-  --language en \
-  --verify '["python3","-m","unittest","discover","-v"]' \
-  --write 'src/*.py' --write 'tests/*.py' \
-  --context 'src/*.py' --context 'tests/*.py' --context README.md
-
-todo-flow install-skills --target .agents/skills
-todo-flow serve --port 8765
-```
-
-Use `--language ko`, `--language ja` or `--language zh-CN` for the other supported languages. Omitting it prompts in an interactive terminal and defaults to English without a terminal. For Claude sessions, install to `.claude/skills`. Skills inherit the configured language. Add `--github OWNER/REPOSITORY` to `init` for GitHub issues and PRs.
-
-Open **http://127.0.0.1:8765**. Ask your agent to use the installed todo skill, review the generated document, then select and run its actual ID. Setup is complete when the dashboard opens, the registered document renders and the requested first run reaches its configured endpoint. [Detailed setup and recovery](AGENT_INSTALL.md).
+## Advanced configuration
 
 ### Coexist with another workflow
 
@@ -227,33 +264,6 @@ This is an argument, not a standalone command. `version` must be `1`; `files` co
 A different `nonce` invalidates prior identity evidence. Use a non-secret label: configuration stores it as text, while identity evidence stores its digest. **Existing configuration is immutable through `Store.configure`, and there is no configuration-update CLI.** Choose the declaration and nonce when initializing new state. Repeating `init` cannot rotate an existing nonce; do not edit or delete canonical state to bypass this restriction. Existing state needs a separately supported configuration migration to change its declaration. An intentional content change to an already declared external input also invalidates its previous identity.
 
 Cache reuse additionally requires the same HEAD, tree, command, timeout and a clean checkout. Legacy success without identity requires fresh verification; unknown identity versions are rejected. File content, resolved paths and metadata are observed before and after execution. This detects ordinary changes, including ordinary change-and-restore writes with changed metadata, but does not execute an immutable snapshot or defend against privileged metadata manipulation. Undeclared files, transitive dependencies, environment variables and remote services are not inferred. See the [self-hosting declaration and operating limits](examples/self-hosting/README.md#declare-verification-inputs-with-a-supporting-engine) for the external runner example.
-
-## From the first TODO to a result
-
-In your agent session:
-
-```text
-todo Add bounded retries for temporary network failures, with tests.
-todo Show a useful error when a request cannot be retried.
-trackpicks
-```
-
-The agent searches existing files for overlap and registers HTML plans. Review them in the dashboard. Pick tracks there and copy the command, or use the recommendations from `trackpicks`:
-
-```sh
-trackrun retry-backoff request-error-message
-```
-
-*These are example IDs; use the IDs returned by your own registration.* `todo` and `trackpicks` are agent skill requests; `trackrun` is also an installed terminal command.
-
-| Step | What you can inspect |
-|---|---|
-| Register and review | The HTML plan, scope, evidence and acceptance conditions. [Example](examples/retry-backoff.html) |
-| Select and execute | Selected IDs, separate worktrees, current workers and questions. |
-| Verify and review | Verification output and independent review tied to the exact candidate. |
-| Land and triage | With an authorized landing endpoint: integrated SHA, finding dispositions, issue closure and completion. |
-
-The default endpoint is **`review`**, which preserves a reviewed candidate. To authorize automatic landing during initialization, add **`--endpoint land --allow-land`**. After landing, triage handles original-scope repairs, separate follow-ups and conditional watches. New follow-up TODOs await your selection.
 
 ## For agents
 

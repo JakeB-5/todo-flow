@@ -8,11 +8,11 @@
 
 [설치](AGENT_INSTALL.ko.md) · [운영](OPERATIONS.ko.md) · [업데이트](UPDATES.ko.md) · [데모](DEMO.ko.md)
 
-[시작하기](#quick-start) · [작동 화면](#see-it-in-action) · [에이전트 안내](#for-agents) · [운영 안내](OPERATIONS.ko.md)
+[시작하기](#quick-start) · [스킬 사용법](#use-skills) · [작동 화면](#see-it-in-action) · [에이전트 안내](#for-agents) · [운영 안내](OPERATIONS.ko.md)
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 65ac7eb712145c15cd9c3230d3314dfe62edbad515cf3bea7ef18385b9bb3f41; status: translated -->
+<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
 
 ## 15초로 보는 TODO Flow
 
@@ -21,10 +21,94 @@
   <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="15초로 보는 TODO Flow" width="100%"></a>
   <br>
   <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="GitReels로 제작" height="24"></a>
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/api/badges/rotw/JakeB-5/todo-flow.svg" alt="Reel of the Week #1 on GitReels" height="24"></a>
 </p>
 <!-- gitreels:end -->
 
 *GitReels가 README를 바탕으로 생성한 15초 소개입니다.*
+
+<a id="quick-start"></a>
+
+## 시작하기
+
+프로젝트 설정 시 **English(`en`), 한국어(`ko`), 日本語(`ja`), 简体中文(`zh-CN`)** 중 선택합니다. 프로젝트의 대시보드 기본 표시와 에이전트에게 요청하는 새 트랙 문서·보고 언어를 정합니다. 스킬 지침 자체는 영어입니다. 대시보드의 English / 한국어 / 日本語 / 简体中文 전환은 개인 표시 설정으로 따로 저장됩니다.
+
+### 에이전트에게 설치 맡기기
+
+프로젝트 경로를 바꿔 코딩 에이전트의 대화창에 붙여 넣으세요.
+
+```text
+https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.ko.md에 따라
+/absolute/my-project에 TODO Flow를 설치해줘.
+언어를 지정하지 않았다면 en, ko, ja, zh-CN 중 선택하도록 물어봐.
+지금 사용하는 에이전트에 맞게 스킬을 설치하고 CLI, 대시보드와
+스킬 인식을 확인해줘. 결과를 알려주면 이어서 첫 TODO를 등록할게.
+```
+
+[에이전트 안내](#for-agents)에 설치 계약을 설명합니다.
+
+<details>
+<summary>직접 설치하기</summary>
+
+### 직접 설치하기
+
+**Python 3.11+, uv, Git과 인증된 Claude 또는 Codex CLI**가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다.
+
+```sh
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
+todo-flow --version
+```
+
+[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
+
+**대상 프로젝트**의 실제 검증 명령·기준 브랜치·관련 파일 범위를 사용하세요. 아래는 테스트 모음, 초기 Git 커밋과 `origin` 원격이 있는 기존 Python 프로젝트 예시입니다.
+
+```sh
+cd /absolute/my-project
+todo-flow init --repo . --base main --worker codex \
+  --language ko \
+  --verify '["python3","-m","unittest","discover","-v"]' \
+  --write 'src/*.py' --write 'tests/*.py' \
+  --context 'src/*.py' --context 'tests/*.py' --context README.md
+
+todo-flow install-skills --target .agents/skills
+todo-flow serve --port 8765
+```
+
+다른 언어에는 `--language en`, `--language ja`, `--language zh-CN`을 사용합니다. 생략하면 대화형 터미널에서는 선택을 묻고 터미널이 없으면 영어를 사용합니다. Claude 세션에는 `.claude/skills`를 사용합니다. 스킬은 프로젝트 언어를 상속합니다. GitHub 이슈·PR 연동에는 `init`에 `--github OWNER/REPOSITORY`를 추가합니다.
+
+대시보드 서버를 실행해 둔 채 **http://127.0.0.1:8765**를 열고 아래 스킬 예시를 따라 진행하세요. [상세 설치·복구 안내](AGENT_INSTALL.ko.md)를 참고하세요.
+
+</details>
+
+<a id="use-skills"></a>
+
+### 첫 TODO에서 결과까지
+
+설치 후 에이전트에서 **대상 프로젝트**를 열고 아래 예시를 **에이전트 대화 입력창**에 입력하세요. [Codex](https://developers.openai.com/plugins/build/skills)는 `$스킬이름`, [Claude Code](https://code.claude.com/docs/en/skills)는 `/스킬이름`으로 호출합니다. 셸 명령이 아닌 대화 요청입니다.
+
+| 목적 | Codex | Claude Code |
+|---|---|---|
+| 요구 조사와 계획 등록. 실행은 하지 않음 | `$todo 요구사항` | `/todo 요구사항` |
+| 선택할 트랙 추천. 실행은 하지 않음 | `$track-picks` | `/track-picks` |
+| 직접 선정한 트랙 ID 실행 | `$trackrun TRACK_ID` | `/trackrun TRACK_ID` |
+| 조건부 관찰 항목 재검토 | `$watchlist` | `/watchlist` |
+
+1. **등록:** Codex에는 `$todo 일시적인 네트워크 오류에 제한된 재시도를 추가하고 테스트해줘.`, Claude Code에는 `/todo 일시적인 네트워크 오류에 제한된 재시도를 추가하고 테스트해줘.`를 입력합니다. 트랙 ID와 검토 가능한 HTML 계획을 받습니다.
+2. **검토·선정:** 반환된 문서 링크나 **http://127.0.0.1:8765** 대시보드를 엽니다. 범위와 완료 조건을 확인하고([계획 예시](examples/retry-backoff.html)) 직접 트랙을 고르거나 `$track-picks` / `/track-picks`로 추천을 받습니다.
+3. **실행:** `$trackrun TRACK_ID` / `/trackrun TRACK_ID`에 실제로 선정한 ID를 넣어 요청합니다. 여러 ID도 가능합니다. 대시보드에서 진행 상황을 보고 결정 요청에 답합니다.
+
+대화창에서 실행을 요청하는 대신 **대상 프로젝트의 터미널**에서 설치된 명령을 실행할 수도 있습니다.
+
+```sh
+trackrun TRACK_ID
+```
+
+`요구사항`과 `TRACK_ID`는 실제 내용으로 바꿔 넣습니다. “todo 스킬로 이 요구사항을 등록해줘”처럼 자연어로 스킬을 지정해도 됩니다. 이 문서의 `trackpicks`는 대화에서 쓰는 줄임말이며 설치된 스킬 이름은 `track-picks`입니다.
+
+스킬이 보이지 않으면 Codex는 `.agents/skills`, Claude Code는 `.claude/skills`에 설치했는지 확인한 뒤 해당 프로젝트에서 에이전트 세션을 다시 여세요. 별칭으로 설치했다면 그 이름을 사용합니다(예: `$flow-todo` / `/flow-todo`).
+
+**기본 종료점은 `review`**이며 리뷰된 후보를 보존합니다. 초기화 시 자동 랜딩을 승인하려면 **`--endpoint land --allow-land`**를 추가하세요. 랜딩 뒤 트리아지에서 원래 범위의 수정, 별도 후속 작업과 조건부 관찰을 처리합니다. 새 후속 TODO는 사용자의 선정을 기다립니다.
 
 ## 개발 활동, 최대 33배.
 
@@ -81,55 +165,7 @@
 
 독립적인 변경이 쌓인 백로그, 여러 세션에 걸친 작업, 통합 전 여러 후보 변경을 검토하는 데 유용합니다. 개발 브랜치의 워커는 작업 공간과 근거 경로를 전달받고 필요한 파일을 직접 검색하고 읽습니다. 릴리스별 제공 여부와 남은 제약은 [현재 범위](#current-scope)를 참고하세요.
 
-<a id="quick-start"></a>
-
-## 시작하기
-
-프로젝트 설정 시 **English(`en`), 한국어(`ko`), 日本語(`ja`), 简体中文(`zh-CN`)** 중 선택합니다. 프로젝트의 대시보드 기본 표시와 에이전트에게 요청하는 새 트랙 문서·보고 언어를 정합니다. 스킬 지침 자체는 영어입니다. 대시보드의 English / 한국어 / 日本語 / 简体中文 전환은 개인 표시 설정으로 따로 저장됩니다.
-
-### 에이전트에게 설치 맡기기
-
-프로젝트 경로와 첫 작업을 채워 에이전트 세션에 붙여 넣으세요.
-
-```text
-https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.ko.md에 따라
-/absolute/my-project에 TODO Flow를 설치해줘.
-언어를 지정하지 않았다면 en, ko, ja, zh-CN 중 선택하도록 물어봐.
-첫 작업은 [원하는 변경과 기대 결과]야. 검토 가능한 HTML TODO를 등록하고
-문서 링크를 보여줘. 이 요구에 맞는 트랙을 선정해 실행하고 실제 결과와
-다음 단계를 알려줘.
-```
-
-[에이전트 안내](#for-agents)에 설치 계약을 설명합니다. 설치만 요청하면 설치까지만 진행합니다. 위 예시는 첫 실행도 요청합니다.
-
-### 직접 설치하기
-
-**Python 3.11+, uv, Git과 인증된 Claude 또는 Codex CLI**가 필요합니다. GitHub 이슈·PR 연동에는 인증된 `gh`도 필요합니다. 공개 릴리스로 설치합니다.
-
-```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
-todo-flow --version
-```
-
-[배포 파일과 체크섬](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2). 체크아웃 없이 CLI·대시보드·스킬 묶음을 설치합니다. 소스 개발 시에는 저장소를 복제하고 `uv sync --frozen`, `uv tool install .`을 사용하세요.
-
-**대상 프로젝트**의 실제 검증 명령·기준 브랜치·관련 파일 범위를 사용하세요. 아래는 테스트 모음, 초기 Git 커밋과 `origin` 원격이 있는 기존 Python 프로젝트 예시입니다.
-
-```sh
-cd /absolute/my-project
-todo-flow init --repo . --base main --worker codex \
-  --language ko \
-  --verify '["python3","-m","unittest","discover","-v"]' \
-  --write 'src/*.py' --write 'tests/*.py' \
-  --context 'src/*.py' --context 'tests/*.py' --context README.md
-
-todo-flow install-skills --target .agents/skills
-todo-flow serve --port 8765
-```
-
-다른 언어에는 `--language en`, `--language ja`, `--language zh-CN`을 사용합니다. 생략하면 대화형 터미널에서는 선택을 묻고 터미널이 없으면 영어를 사용합니다. Claude 세션에는 `.claude/skills`를 사용합니다. 스킬은 프로젝트 언어를 상속합니다. GitHub 이슈·PR 연동에는 `init`에 `--github OWNER/REPOSITORY`를 추가합니다.
-
-**http://127.0.0.1:8765**를 여세요. 에이전트에게 설치한 todo 스킬 사용을 요청하고, 생성된 문서를 검토한 뒤 실제 ID를 선정해 실행합니다. 대시보드가 열리고 등록한 문서가 렌더되며 요청한 첫 실행이 설정된 종료점에 도달하면 설정 완료입니다. [상세 설치·복구 안내](AGENT_INSTALL.ko.md)를 참고하세요.
+## 고급 설정
 
 ### 다른 워크플로우와 공존 설치
 
@@ -234,33 +270,6 @@ verify 작업과 제안 후 검증 모두 `failed`는 요구 수정 작업으로
 `nonce`가 달라지면 이전 식별 근거를 재사용하지 않습니다. 설정에는 원문, 식별 근거에는 digest가 저장되므로 비밀이 아닌 표식을 사용하세요. **현재 `Store.configure`는 기존 설정 변경을 거부하며 설정 갱신 CLI도 없습니다.** 새 상태 초기화 시 선언과 nonce를 정하세요. `init`을 다시 실행해 기존 nonce를 바꿀 수 없으며, 이를 우회하려고 정본 상태를 직접 수정하거나 삭제하면 안 됩니다. 기존 상태의 선언 변경에는 별도로 지원되는 설정 마이그레이션이 필요합니다. 이미 선언된 외부 입력의 내용을 의도적으로 변경하는 방법으로도 이전 식별을 무효화할 수 있습니다.
 
 캐시 재사용에는 HEAD·tree·명령·제한 시간이 같고 작업 공간이 깨끗해야 한다는 조건도 적용됩니다. 식별 없는 기존 성공은 다시 검증하며 알 수 없는 식별 버전은 거부합니다. 실행 전후 파일 내용·해석된 경로·메타데이터를 관측해 일반적인 변경과 메타데이터가 달라지는 변경 후 원복을 탐지합니다. 불변 스냅샷 실행이나 권한 있는 주체의 메타데이터 조작 방어를 제공하는 것은 아닙니다. 미선언 파일·전이 의존성·환경 변수·원격 서비스는 추론하지 않습니다. 외부 runner의 구체적인 예시는 [자체 운영 선언과 한계](examples/self-hosting/README.md#declare-verification-inputs-with-a-supporting-engine)를 참고하세요.
-
-## 첫 TODO에서 결과까지
-
-에이전트 세션에서 다음과 같이 요청합니다.
-
-```text
-todo 일시적인 네트워크 오류에 제한된 재시도를 추가하고 테스트해줘.
-todo 재시도할 수 없는 요청에 이해할 수 있는 오류 안내를 추가해줘.
-trackpicks
-```
-
-에이전트가 기존 파일에서 중복 범위를 검색하고 HTML 계획을 등록합니다. 대시보드에서 문서를 검토하세요. 트랙을 선택해 명령을 복사하거나 `trackpicks` 추천을 사용합니다.
-
-```sh
-trackrun retry-backoff request-error-message
-```
-
-*위 ID는 예시이므로 직접 등록해 반환받은 ID를 사용하세요.* `todo`, `trackpicks`는 에이전트 스킬 요청이고 `trackrun`은 설치되는 터미널 명령이기도 합니다.
-
-| 단계 | 확인할 수 있는 내용 |
-|---|---|
-| 등록과 검토 | HTML 계획, 범위, 근거, 완료 조건. [예제](examples/retry-backoff.html) |
-| 선정과 실행 | 선정한 ID, 별도 워크트리, 현재 워커와 질문 |
-| 검증과 리뷰 | 정확한 후보에 연결된 검증 출력과 독립 리뷰 |
-| 랜딩과 트리아지 | 랜딩 종료점이 승인된 경우 통합 SHA, 발견 사항 처리, 이슈 종료와 완료 |
-
-**기본 종료점은 `review`**이며 리뷰된 후보를 보존합니다. 초기화 시 자동 랜딩을 승인하려면 **`--endpoint land --allow-land`**를 추가하세요. 랜딩 뒤 트리아지에서 원래 범위의 수정, 별도 후속 작업과 조건부 관찰을 처리합니다. 새 후속 TODO는 사용자의 선정을 기다립니다.
 
 <a id="for-agents"></a>
 

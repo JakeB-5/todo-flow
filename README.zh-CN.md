@@ -8,11 +8,11 @@
 
 [安装](AGENT_INSTALL.zh-CN.md) · [运维](OPERATIONS.zh-CN.md) · [更新](UPDATES.zh-CN.md) · [演示](DEMO.zh-CN.md)
 
-[快速开始](#quick-start) · [查看实际操作](#see-it-in-action) · [智能体指南](#for-agents) · [运维](OPERATIONS.zh-CN.md)
+[快速开始](#quick-start) · [技能用法](#use-skills) · [查看实际操作](#see-it-in-action) · [智能体指南](#for-agents) · [运维](OPERATIONS.zh-CN.md)
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 65ac7eb712145c15cd9c3230d3314dfe62edbad515cf3bea7ef18385b9bb3f41; status: translated -->
+<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
 
 ## 15 秒了解 TODO Flow
 
@@ -21,10 +21,94 @@
   <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="15 秒了解 TODO Flow" width="100%"></a>
   <br>
   <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="由 GitReels 制作" height="24"></a>
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/api/badges/rotw/JakeB-5/todo-flow.svg" alt="Reel of the Week #1 on GitReels" height="24"></a>
 </p>
 <!-- gitreels:end -->
 
 *GitReels 根据 README 生成的 15 秒简介。*
+
+<a id="quick-start"></a>
+
+## 快速开始
+
+在项目设置时选择 **英语（`en`）、韩语（`ko`）、日语（`ja`）或简体中文（`zh-CN`）**。这会设置项目的默认仪表盘语言，以及请求智能体用于报告和新轨道文档的语言。技能指令仍使用英语。仪表盘还提供 English / 한국어 / 日本語 / 简体中文切换，用于个人显示偏好。
+
+### 让智能体完成设置
+
+替换项目路径后，将以下内容粘贴到编程智能体的聊天输入框。
+
+```text
+请按照 https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.zh-CN.md，
+在 /absolute/my-project 安装 TODO Flow。
+如果我尚未指定语言，请让我从 en、ko、ja、zh-CN 中选择。
+为我正在使用的智能体安装技能，并检查 CLI、仪表盘和技能识别。
+请报告结果，之后我会登记第一个 TODO。
+```
+
+[智能体指南](#for-agents)说明了安装约定。
+
+<details>
+<summary>手动安装</summary>
+
+### 手动安装
+
+前提条件：**Python 3.11+、uv、Git，以及已认证的 Claude 或 Codex CLI**。使用 GitHub Issue 和 PR 还需要已认证的 `gh`。安装已发布版本：
+
+```sh
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
+todo-flow --version
+```
+
+[发行文件与校验和](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2)。这会安装 CLI 和随包提供的仪表盘、技能，无需检出仓库。进行源码开发时，克隆本仓库，然后使用 `uv sync --frozen` 和 `uv tool install .`。
+
+在**目标项目**中，使用该项目实际的验证命令、基准分支和相关文件模式。下面假设已有一个 Python 项目，包含测试套件、初始 Git 提交和 `origin` 远程：
+
+```sh
+cd /absolute/my-project
+todo-flow init --repo . --base main --worker codex \
+  --language zh-CN \
+  --verify '["python3","-m","unittest","discover","-v"]' \
+  --write 'src/*.py' --write 'tests/*.py' \
+  --context 'src/*.py' --context 'tests/*.py' --context README.md
+
+todo-flow install-skills --target .agents/skills
+todo-flow serve --port 8765
+```
+
+其他语言使用 `--language en`、`--language ko` 或 `--language ja`。省略时，在交互式终端中会询问；没有终端时默认使用英语。Claude 会话请安装到 `.claude/skills`。技能继承配置的语言。要使用 GitHub Issue 和 PR，请为 `init` 添加 `--github OWNER/REPOSITORY`。
+
+保持仪表盘服务运行，打开 **http://127.0.0.1:8765**，然后按下方的技能示例继续操作。参见[详细设置与恢复指南](AGENT_INSTALL.zh-CN.md)。
+
+</details>
+
+<a id="use-skills"></a>
+
+### 从首个 TODO 到结果
+
+安装后，在智能体中打开**目标项目**，将以下示例输入**智能体的聊天输入框**。[Codex](https://developers.openai.com/plugins/build/skills) 使用 `$技能名`，[Claude Code](https://code.claude.com/docs/en/skills) 使用 `/技能名`。这些是聊天请求，不是 shell 命令。
+
+| 目的 | Codex | Claude Code |
+|---|---|---|
+| 调查需求并登记计划，不执行 | `$todo 需求` | `/todo 需求` |
+| 推荐可供选择的轨道，不执行 | `$track-picks` | `/track-picks` |
+| 执行你选定的轨道 ID | `$trackrun TRACK_ID` | `/trackrun TRACK_ID` |
+| 重新评估条件性观察项 | `$watchlist` | `/watchlist` |
+
+1. **登记：** 在 Codex 中输入 `$todo 为临时网络故障添加有次数上限的重试和测试。`，或在 Claude Code 中输入 `/todo 为临时网络故障添加有次数上限的重试和测试。`。你会获得轨道 ID 和可供评审的 HTML 计划。
+2. **评审与选择：** 打开返回的文档链接或 **http://127.0.0.1:8765** 仪表盘。检查范围和验收条件（[计划示例](examples/retry-backoff.html)），然后自行选择轨道，或通过 `$track-picks` / `/track-picks` 获取推荐。
+3. **执行：** 在 `$trackrun TRACK_ID` / `/trackrun TRACK_ID` 中填入实际选定的 ID，也支持多个 ID。在仪表盘中查看进度并回答决策请求。
+
+也可以在**目标项目的终端**中运行已安装的命令，代替在聊天中发出执行请求：
+
+```sh
+trackrun TRACK_ID
+```
+
+将 `需求` 和 `TRACK_ID` 替换为实际内容。也可以用“使用 todo 技能登记这个需求”等自然语言明确指定技能。本文中的 `trackpicks` 是聊天中的简称，安装后的技能名是 `track-picks`。
+
+如果找不到技能，请检查 Codex 的 `.agents/skills` 或 Claude Code 的 `.claude/skills` 中是否已安装，然后在该项目中重新打开智能体会话。如果安装时指定了别名，请使用该名称（例如 `$flow-todo` / `/flow-todo`）。
+
+默认终点为 **`review`**，会保留已评审的候选版本。初始化时添加 **`--endpoint land --allow-land`** 可授权自动合入。合入后，分诊处理原范围内修复、独立后续工作和条件性观察。新的后续 TODO 等待你选择。
 
 ## 开发活动，最高增长至 33 倍
 
@@ -81,55 +165,7 @@
 
 适用于由独立变更组成的待办列表、跨会话工作，以及集成前评审多个候选变更。在开发分支上，工作进程接收工作空间和证据路径，然后自行搜索并读取相关文件。各发行版本的可用功能和剩余限制见[当前范围](#current-scope)。
 
-<a id="quick-start"></a>
-
-## 快速开始
-
-在项目设置时选择 **英语（`en`）、韩语（`ko`）、日语（`ja`）或简体中文（`zh-CN`）**。这会设置项目的默认仪表盘语言，以及请求智能体用于报告和新轨道文档的语言。技能指令仍使用英语。仪表盘还提供 English / 한국어 / 日本語 / 简体中文切换，用于个人显示偏好。
-
-### 让智能体完成设置
-
-填写项目路径和首项任务，将以下内容粘贴到你的编程智能体会话中：
-
-```text
-请按照 https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.zh-CN.md
-在 /absolute/my-project 中安装 TODO Flow。如果我尚未指定语言，
-请让我在 en、ko、ja、zh-CN 中选择。
-我的首项任务是：[所需变更和预期结果]。
-登记一个可供评审的 HTML TODO，并向我展示链接。选择并运行涵盖此请求的
-轨道，然后报告实际结果和下一步。
-```
-
-[智能体指南](#for-agents)说明了安装约定。仅请求设置时，完成设置后停止；上面的提示还请求了首次运行。
-
-### 手动安装
-
-前提条件：**Python 3.11+、uv、Git，以及已认证的 Claude 或 Codex CLI**。使用 GitHub Issue 和 PR 还需要已认证的 `gh`。安装已发布版本：
-
-```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
-todo-flow --version
-```
-
-[发行文件与校验和](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2)。这会安装 CLI 和随包提供的仪表盘、技能，无需检出仓库。进行源码开发时，克隆本仓库，然后使用 `uv sync --frozen` 和 `uv tool install .`。
-
-在**目标项目**中，使用该项目实际的验证命令、基准分支和相关文件模式。下面假设已有一个 Python 项目，包含测试套件、初始 Git 提交和 `origin` 远程：
-
-```sh
-cd /absolute/my-project
-todo-flow init --repo . --base main --worker codex \
-  --language zh-CN \
-  --verify '["python3","-m","unittest","discover","-v"]' \
-  --write 'src/*.py' --write 'tests/*.py' \
-  --context 'src/*.py' --context 'tests/*.py' --context README.md
-
-todo-flow install-skills --target .agents/skills
-todo-flow serve --port 8765
-```
-
-其他语言使用 `--language en`、`--language ko` 或 `--language ja`。省略时，在交互式终端中会询问；没有终端时默认使用英语。Claude 会话请安装到 `.claude/skills`。技能继承配置的语言。要使用 GitHub Issue 和 PR，请为 `init` 添加 `--github OWNER/REPOSITORY`。
-
-打开 **http://127.0.0.1:8765**。让智能体使用已安装的 todo 技能，评审生成的文档，然后选择并运行其实际 ID。当仪表盘可打开、登记的文档正常渲染、请求的首次运行到达配置的终点时，设置才算完成。参见[详细设置与恢复指南](AGENT_INSTALL.zh-CN.md)。
+## 高级配置
 
 ### 与其他工作流共存
 
@@ -234,33 +270,6 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 不同的 `nonce` 会使先前身份依据失效。请使用不含秘密的标签：配置将其保存为文本，而身份依据保存其摘要。**现有配置不能通过 `Store.configure` 修改，也没有配置更新 CLI。** 请在初始化新状态时选择声明和 nonce。重复 `init` 不能轮换已有 nonce；不要通过编辑或删除权威状态绕过此限制。已有状态需要另行支持的配置迁移才能更改声明。有意改变已声明外部输入的内容，也会使其先前身份失效。
 
 缓存复用还要求相同的 HEAD、tree、命令、超时和干净的检出目录。没有身份信息的历史成功需要重新验证；未知身份版本会被拒绝。执行前后会观察文件内容、解析后的路径和元数据。这能检测一般变更，包括元数据改变的一般修改后恢复操作，但不会执行不可变快照，也不防御特权主体对元数据的操纵。未声明文件、传递依赖、环境变量和远程服务不会被推断。外部执行脚本示例见[本仓库自身的验证声明与运行限制](examples/self-hosting/README.md#declare-verification-inputs-with-a-supporting-engine)。
-
-## 从首个 TODO 到结果
-
-在智能体会话中：
-
-```text
-todo 为临时网络故障添加有次数上限的重试，并编写测试。
-todo 在请求无法重试时显示有帮助的错误信息。
-trackpicks
-```
-
-智能体会搜索现有文件中的重叠需求并登记 HTML 计划。在仪表盘中评审它们。可以在仪表盘中选择轨道并复制命令，也可以采用 `trackpicks` 的推荐：
-
-```sh
-trackrun retry-backoff request-error-message
-```
-
-*这些只是示例 ID，请使用你实际登记后返回的 ID。* `todo` 和 `trackpicks` 是智能体技能请求；`trackrun` 同时也是安装后的终端命令。
-
-| 步骤 | 可检查的内容 |
-|---|---|
-| 登记与评审 | HTML 计划、范围、证据和验收条件。[示例](examples/retry-backoff.html) |
-| 选择与执行 | 选中的 ID、独立工作树、当前工作进程和问题。 |
-| 验证与评审 | 绑定到准确候选版本的验证输出与独立评审。 |
-| 合入与分诊 | 已授权合入终点时：集成 SHA、发现事项的处置、Issue 关闭和完成。 |
-
-默认终点为 **`review`**，会保留已评审的候选版本。初始化时添加 **`--endpoint land --allow-land`** 可授权自动合入。合入后，分诊处理原范围内修复、独立后续工作和条件性观察。新的后续 TODO 等待你选择。
 
 <a id="for-agents"></a>
 

@@ -8,11 +8,11 @@
 
 [インストール](AGENT_INSTALL.ja.md) · [運用](OPERATIONS.ja.md) · [更新](UPDATES.ja.md) · [デモ](DEMO.ja.md)
 
-[始める](#quick-start) · [動作を見る](#see-it-in-action) · [エージェント向け](#for-agents) · [運用](OPERATIONS.ja.md)
+[始める](#quick-start) · [スキルの使い方](#use-skills) · [動作を見る](#see-it-in-action) · [エージェント向け](#for-agents) · [運用](OPERATIONS.ja.md)
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 65ac7eb712145c15cd9c3230d3314dfe62edbad515cf3bea7ef18385b9bb3f41; status: translated -->
+<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
 
 ## 15秒で見る TODO Flow
 
@@ -21,10 +21,94 @@
   <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/JakeB-5/todo-flow.webp" alt="15秒で見る TODO Flow" width="100%"></a>
   <br>
   <a href="https://gitreels.com"><img src="https://gitreels.com/badge.svg" alt="GitReelsで作成" height="24"></a>
+  <a href="https://gitreels.com/JakeB-5/todo-flow"><img src="https://gitreels.com/api/badges/rotw/JakeB-5/todo-flow.svg" alt="Reel of the Week #1 on GitReels" height="24"></a>
 </p>
 <!-- gitreels:end -->
 
 *GitReelsがREADMEをもとに生成した15秒の紹介です。*
+
+<a id="quick-start"></a>
+
+## クイックスタート
+
+**プロジェクトの設定時に、英語（`en`）、韓国語（`ko`）、日本語（`ja`）、簡体字中国語（`zh-CN`）を選びます。** ダッシュボードの既定言語と、エージェントの報告・新しいトラック文書に要求する言語を設定します。スキルの指示は英語のままです。ダッシュボードには個人の表示設定として English / 한국어 / 日本語 / 简体中文 の切り替えもあります。
+
+### エージェントに設定を任せる
+
+プロジェクトのパスを置き換え、コーディングエージェントのチャットに貼り付けてください。
+
+```text
+https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.ja.md に従い、
+/absolute/my-project に TODO Flow をインストールしてください。
+言語を指定していなければ en、ko、ja、zh-CN から選ぶように聞いてください。
+使用中のエージェントに合わせてスキルをインストールし、CLI、ダッシュボード、
+スキルの認識を確認してください。結果を報告したら、私が最初の TODO を登録します。
+```
+
+[エージェント向け](#for-agents)にインストールの契約を説明しています。
+
+<details>
+<summary>手動でインストールする</summary>
+
+### 手動でインストールする
+
+前提条件は **Python 3.11+、uv、Git、認証済みの Claude または Codex CLI** です。GitHub Issue と PR には、さらに認証済みの `gh` が必要です。公開リリースをインストールします。
+
+```sh
+uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
+todo-flow --version
+```
+
+[リリースの成果物とチェックサム](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2)。CLI と同梱のダッシュボード・スキルが入り、チェックアウトは不要です。ソース開発では、このリポジトリを clone し、`uv sync --frozen` と `uv tool install .` を使います。
+
+**対象プロジェクト**の実際の検証コマンド、ベースブランチ、関連ファイルのパターンを使ってください。以下は、テストスイート、最初の Git コミット、`origin` リモートを持つ既存の Python プロジェクトの例です。
+
+```sh
+cd /absolute/my-project
+todo-flow init --repo . --base main --worker codex \
+  --language en \
+  --verify '["python3","-m","unittest","discover","-v"]' \
+  --write 'src/*.py' --write 'tests/*.py' \
+  --context 'src/*.py' --context 'tests/*.py' --context README.md
+
+todo-flow install-skills --target .agents/skills
+todo-flow serve --port 8765
+```
+
+ほかの対応言語には `--language ko`、`--language ja`、`--language zh-CN` を使います。省略すると対話型ターミナルでは選択を求め、ターミナルがなければ英語を既定値にします。Claude のセッションでは `.claude/skills` にインストールしてください。スキルは設定した言語を継承します。GitHub Issue と PR を使う場合は `init` に `--github OWNER/REPOSITORY` を追加します。
+
+ダッシュボードのサーバーを起動したまま **http://127.0.0.1:8765** を開き、以下のスキルの例に進んでください。[詳細な設定と復旧](AGENT_INSTALL.ja.md)も参照できます。
+
+</details>
+
+<a id="use-skills"></a>
+
+### 最初の TODO から結果まで
+
+インストール後、エージェントで**対象プロジェクト**を開き、以下の例を**エージェントのチャット入力欄**に入力します。[Codex](https://developers.openai.com/plugins/build/skills) は `$スキル名`、[Claude Code](https://code.claude.com/docs/en/skills) は `/スキル名` で呼び出します。シェルコマンドではなく、チャットでの依頼です。
+
+| 目的 | Codex | Claude Code |
+|---|---|---|
+| 要件を調査し計画を登録する。実行はしない | `$todo 要件` | `/todo 要件` |
+| 選択候補のトラックを推薦する。実行はしない | `$track-picks` | `/track-picks` |
+| 自分で選択したトラック ID を実行する | `$trackrun TRACK_ID` | `/trackrun TRACK_ID` |
+| 条件付きの観測を再評価する | `$watchlist` | `/watchlist` |
+
+1. **登録:** Codex では `$todo 一時的なネットワーク障害に回数制限付きの再試行とテストを追加してください。`、Claude Code では `/todo 一時的なネットワーク障害に回数制限付きの再試行とテストを追加してください。` と依頼します。トラック ID とレビュー可能な HTML 計画が返ります。
+2. **確認・選択:** 返された文書リンクか **http://127.0.0.1:8765** のダッシュボードを開きます。範囲と受け入れ条件を確認し（[計画の例](examples/retry-backoff.html)）、自分でトラックを選ぶか `$track-picks` / `/track-picks` で推薦を受けます。
+3. **実行:** `$trackrun TRACK_ID` / `/trackrun TRACK_ID` に実際に選択した ID を指定します。複数の ID も指定できます。ダッシュボードで進捗を確認し、判断の依頼に答えます。
+
+チャットで実行を依頼する代わりに、**対象プロジェクトのターミナル**でインストール済みコマンドを実行することもできます。
+
+```sh
+trackrun TRACK_ID
+```
+
+`要件` と `TRACK_ID` は実際の内容に置き換えます。「todo スキルでこの要件を登録してください」のように自然言語でスキルを指定することもできます。この文書の `trackpicks` は会話での略称で、インストールされるスキル名は `track-picks` です。
+
+スキルが見つからない場合は、Codex なら `.agents/skills`、Claude Code なら `.claude/skills` にインストールされているか確認し、そのプロジェクトでエージェントのセッションを開き直してください。別名でインストールした場合は、その名前を使います（例: `$flow-todo` / `/flow-todo`）。
+
+既定のエンドポイントは **`review`** で、レビュー済み候補を保持します。初期化時に自動統合を許可するには **`--endpoint land --allow-land`** を追加します。統合後の triage は、元の範囲内の修復、別の後続作業、条件付き Watch を扱います。新しい後続 TODO はユーザーの選択を待ちます。
 
 ## 開発活動は最大33倍に
 
@@ -81,55 +165,7 @@
 
 独立した変更がたまったバックログ、複数セッションにまたがる作業、統合前に複数の変更候補を確認する用途に役立ちます。開発ブランチでは、ワーカーにワークスペースと証拠のパスを渡し、ワーカー自身が関連ファイルを検索して読みます。リリースで利用できる機能と残る制約は[現在の範囲](#current-scope)を参照してください。
 
-<a id="quick-start"></a>
-
-## クイックスタート
-
-**プロジェクトの設定時に、英語（`en`）、韓国語（`ko`）、日本語（`ja`）、簡体字中国語（`zh-CN`）を選びます。** ダッシュボードの既定言語と、エージェントの報告・新しいトラック文書に要求する言語を設定します。スキルの指示は英語のままです。ダッシュボードには個人の表示設定として English / 한국어 / 日本語 / 简体中文 の切り替えもあります。
-
-### エージェントに設定を任せる
-
-プロジェクトと最初のタスクを埋めて、コーディングエージェントのセッションに貼り付けてください。
-
-```text
-https://github.com/JakeB-5/todo-flow/blob/main/AGENT_INSTALL.ja.md に従い、
-/absolute/my-project に TODO Flow をインストールしてください。
-言語を指定していなければ en、ko、ja、zh-CN から選ぶよう確認してください。
-最初のタスク: [変更内容と期待する結果]。
-レビュー可能な HTML TODO を登録し、そのリンクを見せてください。
-この依頼を扱うトラックを選択して実行し、実際の結果と次の手順を報告してください。
-```
-
-[エージェント向け](#for-agents)にインストールの契約を説明しています。設定だけの依頼は設定後に終了します。上の依頼文には最初の実行も含まれます。
-
-### 手動でインストールする
-
-前提条件は **Python 3.11+、uv、Git、認証済みの Claude または Codex CLI** です。GitHub Issue と PR には、さらに認証済みの `gh` が必要です。公開リリースをインストールします。
-
-```sh
-uv tool install https://github.com/JakeB-5/todo-flow/releases/download/v0.1.2/todo_flow-0.1.2-py3-none-any.whl
-todo-flow --version
-```
-
-[リリースの成果物とチェックサム](https://github.com/JakeB-5/todo-flow/releases/tag/v0.1.2)。CLI と同梱のダッシュボード・スキルが入り、チェックアウトは不要です。ソース開発では、このリポジトリを clone し、`uv sync --frozen` と `uv tool install .` を使います。
-
-**対象プロジェクト**の実際の検証コマンド、ベースブランチ、関連ファイルのパターンを使ってください。以下は、テストスイート、最初の Git コミット、`origin` リモートを持つ既存の Python プロジェクトの例です。
-
-```sh
-cd /absolute/my-project
-todo-flow init --repo . --base main --worker codex \
-  --language en \
-  --verify '["python3","-m","unittest","discover","-v"]' \
-  --write 'src/*.py' --write 'tests/*.py' \
-  --context 'src/*.py' --context 'tests/*.py' --context README.md
-
-todo-flow install-skills --target .agents/skills
-todo-flow serve --port 8765
-```
-
-ほかの対応言語には `--language ko`、`--language ja`、`--language zh-CN` を使います。省略すると対話型ターミナルでは選択を求め、ターミナルがなければ英語を既定値にします。Claude のセッションでは `.claude/skills` にインストールしてください。スキルは設定した言語を継承します。GitHub Issue と PR を使う場合は `init` に `--github OWNER/REPOSITORY` を追加します。
-
-**http://127.0.0.1:8765** を開きます。エージェントにインストール済みの todo スキルを使うよう依頼し、生成された文書を確認してから実際の ID を選択して実行します。ダッシュボードが開き、登録した文書が表示され、依頼した最初の実行が設定済みエンドポイントに到達したらセットアップ完了です。[詳しい設定と復旧](AGENT_INSTALL.ja.md)を参照してください。
+## 詳細設定
 
 ### 別のワークフローと共存する
 
@@ -234,33 +270,6 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 `nonce` が変わると過去の同一性の証拠は無効になります。秘密ではないラベルを使ってください。設定は文字列として、同一性の証拠はダイジェストとして保存します。**既存の設定は `Store.configure` では変更できず、設定更新用 CLI もありません。** 新しい状態の初期化時に宣言と nonce を選んでください。`init` を繰り返しても既存の nonce は変更できません。この制限を回避するために正規の状態を編集・削除しないでください。既存の状態の宣言を変更するには、別途対応した設定移行が必要です。宣言済みの外部入力の内容を意図的に変えた場合も、過去の同一性は無効になります。
 
 キャッシュ再利用には、さらに同じ HEAD、tree、コマンド、タイムアウトとクリーンなチェックアウトが必要です。同一性のない従来の成功には新しい検証が必要で、未知の同一性バージョンは拒否します。実行前後にファイル内容、解決済みパス、メタデータを観測します。メタデータが変わる通常の変更・復元を含む一般的な変更は検出しますが、不変のスナップショットで実行するわけではなく、特権によるメタデータ操作に対する防御でもありません。未宣言のファイル、推移的な依存関係、環境変数、リモートサービスは推測しません。外部ランナーの例は[自プロジェクトでの宣言と運用上の制約](examples/self-hosting/README.md#declare-verification-inputs-with-a-supporting-engine)を参照してください。
-
-## 最初の TODO から結果まで
-
-エージェントのセッションで次のように依頼します。
-
-```text
-todo 一時的なネットワーク障害に回数制限付きの再試行とテストを追加してください。
-todo リクエストを再試行できない場合に役立つエラーを表示してください。
-trackpicks
-```
-
-エージェントは既存のファイルを検索して重複を確認し、HTML 計画を登録します。ダッシュボードで確認してください。そこでトラックを選んでコマンドをコピーするか、`trackpicks` の推薦を使います。
-
-```sh
-trackrun retry-backoff request-error-message
-```
-
-*これらは例の ID です。実際の登録で返された ID を使ってください。* `todo` と `trackpicks` はエージェントのスキルへの依頼であり、`trackrun` はインストールされるターミナルコマンドでもあります。
-
-| 段階 | 確認できるもの |
-|---|---|
-| 登録と確認 | HTML 計画、範囲、証拠、受け入れ条件。[例](examples/retry-backoff.html) |
-| 選択と実行 | 選択した ID、別々の worktree、現在のワーカーと質問。 |
-| 検証とレビュー | 対象候補そのものに結び付いた検証出力と独立レビュー。 |
-| 統合と triage | 統合エンドポイントが承認されている場合、統合 SHA、発見事項の処置、Issue のクローズ、完了。 |
-
-既定のエンドポイントは **`review`** で、レビュー済み候補を保持します。初期化時に自動統合を許可するには **`--endpoint land --allow-land`** を追加します。統合後の triage は、元の範囲内の修復、別の後続作業、条件付き Watch を扱います。新しい後続 TODO はユーザーの選択を待ちます。
 
 <a id="for-agents"></a>
 
