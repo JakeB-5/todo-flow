@@ -817,6 +817,18 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         self.assertNotIn("findings", output)
         self.assertIn("rg found nothing", output["summary"])
 
+    def test_question_with_follow_up_keeps_work_and_carries_question_as_text(self):
+        response = {
+            "summary": "partial",
+            "question": "Confirm the owner?",
+            "next": [{"kind": "review", "purpose": "Review the partial result"}],
+        }
+        result, _ = self.invoke(self.context("work"), response)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn("question", output)
+        self.assertIn("Confirm the owner?", output["summary"])
+
     def full_change(self, path, content="candidate\n"):
         return {"path": path, "content": content}
 

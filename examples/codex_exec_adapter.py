@@ -123,6 +123,12 @@ def _schema_response(text, kind, context):
     result = json.loads(text, object_pairs_hook=_object, parse_constant=_constant)
     _check_schema(result, codex_schema())
     result = {key: value for key, value in result.items() if value is not None}
+    if result.get("question") and any(result.get(k) for k in ("changes", "next", "publish")):
+        # Work was produced alongside a question: keep the work for review and
+        # carry the question as text, since a decision wait cannot carry work.
+        result["summary"] = (
+            (result.get("summary") or "") + "\nOpen question: " + result.pop("question")
+        )
     if result.get("question"):
         # A question pauses the track; carry observations as text instead of
         # side-effecting watches or findings, which the engine rejects.
