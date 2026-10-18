@@ -26,7 +26,7 @@ from todo_flow.worker import (  # noqa: E402
     validate,
 )
 
-KINDS = {"assess", "work", "review", "triage"}
+KINDS = {"assess", "work", "review", "triage", "watch"}
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 GIT_OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
@@ -60,7 +60,7 @@ def validate_context(context):
         or not isinstance(task.get("id"), str)
         or not isinstance(task.get("purpose"), str)
     ):
-        raise ValueError("Context task must be assess, work, review or triage")
+        raise ValueError("Context task must be assess, work, review, triage or watch")
     if type(context.get("paths")) is not dict or any(
         not isinstance(value, str) or not value for value in context["paths"].values()
     ):

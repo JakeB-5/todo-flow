@@ -798,6 +798,13 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("aggregate generation changed", result.stderr)
 
+    def test_watch_task_is_accepted_and_cannot_change_files(self):
+        result, _ = self.invoke(self.context("watch"), {"summary": "condition not met yet"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        change = {"changes": [self.full_change("npl-core:note.md")], "summary": "x"}
+        result, _ = self.invoke(self.context("watch"), change)
+        self.assertNotEqual(result.returncode, 0)
+
     def full_change(self, path, content="candidate\n"):
         return {"path": path, "content": content}
 
