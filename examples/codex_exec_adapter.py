@@ -99,14 +99,20 @@ def validate_context(context):
         resolved_workspaces.add(repo_workspace)
         heads[name] = head
 
-    names = list(declarations)
+    # Stored contexts are written with sorted keys, so declaration order does not
+    # identify the primary repository. The primary is the one whose workspace is
+    # the context workspace.
+    primary = [
+        name
+        for name, row in declarations.items()
+        if str(_directory(row["workspace"], f"{name} workspace")) == str(workspace)
+    ]
     repository_heads = context.get("repository_heads")
     if (
-        type(repository_heads) is not dict
+        len(primary) != 1
+        or type(repository_heads) is not dict
         or repository_heads != heads
-        or context.get("head") != heads[names[0]]
-        or context.get("workspace")
-        != str(_directory(declarations[names[0]]["workspace"], "primary workspace"))
+        or context.get("head") != heads[primary[0]]
         or context.get("aggregate_head") != repositories.fingerprint(heads)
     ):
         raise ValueError("Repository heads, primary workspace or aggregate generation changed")

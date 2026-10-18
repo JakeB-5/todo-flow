@@ -783,6 +783,21 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         )
         return result, capture
 
+    def test_primary_repository_is_found_by_workspace_not_key_order(self):
+        # Stored worker input is written with sorted keys; a secondary repository
+        # whose name sorts first must not be taken for the primary.
+        context = self.context()
+        context["repositories"] = dict(reversed(list(self.repositories.items())))
+        text = json.dumps(context, ensure_ascii=False, sort_keys=True)
+        result, _ = self.invoke(text, {"summary": "assessment", "next": []})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        stray = self.root / "unrelated-workspace"
+        stray.mkdir()
+        context["workspace"] = str(stray)
+        result, _ = self.invoke(context, {"summary": "assessment", "next": []})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("aggregate generation changed", result.stderr)
+
     def full_change(self, path, content="candidate\n"):
         return {"path": path, "content": content}
 
