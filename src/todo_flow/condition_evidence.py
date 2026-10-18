@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from . import verification_logs as logs
+from . import verification_outcomes
 
 
 LOG_REFERENCE_SCHEMA = {
@@ -25,6 +26,7 @@ REFERENCE_SCHEMA = {
         "conditionId": {"type": "string"},
         "documentRevision": {"type": "integer"},
         "head": {"type": "string"},
+        "repository": {"type": "string"},
         "logReference": LOG_REFERENCE_SCHEMA,
         "stream": {"type": "string", "enum": ["stdout", "stderr"]},
         "path": {"type": "string"},
@@ -83,8 +85,42 @@ def _checks(track):
     verification = _decode(track.get("verification")) or {}
     if verification.get("head") != track["head"]:
         return []
+    records = verification.get("repositories")
+    if isinstance(records, dict):
+        names = list(records)
+        heads = verification.get("heads")
+        if (
+            len(names) < 2
+            or not isinstance(heads, dict)
+            or set(heads) != set(names)
+            or heads.get(names[0]) != track["head"]
+            or not verification_outcomes.passed(verification)
+        ):
+            return []
+        raw_state = _decode(track.get("repo_state")) or {}
+        if not isinstance(raw_state, dict):
+            return []
+        result = []
+        for repository in names:
+            record = records.get(repository)
+            if not isinstance(record, dict) or not verification_outcomes.passed(record):
+                return []
+            if repository == names[0]:
+                current_head = track["head"]
+            else:
+                state = raw_state.get(repository)
+                if not isinstance(state, dict):
+                    return []
+                current_head = state.get("head")
+            if record.get("head") != heads.get(repository) or heads[repository] != current_head:
+                return []
+            checks = record.get("checks", [])
+            if not isinstance(checks, list) or any(not isinstance(row, dict) for row in checks):
+                return []
+            result.extend((repository, heads[repository], check) for check in checks)
+        return result
     return [
-        check
+        (None, track["head"], check)
         for check in verification.get("checks", [])
         if check.get("ok") is True
         and isinstance(check.get("logReference"), dict)
@@ -95,7 +131,7 @@ def _checks(track):
 def available(directory, track):
     """Offer unassigned artifacts; a reviewer must explicitly select a condition."""
     result = []
-    for check in _checks(track):
+    for repository, candidate_head, check in _checks(track):
         reference = check["logReference"]
         for stream in logs.STREAMS:
             try:
@@ -106,7 +142,8 @@ def available(directory, track):
                 {
                     "version": 1,
                     "documentRevision": track["revision"],
-                    "head": track["head"],
+                    "head": candidate_head,
+                    **({"repository": repository} if repository else {}),
                     "logReference": copy.deepcopy(reference),
                     **value,
                 }
@@ -116,9 +153,12 @@ def available(directory, track):
 
 def validate(directory, track, condition, reference):
     """Reject incomplete, stale, foreign or changed explicit references."""
+    required = set(REFERENCE_SCHEMA["required"])
+    allowed = required | {"repository"}
     if (
         not isinstance(reference, dict)
-        or set(reference) != set(REFERENCE_SCHEMA["required"])
+        or not required <= set(reference)
+        or not set(reference) <= allowed
         or type(reference.get("version")) is not int
         or reference["version"] != 1
     ):
@@ -129,10 +169,28 @@ def validate(directory, track, condition, reference):
         or reference["conditionId"] != condition
         or type(reference["documentRevision"]) is not int
         or reference["documentRevision"] != track["revision"]
-        or reference["head"] != track["head"]
     ):
         raise ValueError("Evidence condition, document revision or candidate does not match")
-    if not any(reference["logReference"] == check["logReference"] for check in _checks(track)):
+    repository = reference.get("repository")
+    if not isinstance(reference["head"], str):
+        raise ValueError("Evidence candidate HEAD is invalid")
+    if repository is None:
+        expected_head = track["head"]
+    else:
+        verification = _decode(track.get("verification")) or {}
+        records = verification.get("repositories")
+        if not isinstance(repository, str) or not isinstance(records, dict):
+            raise ValueError("Evidence repository does not belong to the current candidate")
+        record = records.get(repository)
+        expected_head = record.get("head") if isinstance(record, dict) else None
+    if reference["head"] != expected_head:
+        raise ValueError("Evidence candidate HEAD does not match the current repository")
+    if not any(
+        reference["logReference"] == check["logReference"]
+        and repository == name
+        and reference["head"] == candidate_head
+        for name, candidate_head, check in _checks(track)
+    ):
         raise ValueError("Evidence does not belong to a recorded candidate verification execution")
     observed = artifact(directory, reference["logReference"], reference["stream"])
     if any(reference[key] != observed[key] for key in ("stream", "path", "sha256")):

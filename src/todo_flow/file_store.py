@@ -36,7 +36,16 @@ TABLES = (
     "findings",
     "triages",
 )
-JSON_FIELDS = {"body", "document", "verification", "review", "landing", "intent", "receipt"}
+JSON_FIELDS = {
+    "body",
+    "document",
+    "verification",
+    "review",
+    "landing",
+    "repo_state",
+    "intent",
+    "receipt",
+}
 
 
 def dump(value):

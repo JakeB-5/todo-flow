@@ -11,7 +11,7 @@ from pathlib import Path
 from .adapters import GitHub, command, file_lock
 from .store import Conflict, encode, fingerprint, uid
 from .worker import run_worker
-from . import clean_integration, proposal_application
+from . import clean_integration, proposal_application, repositories
 from .verification_artifacts import checkout_identity
 from .maintenance import guarded
 from . import integration as integration_repair
@@ -80,6 +80,7 @@ class Engine:
             "verification",
             "review",
             "landing",
+            "repo_state",
         }
         if not set(values) <= allowed:
             raise ValueError("Unknown track fields")
@@ -96,8 +97,79 @@ class Engine:
         with file_lock(self.store.path / "locks" / "git-metadata.lock", blocking=True):
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
+            if repositories.multi(self.config):
+                return self._ensure_repository_workspaces(task)
             managed = managed_workspace.ensure(self, task)
             return managed if managed is not None else self._ensure_workspace(task)
+
+    def repository_state(self, track, name):
+        return repositories.state(track, self.config, name)
+
+    def update_repository_state(self, task, name, *, invalidate=False, **values):
+        repositories.update(self, task, name, invalidate=invalidate, **values)
+
+    def _ensure_repository_workspaces(self, task):
+        track = self.store.track(task["track"])
+        declarations = repositories.specs(self.config)
+        workspaces = {}
+        for index, spec in enumerate(declarations):
+            name = spec["name"]
+            state = self.repository_state(track, name)
+            request_suffix = track["request"].split("-")[-1][:8]
+            suffix = "" if index == 0 else "-" + name
+            branch = state["branch"] or f"todo/{track['id']}-{request_suffix}{suffix}"
+            workspace = (
+                Path(state["workspace"])
+                if state["workspace"]
+                else (self.store.path / "worktrees" / f"{track['id']}-{request_suffix}{suffix}")
+            )
+            worktree_root = self.store.path / "worktrees"
+            worktree_root.mkdir(parents=True, exist_ok=True)
+            if (
+                worktree_root.is_symlink()
+                or workspace.is_symlink()
+                or workspace.parent.resolve() != worktree_root.resolve()
+                or not branch.startswith("todo/" + track["id"] + "-")
+            ):
+                raise Conflict("Repository workspace ownership path or branch is invalid")
+            command(["git", "check-ref-format", "--branch", branch], spec["path"])
+            if not state["branch"] or not state["workspace"]:
+                self.update_repository_state(task, name, branch=branch, workspace=str(workspace))
+            if not workspace.exists():
+                base_head = repositories.fetch_base(spec["path"], spec["base"])
+                exists = (
+                    subprocess.run(
+                        ["git", "show-ref", "--verify", "--quiet", "refs/heads/" + branch],
+                        cwd=spec["path"],
+                    ).returncode
+                    == 0
+                )
+                args = ["git", "worktree", "add"]
+                args += (
+                    [str(workspace), branch]
+                    if exists
+                    else ["-b", branch, str(workspace), base_head]
+                )
+                command(args, spec["path"])
+            actual_branch = command(["git", "branch", "--show-current"], workspace)
+            actual_head = command(["git", "rev-parse", "HEAD"], workspace)
+            if actual_branch != branch:
+                raise Conflict("Repository workspace branch does not match registered ownership")
+            if state["head"] and state["head"] != actual_head:
+                journal = proposal_application.read(self, track["id"], name)
+                intent = journal.get("intent", {}) if journal else {}
+                if (
+                    not journal
+                    or journal["phase"] not in proposal_application.ACTIVE
+                    or intent.get("workspace") != str(workspace.resolve())
+                    or intent.get("before_head") != state["head"]
+                ):
+                    raise Conflict("Repository workspace HEAD changed; preserve it for inspection")
+            else:
+                self.update_repository_state(task, name, head=actual_head)
+            workspaces[name] = workspace
+            track = self.store.track(task["track"])
+        return workspaces
 
     def _ensure_workspace(self, task):
         t = self.store.track(task["track"])
@@ -108,7 +180,7 @@ class Engine:
             t = self.store.track(task["track"])
         workspace = Path(t["workspace"])
         if not workspace.exists():
-            command(["git", "fetch", "origin", self.config["base"]], self.root)
+            base_head = repositories.fetch_base(self.root, self.config["base"])
             exists = (
                 subprocess.run(
                     ["git", "show-ref", "--verify", "--quiet", "refs/heads/" + t["branch"]],
@@ -120,7 +192,7 @@ class Engine:
             args += (
                 [str(workspace), t["branch"]]
                 if exists
-                else ["-b", t["branch"], str(workspace), "origin/" + self.config["base"]]
+                else ["-b", t["branch"], str(workspace), base_head]
             )
             command(args, self.root)
         actual = command(["git", "branch", "--show-current"], workspace)
@@ -129,7 +201,70 @@ class Engine:
         self.update(task, head=command(["git", "rev-parse", "HEAD"], workspace))
         return workspace
 
-    def verify(self, task, workspace, *, scope="full"):
+    def verify(self, task, workspace, *, scope="full", repo_name=None, persist=True):
+        if repositories.multi(self.config) and repo_name is None:
+            if not isinstance(workspace, dict):
+                raise ValueError("Multi-repository verification requires named workspaces")
+            records = {}
+            track = self.store.track(task["track"])
+            repositories.require_clean(track, self.config, workspace)
+            for spec in repositories.specs(self.config):
+                records[spec["name"]] = self.verify(
+                    task,
+                    workspace[spec["name"]],
+                    scope=scope,
+                    repo_name=spec["name"],
+                    persist=False,
+                )
+            track = self.store.track(task["track"])
+            primary = records[repositories.specs(self.config)[0]["name"]]
+            passed = all(verification_outcomes.passed(row) for row in records.values())
+            outcome = (
+                "passed"
+                if passed
+                else "failed"
+                if any(verification_outcomes.outcome(row) == "failed" for row in records.values())
+                else "inconclusive"
+            )
+            aggregate = {
+                **primary,
+                "repositories": records,
+                "heads": {name: row["head"] for name, row in records.items()},
+                "ok": passed,
+                "outcome": outcome,
+                "reason": "All repository verifiers passed"
+                if passed
+                else "At least one repository verifier did not pass",
+                "output": "\n".join(
+                    f"[{name}] {row.get('output', '')}" for name, row in records.items()
+                )[-12000:],
+                "error": None if passed else "RepositoryVerificationFailed",
+                "at": max(row["at"] for row in records.values()),
+            }
+            log = self.store.path / "attempts" / task["attempt"]
+            log.mkdir(parents=True, exist_ok=True)
+            (log / "verification.json").write_text(encode(aggregate))
+            self.update(task, verification=encode(aggregate))
+            with self.store.transaction() as c:
+                for name, row in records.items():
+                    self.store.event(
+                        c,
+                        "verification.recorded",
+                        task["track"],
+                        {**row, "repository": name},
+                    )
+                self.store.event(c, "verification.aggregate-recorded", task["track"], aggregate)
+            return aggregate
+        config = self.config
+        if repositories.multi(self.config):
+            spec = next(row for row in repositories.specs(self.config) if row["name"] == repo_name)
+            config = {
+                **self.config,
+                "repo": spec["path"],
+                "base": spec["base"],
+                "verify": spec["verify"],
+                "writable_patterns": spec["writable"],
+            }
         proposal_application.require_clear(self, task["track"])
         self.process_barrier(task["track"]).require_clear()
         self.check_claim(task)
@@ -138,32 +273,38 @@ class Engine:
         head = require_clean(workspace)
         tree = command(["git", "rev-parse", "HEAD^{tree}"], workspace)
         environment = verification_identity.execution_environment()
-        identity = verification_identity.capture(self.config, workspace, environment, scope=scope)
+        identity = verification_identity.capture(config, workspace, environment, scope=scope)
         scope = identity.get("scope", "full")
-        key = fingerprint([tree, self.config["verify"]])
+        key = fingerprint([tree, config["verify"]])
         prior = self.store.track(task["track"])["verification"]
         if prior:
             prior = json.loads(prior)
+            if repositories.multi(self.config):
+                prior = prior.get("repositories", {}).get(repo_name)
+            if not prior:
+                prior = {}
             same_identity = verification_identity.matches(prior.get("identity"), identity)
             if (
                 prior.get("key") == key
                 and verification_outcomes.passed(prior)
                 and prior.get("head") == head
                 and prior.get("tree") == tree
-                and prior.get("command") == self.config["verify"]
+                and prior.get("command") == config["verify"]
                 and prior.get("scope", "full") == scope
                 and same_identity
             ):
                 require_clean(workspace, head)
                 return prior
         log = self.store.path / "attempts" / task["attempt"]
+        if repo_name and repositories.multi(self.config):
+            log = log / "verification" / repo_name
         log.mkdir(parents=True, exist_ok=True)
         started = time.time()
         log_reference = None
         checks = []
         outcome, reason = "inconclusive", "Verification did not finish"
         try:
-            before = verification_identity.capture(self.config, workspace, environment, scope=scope)
+            before = verification_identity.capture(config, workspace, environment, scope=scope)
             if not verification_identity.matches(identity, before):
                 raise verification_identity.VerificationIdentityError(
                     "Verification inputs changed before execution"
@@ -210,7 +351,7 @@ class Engine:
                         self.process_barrier(task["track"]).require_clear()
                         require_clean(workspace, head)
                         current = verification_identity.capture(
-                            self.config, workspace, environment, scope=scope
+                            config, workspace, environment, scope=scope
                         )
                         if not verification_identity.matches(identity, current):
                             raise verification_identity.VerificationIdentityError(
@@ -256,7 +397,7 @@ class Engine:
                 )
                 output = checks[-1]["stage"] + " failed: " + output[-10000:]
         try:
-            after = verification_identity.capture(self.config, workspace, environment, scope=scope)
+            after = verification_identity.capture(config, workspace, environment, scope=scope)
             if not verification_identity.matches(identity, after):
                 output = (output + "\nVerification inputs changed during execution").strip()
                 ok, error = False, "VerificationIdentityError"
@@ -275,7 +416,7 @@ class Engine:
             "head": head,
             "tree": tree,
             "key": key,
-            "command": self.config["verify"],
+            "command": config["verify"],
             "identity": identity,
             "scope": scope,
             "logReference": log_reference,
@@ -288,12 +429,114 @@ class Engine:
             "at": started,
         }
         (log / "verification.json").write_text(encode(record))
-        self.update(task, verification=encode(record))
+        if persist and not repositories.multi(self.config):
+            self.update(task, verification=encode(record))
         with self.store.transaction() as c:
-            self.store.event(c, "verification.recorded", task["track"], record)
+            self.store.event(
+                c,
+                "verification.recorded",
+                task["track"],
+                {**record, **({"repository": repo_name} if repo_name else {})},
+            )
         return record
 
-    def apply_changes(self, task, workspace, changes, repair=None, expected_head=None, result=None):
+    def apply_changes(
+        self,
+        task,
+        workspace,
+        changes,
+        repair=None,
+        expected_head=None,
+        result=None,
+        _batch=None,
+    ):
+        if repositories.multi(self.config):
+            track = self.store.track(task["track"])
+            if not isinstance(workspace, dict):
+                raise ValueError("Multi-repository changes require named workspaces")
+            if repair:
+                repo_name = repair.get("repository")
+                declarations = {row["name"]: row for row in repositories.specs(self.config)}
+                if repo_name not in declarations or not isinstance(
+                    repair.get("candidate_heads"), dict
+                ):
+                    raise Conflict("Multi-repository integration repair evidence is incomplete")
+                heads = repositories.head_map(track, self.config)
+                if heads != repair["candidate_heads"]:
+                    raise Conflict("Multi-repository integration repair candidate set changed")
+                grouped = repositories.route_changes(self.config, changes)
+                if set(grouped) - {repo_name} or repo_name not in grouped:
+                    raise Conflict("Integration repair proposal must target its named repository")
+                for name, candidate in heads.items():
+                    actual = command(["git", "rev-parse", "HEAD"], workspace[name])
+                    if actual != candidate:
+                        raise Conflict("Repository candidate changed during integration repair")
+                    if name != repo_name:
+                        from .checkout import require_clean
+
+                        require_clean(workspace[name], candidate)
+                proposal_application.apply(
+                    self,
+                    task,
+                    workspace[repo_name],
+                    grouped[repo_name],
+                    repair=repair,
+                    expected_head=repair["workspace_head"],
+                    result=result,
+                    repo_name=repo_name,
+                    patterns=declarations[repo_name]["writable"],
+                )
+                return
+            heads = repositories.head_map(track, self.config)
+            if _batch:
+                batch_intent = _batch["intent"]
+                if expected_head != batch_intent["aggregate_head"]:
+                    raise Conflict("Recovered repository proposal candidate identity changed")
+                heads = batch_intent["base_heads"]
+                if set(heads) != {row["name"] for row in repositories.specs(self.config)}:
+                    raise Conflict("Recovered repository proposal HEAD map is incomplete")
+            elif expected_head is not None and expected_head != repositories.fingerprint(heads):
+                raise Conflict("Repository candidate changed during worker execution")
+            grouped = repositories.route_changes(self.config, changes)
+            declarations = {row["name"]: row for row in repositories.specs(self.config)}
+            from .change_proposal import prepare_changes
+
+            repositories.require_clean(track, self.config, workspace)
+            if _batch and set(grouped) != set(_batch["intent"]["repositories"]):
+                raise Conflict("Recovered repository proposal set changed")
+            for name, items in grouped.items():
+                prior = proposal_application.read(self, task["track"], name)
+                actual = command(["git", "rev-parse", "HEAD"], workspace[name])
+                if (
+                    _batch
+                    and prior
+                    and prior["phase"] == "committed"
+                    and prior["intent"].get("batch_id") == _batch["id"]
+                    and prior["intent"]["proposal"] == items
+                    and prior["head"] == actual
+                ):
+                    continue
+                if actual != heads[name]:
+                    raise Conflict("Repository candidate changed before proposal replay: " + name)
+                prepare_changes(workspace[name], items, declarations[name]["writable"], heads[name])
+            batch = _batch or proposal_application.begin_batch(self, task, heads, changes, result)
+            for name in declarations:
+                items = grouped.get(name)
+                if not items:
+                    continue
+                proposal_application.apply(
+                    self,
+                    task,
+                    workspace[name],
+                    items,
+                    expected_head=heads[name],
+                    result=result,
+                    repo_name=name,
+                    patterns=declarations[name]["writable"],
+                    batch_id=batch["id"],
+                )
+            proposal_application.finish_batch(self, task, batch)
+            return
         return proposal_application.apply(
             self, task, workspace, changes, repair, expected_head, result
         )
@@ -302,20 +545,36 @@ class Engine:
         proposal_application.require_clear(self, task["track"])
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
-        require_current(self.config, workspace, t["head"], t["verification"])
+        repositories.require_current(self, t, workspace, t["verification"])
         with file_lock(self.store.path / "locks" / "publish.lock", blocking=True):
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
             t = self.store.track(task["track"])
-            require_current(self.config, workspace, t["head"], t["verification"])
-            command(["git", "push", "origin", t["branch"]], workspace)
-            if self.remote:
-                pr = self.remote.pr(task, t, doc)
-                self.update(task, pr=pr["number"])
+            repositories.require_current(self, t, workspace, t["verification"])
+            if repositories.multi(self.config):
+                for spec in repositories.specs(self.config):
+                    name = spec["name"]
+                    state = self.repository_state(t, name)
+                    command(["git", "push", "origin", state["branch"]], workspace[name])
+                    remote = self.remote.for_repository(name) if self.remote else None
+                    if remote:
+                        pr = remote.pr(task, {**t, **state}, doc)
+                        self.update_repository_state(task, name, pr=pr["number"])
+                        t = self.store.track(task["track"])
+            else:
+                command(["git", "push", "origin", t["branch"]], workspace)
+                if self.remote:
+                    pr = self.remote.pr(task, t, doc)
+                    self.update(task, pr=pr["number"])
 
     def context(self, task, workspace):
         t = self.store.track(task["track"])
         snap = self.store.snapshot()
+        primary_workspace = (
+            workspace[repositories.specs(self.config)[0]["name"]]
+            if repositories.multi(self.config)
+            else workspace
+        )
         doc = json.loads(t["document"])
         revision = self.store.path / "tracks" / t["id"] / "revisions" / f"{t['revision']:06}"
         track_document = (
@@ -330,11 +589,11 @@ class Engine:
             "endpoint": self.config["endpoint"],
             "language": self.config.get("language", "en"),
             "worker_protocol": 2,
-            "workspace": str(Path(workspace).resolve()),
+            "workspace": str(Path(primary_workspace).resolve()),
             "track_document": str(track_document),
             "context_patterns": self.config["context_patterns"],
             "diff": command(
-                ["git", "diff", "origin/" + self.config["base"] + "...HEAD"], workspace
+                ["git", "diff", "origin/" + self.config["base"] + "...HEAD"], primary_workspace
             ),
             "writable_patterns": self.config["writable_patterns"],
             "verification": json.loads(t["verification"]) if t["verification"] else None,
@@ -360,6 +619,35 @@ class Engine:
                 if json.loads(f["body"]).get("target") == t["id"]
             ],
         }
+        if repositories.multi(self.config):
+            declarations = repositories.specs(self.config)
+            repo_context = {}
+            diff_parts = []
+            for spec in declarations:
+                name = spec["name"]
+                state = self.repository_state(t, name)
+                path = Path(workspace[name]).resolve()
+                head = state["head"]
+                repo_context[name] = {
+                    "path": spec["path"],
+                    "base": spec["base"],
+                    "branch": state["branch"],
+                    "workspace": str(path),
+                    "head": head,
+                    "writable_patterns": spec["writable"],
+                }
+                diff_parts.append(
+                    f"## {name} ({spec['base']})\n"
+                    + command(["git", "diff", "origin/" + spec["base"] + "...HEAD"], path)
+                )
+            context["workspace"] = repo_context[declarations[0]["name"]]["workspace"]
+            context["head"] = repo_context[declarations[0]["name"]]["head"]
+            context["aggregate_head"] = repositories.fingerprint(
+                {name: row["head"] for name, row in repo_context.items()}
+            )
+            context["repository_heads"] = {name: row["head"] for name, row in repo_context.items()}
+            context["repositories"] = repo_context
+            context["diff"] = "\n".join(diff_parts)
         if task["kind"] == "review":
             # Role and attempt come from stored records, never from a result's claims.
             tasks = {w["id"]: w for w in snap["tasks"] if w["track"] == t["id"]}
@@ -385,9 +673,20 @@ class Engine:
         proposal_application.require_clear(self, task["track"])
         self.check_claim(task)
         t = self.store.track(task["track"])
-        if expected_head is not None and t["head"] != expected_head:
+        actual_head = (
+            repositories.identity(t, self.config) if repositories.multi(self.config) else t["head"]
+        )
+        if expected_head is not None and actual_head != expected_head:
             raise Conflict("Review candidate changed during the worker session")
-        require_clean(t["workspace"], expected_head or t["head"])
+        if repositories.multi(self.config):
+            workspaces = {
+                spec["name"]: self.repository_state(t, spec["name"])["workspace"]
+                for spec in repositories.specs(self.config)
+            }
+            repositories.require_clean(t, self.config, workspaces)
+            repositories.require_current(self, t, workspaces, t["verification"])
+        else:
+            require_clean(t["workspace"], expected_head or t["head"])
         doc = json.loads(t["document"])
         required = {x["id"] for x in doc["conditions"]}
         rows = result.get("conditions", [])
@@ -406,10 +705,18 @@ class Engine:
         if verdict == "met" and any(x["verdict"] != "met" for x in rows):
             raise ValueError("Contradictory review")
         if verdict == "met":
-            require_current(self.config, t["workspace"], t["head"], t["verification"])
+            if repositories.multi(self.config):
+                repositories.require_current(self, t, workspaces, t["verification"])
+            else:
+                require_current(self.config, t["workspace"], t["head"], t["verification"])
         condition_evidence.require_rows(self.store.path, t, rows)
         review = {
             "head": t["head"],
+            **(
+                {"heads": repositories.head_map(t, self.config)}
+                if repositories.multi(self.config)
+                else {}
+            ),
             "documentRevision": t["revision"],
             "attempt": task["attempt"],
             "verdict": verdict,
@@ -419,7 +726,17 @@ class Engine:
             else [x for x in rows if x["id"] not in required],
             "summary": result["summary"],
         }
-        if self.remote and t["pr"]:
+        if self.remote and repositories.multi(self.config):
+            receipts = {}
+            for spec in repositories.specs(self.config):
+                name = spec["name"]
+                state = self.repository_state(t, name)
+                remote = self.remote.for_repository(name)
+                if remote and state["pr"]:
+                    receipts[name] = remote.post_review(task, {**t, **state}, result)
+            if receipts:
+                review["receipts"] = receipts
+        elif self.remote and t["pr"]:
             review["receipt"] = self.remote.post_review(task, t, result)
         self.update(task, review=encode(review))
 
@@ -430,13 +747,24 @@ class Engine:
         if integration_repair.pending(t):
             raise Conflict("Integration repair requires new verification and independent review")
         review = json.loads(t["review"]) if t["review"] else {}
+        current_heads = (
+            repositories.head_map(t, self.config) if repositories.multi(self.config) else None
+        )
         if (
             review.get("verdict") != "met"
             or review.get("head") != t["head"]
             or review.get("documentRevision") != t["revision"]
+            or (current_heads is not None and review.get("heads") != current_heads)
         ):
             raise Conflict("Current independent review is missing or not met")
-        require_current(self.config, t["workspace"], t["head"], t["verification"])
+        if repositories.multi(self.config):
+            workspaces = {
+                spec["name"]: self.repository_state(t, spec["name"])["workspace"]
+                for spec in repositories.specs(self.config)
+            }
+            repositories.require_current(self, t, workspaces, t["verification"])
+        else:
+            require_current(self.config, t["workspace"], t["head"], t["verification"])
         try:
             condition_evidence.require_rows(
                 self.store.path,
@@ -456,9 +784,10 @@ class Engine:
                 # A prior attempt may have persisted repair intent before queuing its worker.
                 return integration_repair.followup(repair)
             t = self.gate(task)
+            if repositories.multi(self.config):
+                return self._land_repositories(task, t)
             base_ref = "refs/heads/" + self.config["base"]
-            command(["git", "fetch", "origin", self.config["base"]], self.root)
-            base = command(["git", "rev-parse", "origin/" + self.config["base"]], self.root)
+            base = repositories.fetch_base(self.root, self.config["base"])
             already = (
                 subprocess.run(
                     ["git", "merge-base", "--is-ancestor", t["head"], base], cwd=self.root
@@ -571,6 +900,153 @@ class Engine:
                 ],
             }
 
+    def _land_repositories(self, task, track):
+        declarations = repositories.specs(self.config)
+        candidate_heads = repositories.head_map(track, self.config)
+        previous = json.loads(track["landing"]) if track["landing"] else {}
+        landing = {
+            "head": track["head"],
+            "heads": candidate_heads,
+            "repositories": dict(previous.get("repositories", {})),
+            "status": "in_progress",
+        }
+        for spec in declarations:
+            name, base_name = spec["name"], spec["base"]
+            root = Path(spec["path"])
+            candidate = candidate_heads[name]
+            old = landing["repositories"].get(name)
+            base_ref = "refs/heads/" + base_name
+            base = repositories.fetch_base(root, base_name)
+            if old and old.get("head") == candidate and old.get("merged"):
+                command(["git", "merge-base", "--is-ancestor", old["merged"], base], root)
+                landing["repositories"][name] = {**old, "remoteHead": base}
+                continue
+            if (
+                subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", candidate, base], cwd=root
+                ).returncode
+                == 0
+            ):
+                receipt = {
+                    "head": candidate,
+                    "baseBefore": base,
+                    "merged": base,
+                    "remoteHead": base,
+                    "recovered": True,
+                }
+                landing["repositories"][name] = receipt
+                self.update(task, landing=encode(landing))
+                continue
+            checkout = self.store.path / "integrations" / (task["attempt"] + "-" + name)
+            if checkout.exists():
+                raise Conflict("Repository integration checkout already exists; preserve it")
+            with file_lock(self.store.path / "locks/git-metadata.lock", blocking=True):
+                command(["git", "worktree", "add", "--detach", str(checkout), base], root)
+            created = checkout_identity(checkout)
+            try:
+                try:
+                    command(["git", "merge", "--no-ff", "--no-edit", candidate], checkout)
+                except RuntimeError as error:
+                    if integration_repair.unmerged(checkout):
+                        return integration_repair.request_repair(
+                            self,
+                            task,
+                            checkout,
+                            base,
+                            f"Integration conflict in repository {name}: {error}",
+                            repo_name=name,
+                        )
+                    raise
+                clean_integration.capture(
+                    self.store,
+                    track,
+                    task,
+                    checkout,
+                    base,
+                    created,
+                    candidate_head=candidate,
+                    repo_name=name,
+                )
+                verification = self.verify(
+                    task, checkout, scope="full", repo_name=name, persist=False
+                )
+                if not verification_outcomes.passed(verification):
+                    row = {
+                        "head": candidate,
+                        "baseBefore": base,
+                        "verification": verification,
+                        "status": verification_outcomes.outcome(verification),
+                    }
+                    landing["repositories"][name] = row
+                    self.update(task, landing=encode(landing))
+                    detail = verification.get("reason") or verification.get("output", "")
+                    return {
+                        "summary": f"Repository integration verification {row['status']}: {name}",
+                        "question": (
+                            f"Integration verification for {name} did not pass. Candidate {candidate} "
+                            f"is preserved. Inspect {checkout} and attempts/{task['attempt']}/verification/{name}. "
+                            f"Cause: {detail}"
+                        ),
+                    }
+                merged = command(["git", "rev-parse", "HEAD"], checkout)
+                effect = "landing-" + fingerprint([name, candidate, base])
+                intent = {
+                    "repository": name,
+                    "candidate": candidate,
+                    "base": base,
+                    "merged": merged,
+                    "verification": verification,
+                    "ref": base_ref,
+                }
+                with self.store.transaction() as connection:
+                    self.store.assert_claim(connection, task, allow_paused=False)
+                    connection.execute(
+                        "INSERT OR IGNORE INTO effects VALUES(?,?,?,?,NULL,?)",
+                        (effect, track["id"], "landing", encode(intent), time.time()),
+                    )
+                command(["git", "merge-base", "--is-ancestor", base, merged], checkout)
+                command(["git", "merge-base", "--is-ancestor", candidate, merged], checkout)
+                command(
+                    [
+                        "git",
+                        "push",
+                        "--force-with-lease=" + base_ref + ":" + base,
+                        "origin",
+                        merged + ":" + base_ref,
+                    ],
+                    checkout,
+                )
+                remote_sha = command(["git", "ls-remote", "origin", base_ref], root).split()[0]
+                if remote_sha != merged:
+                    raise Conflict(f"Repository {name} remote moved after landing; reconcile first")
+                receipt = {
+                    "head": candidate,
+                    "baseBefore": base,
+                    "merged": merged,
+                    "remoteHead": remote_sha,
+                    "verification": verification,
+                    "effectId": effect,
+                }
+                with self.store.transaction() as connection:
+                    self.store.assert_claim(connection, task)
+                    connection.execute(
+                        "UPDATE effects SET receipt=?,updated=? WHERE id=?",
+                        (encode(receipt), time.time(), effect),
+                    )
+                landing["repositories"][name] = receipt
+                self.update(task, landing=encode(landing))
+            finally:
+                # Keep integration worktrees as cleanup-owned evidence; never remove on failure.
+                pass
+        landing["status"] = "complete"
+        self.update(task, landing=encode(landing))
+        return {
+            "summary": "Landed the verified integration commit in every repository",
+            "next": [
+                {"kind": "triage", "purpose": "Assess landed code, review residue and findings"}
+            ],
+        }
+
     def complete(self, task):
         t = self.gate(task)
         with self.store.transaction() as c:
@@ -605,12 +1081,37 @@ class Engine:
             receipt = json.loads(t["landing"]) if t["landing"] else {}
             if receipt.get("head") != t["head"]:
                 raise Conflict("Landing evidence missing")
-            command(["git", "fetch", "origin", self.config["base"]], self.root)
-            command(
-                ["git", "merge-base", "--is-ancestor", t["head"], "origin/" + self.config["base"]],
-                self.root,
-            )
-            if self.remote:
+            if repositories.multi(self.config):
+                heads = repositories.head_map(t, self.config)
+                if receipt.get("heads") != heads or receipt.get("status") != "complete":
+                    raise Conflict("Every repository landing receipt must match current candidates")
+                for spec in repositories.specs(self.config):
+                    name, root = spec["name"], Path(spec["path"])
+                    row = receipt["repositories"][name]
+                    command(["git", "fetch", "origin", spec["base"]], root)
+                    command(
+                        [
+                            "git",
+                            "merge-base",
+                            "--is-ancestor",
+                            row["merged"],
+                            "origin/" + spec["base"],
+                        ],
+                        root,
+                    )
+            else:
+                command(["git", "fetch", "origin", self.config["base"]], self.root)
+                command(
+                    [
+                        "git",
+                        "merge-base",
+                        "--is-ancestor",
+                        t["head"],
+                        "origin/" + self.config["base"],
+                    ],
+                    self.root,
+                )
+            if self.remote and self.remote.repo:
                 issue = t["issue"]
                 self.remote.close_issue(task, issue)
 
@@ -652,17 +1153,28 @@ class Engine:
                 recovered = None
                 if task["kind"] == "work":
                     recovered = proposal_application.recover(self, task, workspace)
+                    if isinstance(recovered, list):
+                        recovered = next(
+                            (
+                                row
+                                for row in recovered
+                                if row["intent"]["task"] == task["id"]
+                                and row["intent"]["result"] is not None
+                            ),
+                            None,
+                        )
                     if recovered and recovered["intent"]["task"] != task["id"]:
                         recovered = None
                 else:
                     proposal_application.require_clear(self, task["track"])
                 t = self.store.track(task["track"])
                 doc = json.loads(t["document"])
-                if self.remote and not t["issue"]:
+                if self.remote and self.remote.repo and not t["issue"]:
                     issue = self.remote.issue(task, doc)
                     self.update(task, issue=issue["number"])
                 if (
                     self.remote
+                    and self.remote.repo
                     and task["kind"] == "work"
                     and task["purpose"].startswith("Repair original obligations after landing")
                 ):
@@ -691,8 +1203,11 @@ class Engine:
                     if repair:
                         context["integration_repair"] = repair
                     if task["kind"] == "review":
-                        require_current(
-                            self.config, workspace, context["head"], context["verification"]
+                        repositories.require_current(
+                            self,
+                            t,
+                            workspace,
+                            context["verification"],
                         )
                     if recovered:
                         result = dict(
@@ -716,7 +1231,11 @@ class Engine:
                         )
                     self.check_claim(task)
                     if task["kind"] == "review":
-                        require_clean(workspace, context["head"])
+                        if repositories.multi(self.config):
+                            repositories.require_clean(t, self.config, workspace)
+                        else:
+                            require_clean(workspace, context["head"])
+                    candidate_identity = context.get("aggregate_head", context["head"])
                     if repair and not result.get("question"):
                         if not recovered:
                             self.apply_changes(
@@ -724,7 +1243,7 @@ class Engine:
                                 workspace,
                                 result.get("changes", []),
                                 repair,
-                                expected_head=context["head"],
+                                expected_head=candidate_identity,
                                 result=result,
                             )
                         integration_repair.finish_repair(self, task, workspace, repair)
@@ -743,7 +1262,7 @@ class Engine:
                             task,
                             workspace,
                             result["changes"],
-                            expected_head=context["head"],
+                            expected_head=candidate_identity,
                             result=result,
                         )
                     final_requested = bool(
@@ -763,7 +1282,7 @@ class Engine:
                         elif result.get("publish"):
                             self.publish(task, workspace, doc)
                     if task["kind"] == "review":
-                        self.record_review(task, result, expected_head=context["head"])
+                        self.record_review(task, result, expected_head=candidate_identity)
                     self.record_watches(task, result.get("watches", []))
                 adopt = result.pop("adopt_completion", False)
                 # Publish task completion and track completion in one transaction. Otherwise

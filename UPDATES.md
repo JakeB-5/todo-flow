@@ -43,6 +43,8 @@ Version `0.1.0` adds four-language guides and UI, theme selection, worker model/
 
 Version `0.1.1` fixes completed no-op proposal reuse across a new merge, safely retires superseded clean integration checkouts with preserved commit references, and isolates test runtime registration from the real installation. State/configuration formats and worker/skill protocols remain unchanged; no data migration is required. Upgrade the engine while idle. Existing project state, user changes and uncertain resources remain protected.
 
+Version `0.1.2` adds optional multi-repository tracks. Configure at least two distinct Git roots with `repos: [{name, path, base, writable, verify}]`; each track gets a separate worktree, candidate HEAD, verifier and review/landing receipt per repository. Workers return changes as `repository-name:relative/path`; initialization requires a command adapter for this routing, and `--github` accepts either one `owner/repository` or a repository-name map. Landing, integration-conflict repair, verification evidence and cleanup cover each repository. Projects without `repos` keep the single-repository path and need no state migration. See `todo-flow init --help` for the initialization contract.
+
 ## 1. Inspect and stop relevant processes
 
 ```sh

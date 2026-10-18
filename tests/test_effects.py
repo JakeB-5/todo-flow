@@ -39,6 +39,20 @@ class IssueEffectTests(unittest.TestCase):
         self.github.close_issue(self.task, 1)
         self.github.api.assert_called_once()
 
+    def test_partial_legacy_config_allows_issue_effects_but_requires_base_for_pull_requests(self):
+        self.github.api = Mock(
+            return_value={"state": "closed", "html_url": "https://example.invalid/issue"}
+        )
+        self.github.close_issue(self.task, 1)
+        effects_before = len(self.store.snapshot()["effects"])
+        with self.assertRaisesRegex(ValueError, "configured base branch"):
+            self.github.pr(
+                self.task,
+                {"branch": "feature", "head": "a" * 40, "issue": 1},
+                {"title": "Track"},
+            )
+        self.assertEqual(len(self.store.snapshot()["effects"]), effects_before)
+
     def test_concurrent_auto_close_recovers_after_patch_error(self):
         self.github.api = Mock(
             side_effect=[

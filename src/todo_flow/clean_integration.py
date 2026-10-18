@@ -42,14 +42,15 @@ def commit(repo, head):
     return fields[0], fields[1:]
 
 
-def capture(store, track, task, workspace, base, created):
+def capture(store, track, task, workspace, base, created, *, candidate_head=None, repo_name=None):
     """Called immediately after the host merge, before verification or worker access."""
+    candidate_head = candidate_head or track["head"]
     target = observe(workspace)
     tree, parents = commit(workspace, target["head"])
     if (
         target["checkout"] != created
         or target["branch"] != "HEAD"
-        or parents != [base, track["head"]]
+        or parents != [base, candidate_head]
         or observe(workspace) != target
     ):
         raise Conflict("Clean integration changed during creation")
@@ -64,6 +65,7 @@ def capture(store, track, task, workspace, base, created):
         "target": target,
         "tree": tree,
         "parents": parents,
+        **({"repository": repo_name} if repo_name is not None else {}),
     }
     path = creation_path(store, workspace)
     if path.exists() and json.loads(path.read_text()) != record:
@@ -86,7 +88,7 @@ def is_ancestor(repo, ancestor, descendant):
     return result.returncode == 0
 
 
-def candidates(connection, track, tree):
+def candidates(connection, track, tree, repo_name=None):
     # A prior repaired candidate can have this tree even if later work changed it.
     heads = [track["head"]]
     rows = connection.execute(
@@ -95,13 +97,37 @@ def candidates(connection, track, tree):
     )
     for row in rows:
         record = json.loads(row["body"])
-        if record.get("tree") == tree and record.get("head"):
+        if (
+            record.get("tree") == tree
+            and record.get("head")
+            and record.get("repository") == repo_name
+        ):
             heads.append(record["head"])
     return list(dict.fromkeys(heads))
 
 
-def check(store, track, workspace, target, proof, remote, connection, *, require_ref=True):
+def landing_head(track, repo_name=None):
+    landing = json.loads(track["landing"]) if track["landing"] else {}
+    if repo_name is not None:
+        return landing.get("repositories", {}).get(repo_name, {}).get("merged")
+    return landing.get("merged")
+
+
+def check(
+    store,
+    track,
+    workspace,
+    target,
+    proof,
+    remote,
+    connection,
+    *,
+    require_ref=True,
+    candidate_head=None,
+    repo_name=None,
+):
     """Also works after removal: never infer preservation from directory absence."""
+    candidate_head = candidate_head or track["head"]
     source = proof["source"]
     path = creation_path(store, workspace)
     if not path.exists() or json.loads(path.read_text()) != source:
@@ -112,11 +138,14 @@ def check(store, track, workspace, target, proof, remote, connection, *, require
         (source["attempt"], source["task"]),
     ).fetchone()
     expected_path = store.path / "integrations" / source["attempt"]
+    if repo_name is not None:
+        expected_path = expected_path.with_name(expected_path.name + "-" + repo_name)
     if (
         proof.get("version") != 1
         or source.get("version") != 1
         or any(source[key] != track[key] for key in ("request", "revision"))
         or source["track"] != track["id"]
+        or source.get("repository") != repo_name
         or Path(workspace) != expected_path
         or target != source["target"]
         or target["checkout"]["path"] != str(expected_path)
@@ -132,11 +161,11 @@ def check(store, track, workspace, target, proof, remote, connection, *, require
     repo = target["checkout"]["common"]
     if commit(repo, target["head"]) != (source["tree"], source["parents"]):
         raise Conflict("Clean integration tree or parents changed")
-    if proof["candidate"] not in candidates(connection, track, source["tree"]):
+    if proof["candidate"] not in candidates(connection, track, source["tree"], repo_name=repo_name):
         raise Conflict("Equivalent candidate execution evidence is missing")
     if commit(repo, proof["candidate"])[0] != source["tree"]:
         raise Conflict("Clean integration tree differs from the included candidate")
-    if not is_ancestor(repo, proof["candidate"], track["head"]):
+    if not is_ancestor(repo, proof["candidate"], candidate_head):
         raise Conflict("Equivalent candidate is not included in the delivered candidate")
     for parent in source["parents"]:
         if not is_ancestor(repo, parent, proof["remoteHead"]):
@@ -144,7 +173,7 @@ def check(store, track, workspace, target, proof, remote, connection, *, require
                 "Clean integration parent is not included in confirmed remote: " + parent
             )
     if (
-        proof["landing"] != json.loads(track["landing"])["merged"]
+        proof["landing"] != landing_head(track, repo_name)
         or not is_ancestor(repo, proof["candidate"], proof["remoteHead"])
         or not is_ancestor(repo, proof["remoteHead"], remote)
     ):
@@ -156,7 +185,19 @@ def check(store, track, workspace, target, proof, remote, connection, *, require
         raise Conflict("Clean integration preservation ref is missing or changed")
 
 
-def plan(store, track, workspace, target, remote, connection, previous=None):
+def plan(
+    store,
+    track,
+    workspace,
+    target,
+    remote,
+    connection,
+    previous=None,
+    *,
+    candidate_head=None,
+    repo_name=None,
+):
+    candidate_head = candidate_head or track["head"]
     path = creation_path(store, workspace)
     if not path.exists():
         raise Conflict("No clean integration creation evidence; preserve unlanded HEAD")
@@ -167,9 +208,9 @@ def plan(store, track, workspace, target, remote, connection, previous=None):
         candidate = next(
             (
                 head
-                for head in candidates(connection, track, source["tree"])
+                for head in candidates(connection, track, source["tree"], repo_name=repo_name)
                 if commit(repo, head)[0] == source["tree"]
-                and is_ancestor(repo, head, track["head"])
+                and is_ancestor(repo, head, candidate_head)
             ),
             None,
         )
@@ -179,11 +220,22 @@ def plan(store, track, workspace, target, remote, connection, previous=None):
             "version": 1,
             "source": source,
             "candidate": candidate,
-            "landing": json.loads(track["landing"])["merged"],
+            "landing": landing_head(track, repo_name),
             "remoteHead": remote,
             "ref": "refs/todo-flow/retired-integrations/" + fingerprint(source),
         }
-    check(store, track, workspace, target, proof, remote, connection, require_ref=False)
+    check(
+        store,
+        track,
+        workspace,
+        target,
+        proof,
+        remote,
+        connection,
+        require_ref=False,
+        candidate_head=candidate_head,
+        repo_name=repo_name,
+    )
     if observe(workspace) != target:
         raise Conflict("Clean integration checkout changed before removal")
     return proof

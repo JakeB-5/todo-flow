@@ -153,7 +153,24 @@ def decode_native_proposal(text, *, launch, current, implementation_sessions=fro
     try:
         text.encode("utf-8", errors="strict")
         result = json.loads(text, object_pairs_hook=_object, parse_constant=_constant)
-        _check_schema(result, codex_schema())
+        schema = codex_schema()
+
+        def allow_legacy_repository_reference(node):
+            if node.get("type") == "object":
+                properties = node.get("properties", {})
+                required = node.get("required", [])
+                # 0.1.2 adds nullable repository attribution. Older workers omit it.
+                if "repository" in properties and "repository" in required:
+                    node["required"] = [key for key in required if key != "repository"]
+                for child in properties.values():
+                    allow_legacy_repository_reference(child)
+            if "items" in node:
+                allow_legacy_repository_reference(node["items"])
+            for option in node.get("anyOf", []):
+                allow_legacy_repository_reference(option)
+
+        allow_legacy_repository_reference(schema)
+        _check_schema(result, schema)
     except (RecursionError, UnicodeError) as error:
         raise ValueError("Invalid native proposal encoding or nesting") from error
     result = {key: value for key, value in result.items() if value is not None}

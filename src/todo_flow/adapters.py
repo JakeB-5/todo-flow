@@ -64,11 +64,27 @@ def file_lock(path, blocking=False):
 
 
 class GitHub:
-    def __init__(self, store):
+    def __init__(self, store, repo_name=None):
         self.store = store
         self.config = store.config()
-        self.repo = self.config["github"]
-        self.root = Path(self.config["repo"])
+        declarations = self.config.get("repos") or []
+        self.repo_name = repo_name or (declarations[0]["name"] if declarations else None)
+        configured = self.config["github"]
+        if isinstance(configured, dict):
+            self.repo = configured.get(self.repo_name)
+        elif not declarations or self.repo_name == declarations[0]["name"]:
+            self.repo = configured
+        else:
+            self.repo = None
+        spec = next((row for row in declarations if row["name"] == self.repo_name), None)
+        self.root = Path(spec["path"] if spec else self.config["repo"])
+        self.base = spec["base"] if spec else self.config.get("base")
+
+    def for_repository(self, name):
+        if not self.config.get("repos"):
+            return self
+        remote = GitHub(self.store, name)
+        return remote if remote.repo else None
 
     def api(self, path, method="GET", body=None):
         args = ["gh", "api", f"repos/{self.repo}/{path}", "--method", method]
@@ -135,6 +151,9 @@ class GitHub:
         )
 
     def pr(self, task, track, doc):
+        if not self.base:
+            raise ValueError("GitHub pull requests require a configured base branch")
+
         def reconcile(id_):
             prs = self.api(
                 "pulls?state=all&head=" + self.repo.split("/")[0] + ":" + track["branch"]
@@ -142,15 +161,31 @@ class GitHub:
             if prs:
                 x = prs[0]
             else:
+                declarations = self.config.get("repos") or []
+                primary_name = declarations[0]["name"] if declarations else None
+                configured = self.config.get("github")
+                primary_repo = (
+                    configured.get(primary_name) if isinstance(configured, dict) else configured
+                )
+                if track.get("issue") and self.repo == primary_repo:
+                    related = f"Related to #{track['issue']}"
+                elif track.get("issue") and primary_repo:
+                    related = (
+                        f"Related to https://github.com/{primary_repo}/issues/{track['issue']}"
+                    )
+                else:
+                    related = ""
+                spec = next((row for row in declarations if row["name"] == self.repo_name), None)
+                verify = spec["verify"] if spec else self.config["verify"]
                 x = self.api(
                     "pulls",
                     "POST",
                     {
                         "title": doc["title"],
                         "head": track["branch"],
-                        "base": self.config["base"],
-                        "body": f"{doc['goal']}\n\nRelated to #{track['issue']}\n\n"
-                        f"Verification: `{encode(self.config['verify'])}`\n\n"
+                        "base": self.base,
+                        "body": f"{doc['goal']}\n\n{related}\n\n"
+                        f"Verification: `{encode(verify)}`\n\n"
                         f"<!-- todo-flow:{id_} -->",
                     },
                 )

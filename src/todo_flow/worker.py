@@ -151,6 +151,8 @@ such observations as findings when useful; do not include them in changes or man
 Honor recorded user decisions and accepted tradeoffs. Before requiring an extra external capability,
 identify the concrete failure of the existing supported path. Reconcile necessary scope changes using
 existing authority and the document revision process; do not invent dependencies or reopen settled choices.
+If input contains repositories, each change path must be `repository-name:relative/path`
+using an exact configured name. Never use an unprefixed or absolute path in that mode.
 For changes use either {path,content} with complete UTF-8 content, or
 {path,format:"replace-v1",base_head,sha256,edits:[{old,new}]} for an existing UTF-8 file.
 Use the input head as base_head and the lowercase SHA-256 of the original raw file bytes as sha256.
@@ -168,6 +170,8 @@ changes without verify/publish or a review/land/complete follow-up run only rela
 configured preflight). Partial success cannot authorize publication, review, landing or completion.
 Request final verification when the candidate is ready; do not split finished work to use staging.
 When paths.integration_repair is present, read it and its base_diff path before proposing a repair.
+For a multi-repository repair, integration_repair.repository names the only repository to change;
+prefix each resolution path with that exact repository name as required above.
 The host has merged
 the pinned latest base into your candidate checkout. Conflict markers are in workspace files;
 the evidence lists each unmerged path and readable ancestor/candidate/base versions (a missing
@@ -337,6 +341,9 @@ def worker_input(context, folder):
         "output_language_instruction",
         "context_patterns",
         "writable_patterns",
+        "repositories",
+        "repository_heads",
+        "aggregate_head",
     }
     for key, value in context.items():
         if key in ("workspace", "worker_protocol"):

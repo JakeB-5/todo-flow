@@ -4,7 +4,8 @@ SCHEMA = """
               id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL,
               status TEXT NOT NULL DEFAULT 'open', request TEXT, control TEXT DEFAULT 'idle',
               branch TEXT, workspace TEXT, issue INTEGER, pr INTEGER, head TEXT,
-              verification TEXT, review TEXT, landing TEXT, updated REAL NOT NULL);
+              verification TEXT, review TEXT, landing TEXT, repo_state TEXT,
+              updated REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS budgets (
               id TEXT PRIMARY KEY, track TEXT NOT NULL, request TEXT NOT NULL,
               worker_limit INTEGER, used INTEGER NOT NULL DEFAULT 0, decision TEXT);
