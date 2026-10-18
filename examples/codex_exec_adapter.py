@@ -153,8 +153,27 @@ def _prompt(context):
         + "\nNever inspect secret material, including .env files, API keys, tokens, credentials, or shell history.\n"
         + "\n"
         + output_instruction(language)
-        + "\nReturn optional fields as null when unused.\nTASK CONTEXT:\n"
+        + "\nReturn optional fields as null when unused."
+        + "\nWhen you return a question, set triage, watches and findings to null;"
+        + " put what you observed in summary instead.\n"
+        + _references()
+        + "TASK CONTEXT:\n"
         + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
+def _references():
+    # Operator-supplied read-only locations outside the task workspaces, such as
+    # untracked plans or execution reports the track cites.
+    roots = [
+        item for item in os.environ.get("TODO_FLOW_REFERENCE_DIRS", "").split(os.pathsep) if item
+    ]
+    if not roots:
+        return ""
+    return (
+        "Read-only reference locations outside the workspaces (read them; never write there): "
+        + ", ".join(roots)
+        + "\n"
     )
 
 
