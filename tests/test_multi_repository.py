@@ -805,6 +805,18 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         result, _ = self.invoke(self.context("watch"), change)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_question_with_observations_is_normalized_not_rejected(self):
+        response = {
+            "summary": "need a path",
+            "question": "Where is the report?",
+            "findings": [{"observation": "missing", "evidence": "rg found nothing"}],
+        }
+        result, _ = self.invoke(self.context("work"), response)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertNotIn("findings", output)
+        self.assertIn("rg found nothing", output["summary"])
+
     def full_change(self, path, content="candidate\n"):
         return {"path": path, "content": content}
 

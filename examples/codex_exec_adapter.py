@@ -123,6 +123,18 @@ def _schema_response(text, kind, context):
     result = json.loads(text, object_pairs_hook=_object, parse_constant=_constant)
     _check_schema(result, codex_schema())
     result = {key: value for key, value in result.items() if value is not None}
+    if result.get("question"):
+        # A question pauses the track; carry observations as text instead of
+        # side-effecting watches or findings, which the engine rejects.
+        notes = [
+            json.dumps(result.pop(key), ensure_ascii=False)
+            for key in ("watches", "findings", "triage")
+            if result.get(key)
+        ]
+        for key in ("watches", "findings", "triage"):
+            result.pop(key, None)
+        if notes:
+            result["summary"] = (result.get("summary") or "") + "\n" + "\n".join(notes)
     result = validate(result, kind)
     changes = result.get("changes", [])
     if not changes:
