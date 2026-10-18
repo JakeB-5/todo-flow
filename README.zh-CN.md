@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
+<!-- translation-source: README.md; source-sha256: c747f54e38e8a6a859cbe560587999c4a936c82e5c8692b53e5ee60c0b71d759; status: translated -->
 
 ## 15 秒了解 TODO Flow
 
@@ -362,7 +362,7 @@ todo-flow --state /absolute/project/todo compatibility --target /absolute/projec
 
 最新发行版：**0.1.2**。已演练小项目完整循环、恢复和两到三条独立轨道并发；大型列表有独立的合成界面测试覆盖。
 
-- 每份项目状态对应一个仓库。尚未实现 Forgejo、子模块或协调多个仓库的合入。
+- 项目可通过 `repos` 配置多个不同的 Git 根目录。主机为每个根目录创建独立 worktree；命令 worker 以 `repository-name:relative/path` 返回变更。参见 [Codex exec 示例适配器](examples/codex_exec_adapter.py)。Forgejo 和 submodule 尚未实现。
 - 开发分支的工作进程使用只读工具探索检出目录并返回 JSON 提案。运行时应用变更、验证并发布。尚未实现浏览器工作流。
 - 不会把源码内容和完整证据注入提示；`main` 没有源码合计 150,000 字节的限制。工作进程自行选择读取的内容仍受供应商上下文限制。不支持文件删除和二进制编辑。
 - 工作进程默认没有时限。`init --worker-timeout SECONDS` 可选择设置时限；已有项目保留配置的限制（`worker_timeout: null` 表示禁用时限）。取消和驱动进程丢失后的清理仍然有效。驱动进程默认任务分配上限为 100；剩余请求保留到下一次运行。

@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
+<!-- translation-source: README.md; source-sha256: c747f54e38e8a6a859cbe560587999c4a936c82e5c8692b53e5ee60c0b71d759; status: translated -->
 
 ## 15초로 보는 TODO Flow
 
@@ -362,7 +362,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 최신 릴리스는 **0.1.2**입니다. 소규모 프로젝트의 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 UI 데이터로 검증했습니다.
 
-- 상태 하나당 저장소 하나입니다. Forgejo·서브모듈·복수 저장소 결합 랜딩은 구현하지 않았습니다.
+- 프로젝트는 `repos`로 서로 다른 Git 루트를 여러 개 설정할 수 있습니다. 호스트는 루트별 worktree를 만들고, 명령형 worker는 `저장소이름:상대/경로` 형식으로 변경을 반환합니다. [Codex exec 어댑터 예제](examples/codex_exec_adapter.py)를 참고하세요. Forgejo와 submodule은 구현하지 않았습니다.
 - 개발 브랜치의 워커는 읽기 전용 도구로 체크아웃을 탐색하고 JSON 제안을 반환합니다. 런타임이 변경 적용·검증·게시를 담당하며 브라우저 워크플로는 구현하지 않았습니다.
 - 소스 내용과 전체 근거를 프롬프트에 주입하지 않으며 `main`에는 합계 150,000바이트 소스 제한이 없습니다. 워커가 선택해 읽는 내용에는 공급자의 컨텍스트 한도가 적용됩니다. 파일 삭제·바이너리 수정은 지원하지 않습니다.
 - 워커의 기본 실행 시간 제한은 없습니다. `init --worker-timeout SECONDS`로 제한을 선택할 수 있으며, 기존 프로젝트의 제한은 유지됩니다(`worker_timeout: null`이면 무제한). 취소 감시와 드라이버 종료 시 정리는 유지됩니다. 드라이버당 기본 작업 배정 상한은 100이며 남은 요청은 다음 실행에서 이어갑니다.

@@ -88,9 +88,13 @@ def common_dir(repo):
     return (value if value.is_absolute() else Path(repo) / value).resolve()
 
 
-def owned_path(store, value):
+def owned_path(store, value, config):
     path = Path(value)
-    roots = [store.path / name for name in ("worktrees", "integrations", "triage-checkouts")]
+    roots = [
+        Path(config.get("worktree_root") or store.path / "worktrees"),
+        store.path / "integrations",
+        store.path / "triage-checkouts",
+    ]
     return any(
         path.parent == root
         and not root.is_symlink()
@@ -496,7 +500,7 @@ def cleanup_track(store, track_id, dry_run=False):
                         )
                         if evidence is None and item.get("orca"):
                             raise Conflict("Orca cleanup ownership is missing or changed")
-                        if evidence is None and not owned_path(store, value):
+                        if evidence is None and not owned_path(store, value, config):
                             raise Conflict("Path is not an owned runtime worktree")
                         if terminal_wait:
                             raise Conflict(

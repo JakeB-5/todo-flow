@@ -12,7 +12,7 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
+<!-- translation-source: README.md; source-sha256: c747f54e38e8a6a859cbe560587999c4a936c82e5c8692b53e5ee60c0b71d759; status: translated -->
 
 ## 15秒で見る TODO Flow
 
@@ -362,7 +362,7 @@ uv tool としてインストールした場合、`todo-flow upgrade --wheel /ab
 
 最新リリースは **0.1.2** です。小規模プロジェクトの全工程、復旧、2〜3件の独立した同時トラックで動作確認しています。大きな一覧は別途、合成データによる UI テストで確認しています。
 
-- プロジェクト状態ごとに1つのリポジトリを扱います。Forgejo、submodule、複数リポジトリにまたがる協調した統合は未実装です。
+- プロジェクトは `repos` で複数の異なる Git ルートを設定できます。ホストはルートごとに別の worktree を作成し、コマンドワーカーは変更を `repository-name:relative/path` 形式で返します。[Codex exec アダプターの例](examples/codex_exec_adapter.py)を参照してください。Forgejo と submodule は未実装です。
 - 開発版のワーカーは読み取り専用ツールでチェックアウトを調べ、JSON 提案を返します。ランタイムが変更を適用し、検証して公開します。ブラウザーワークフローは未実装です。
 - ソース内容と証拠全体をプロンプトに注入しません。`main` にはソース合計150,000バイトの制限はありません。ワーカーが選んで読む内容には、引き続きプロバイダーのコンテキスト上限が適用されます。ファイル削除とバイナリ編集は非対応です。
 - ワーカーに既定の時間制限はありません。`init --worker-timeout SECONDS` で有効にできます。既存プロジェクトは設定済みの上限を保持し、`worker_timeout: null` は制限を無効にします。キャンセルとドライバー喪失時のクリーンアップは引き続き有効です。ドライバーの既定のタスク割り当て上限は100で、残りのリクエストは次回の実行に残ります。

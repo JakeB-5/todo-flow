@@ -4,7 +4,7 @@
 
 [README](README.ja.md) · [エージェントのインストール](AGENT_INSTALL.ja.md) · [運用](OPERATIONS.ja.md) · [デモ](DEMO.ja.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: 09609f7e568a58db5dddbbe5d1701a002e9172381f18abfe0bff0bf35a540a00; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: 7c6f36523a8cef50e1255a82eec83fb206b9ce2118d4da28c5babeab6b29f13e; status: translated -->
 
 共有エンジンを一度更新してから、各プロジェクトにインストールされたスキルを更新します。プロジェクトの文書と実行記録は既存の状態ディレクトリに残ります。更新はプロジェクトを再初期化せず、保留中の作業も開始しません。
 
@@ -48,6 +48,10 @@
 `0.1.1` は新しいマージで完了済みの変更なし提案を再利用する問題を修正し、コミット参照を保持して置き換えられたクリーンな統合チェックアウトを安全に削除し、テストのランタイム登録を実際のインストールから隔離します。状態/設定形式とワーカー/スキルプロトコルは変わらず、データ移行は不要です。処理が停止している間にエンジンを更新してください。既存のプロジェクト状態、ユーザーの変更、確認できないリソースは引き続き保護されます。
 
 `0.1.2` はオプションの複数リポジトリ対応トラックを追加します。`repos: [{name, path, base, writable, verify}]` に異なる Git ルートを2つ以上設定すると、各トラックはリポジトリごとに独立した作業ツリー、候補 HEAD、検証コマンド、レビュー／反映レシートを使用します。ワーカーは変更パスを `repository-name:relative/path` 形式で返します。このルーティングには初期化時のコマンドアダプターが必要です。`--github` には単一の `owner/repository`、またはリポジトリ名ごとのマップを指定できます。反映、統合競合の修復、検証証拠、クリーンアップは全リポジトリを対象にします。`repos` を設定しないプロジェクトは従来の単一リポジトリ経路を維持し、状態の移行も不要です。初期化の仕様は `todo-flow init --help` を参照してください。
+
+### 現在のブランチで追加（未リリース）
+
+ソースリポジトリには、Codex `exec` 用の protocol-2 コマンドアダプター [`examples/codex_exec_adapter.py`](examples/codex_exec_adapter.py) が含まれます。stdin から worker context を読み、引数でモデルと推論 effort を選び、read-only sandbox で実行して schema 検証済みの提案を返します。複数リポジトリの `init --worktree-root /absolute/path` は、指定した絶対パスの下に一時 worktree を作ります。既存 state 形式は変わりません。
 
 <a id="1-inspect-and-stop-relevant-processes"></a>
 

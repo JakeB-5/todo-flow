@@ -219,6 +219,15 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
         and (not isinstance(worker, dict) or worker.get("type") != "command")
     ):
         raise ValueError("Multi-repository projects require a command worker adapter")
+    worktree_root = config.get("worktree_root")
+    if worktree_root is not None and (
+        not repos
+        or not isinstance(worktree_root, str)
+        or not worktree_root
+        or "\0" in worktree_root
+        or not Path(worktree_root).is_absolute()
+    ):
+        raise ValueError("worktree_root requires multi-repository projects and an absolute path")
     if "verify_concurrency" in config:
         limit = config["verify_concurrency"]
         if type(limit) is not int or limit < 1:

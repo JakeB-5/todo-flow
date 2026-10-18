@@ -70,6 +70,8 @@ def initialize(args):
         "created_by": VERSION,
         "min_engine_version": "0.0.2",
     }
+    if args.worktree_root is not None:
+        config["worktree_root"] = args.worktree_root
     if repos is not None:
         config["repos"] = repos
     if args.verify_identity is not None:
@@ -159,6 +161,10 @@ def parser():
     i.add_argument("--model", default=None)
     i.add_argument(
         "--no-auto-cleanup", action="store_true", help="Keep completed run resources for inspection"
+    )
+    i.add_argument(
+        "--worktree-root",
+        help="Optional root for multi-repository worktrees (default: STATE/worktrees)",
     )
     launcher_modes = ["auto", "headless", "orca", "tmux", "terminal"]
     i.add_argument(

@@ -352,7 +352,7 @@ Completed tracks automatically clean disposable checkouts and unchanged worker t
 
 Latest release: **0.1.2**. Small-project full cycles, recovery and two–three independent concurrent tracks have been exercised; large lists have separate synthetic UI coverage.
 
-- One repository per project state. Forgejo, submodules and coordinated multi-repository landing are not implemented.
+- A project can configure multiple distinct Git roots with `repos`. The host creates a separate worktree per root; command workers return changes as `repository-name:relative/path`. See the [Codex exec example adapter](examples/codex_exec_adapter.py). Forgejo and submodules are not implemented.
 - Development workers explore the checkout with read-only tools and return JSON proposals. The runtime applies changes, verifies and publishes. Browser workflows are not implemented.
 - Source contents and full evidence are not injected into the prompt; there is no aggregate 150,000-byte source limit on `main`. Provider context limits still apply to what a worker chooses to read. File deletion and binary edits are not supported.
 - Workers have no default time limit. `init --worker-timeout SECONDS` opts into one; existing projects retain their configured limit (`worker_timeout: null` disables it). Cancellation and driver-loss cleanup remain active. Default driver task-assignment limit: 100; remaining requests survive for the next run.

@@ -112,6 +112,8 @@ class Engine:
         track = self.store.track(task["track"])
         declarations = repositories.specs(self.config)
         workspaces = {}
+        worktree_root = Path(self.config.get("worktree_root") or self.store.path / "worktrees")
+        worktree_root.mkdir(parents=True, exist_ok=True)
         for index, spec in enumerate(declarations):
             name = spec["name"]
             state = self.repository_state(track, name)
@@ -121,10 +123,8 @@ class Engine:
             workspace = (
                 Path(state["workspace"])
                 if state["workspace"]
-                else (self.store.path / "worktrees" / f"{track['id']}-{request_suffix}{suffix}")
+                else (worktree_root / f"{track['id']}-{request_suffix}{suffix}")
             )
-            worktree_root = self.store.path / "worktrees"
-            worktree_root.mkdir(parents=True, exist_ok=True)
             if (
                 worktree_root.is_symlink()
                 or workspace.is_symlink()

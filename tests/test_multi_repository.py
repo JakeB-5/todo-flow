@@ -1,8 +1,12 @@
 """Acceptance tests for tracks spanning multiple Git repositories."""
 
 import json
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
 from io import StringIO
@@ -19,6 +23,7 @@ from todo_flow import repositories
 from todo_flow.store import Conflict, Store, encode
 from todo_flow.triage import Triage
 from todo_flow.cleanup import receipt_path
+from todo_flow.cleanup import owned_path
 from todo_flow import clean_integration
 from todo_flow import proposal_application
 from todo_flow import condition_evidence
@@ -47,7 +52,9 @@ class MultiRepositoryTests(unittest.TestCase):
         with patch("todo_flow.adapters.command", side_effect=replace_fetch_head):
             self.assertEqual(repositories.fetch_base(self.repo, "main"), expected)
 
-    def configure_repositories(self, *, second_verify=None, endpoint="review", github=None):
+    def configure_repositories(
+        self, *, second_verify=None, endpoint="review", github=None, worktree_root=None
+    ):
         self.second_remote = self.root / "service.git"
         command(["git", "init", "--bare", str(self.second_remote)])
         self.second_repo = self.root / "service"
@@ -86,6 +93,7 @@ class MultiRepositoryTests(unittest.TestCase):
             ],
             endpoint=endpoint,
             allow_land=endpoint == "land",
+            worktree_root=worktree_root,
         )
         self.s = Store(self.root / "multi-state")
         self.s.configure(config)
@@ -106,6 +114,8 @@ class MultiRepositoryTests(unittest.TestCase):
             "init",
             "--repos",
             json.dumps(self.s.config()["repos"]),
+            "--worktree-root",
+            str(self.root / "isolated-worktrees"),
             "--worker-command",
             '["python", "-c", "pass"]',
             "--language",
@@ -117,6 +127,32 @@ class MultiRepositoryTests(unittest.TestCase):
         stored = json.loads(output.getvalue())
         self.assertEqual([row["name"] for row in stored["config"]["repos"]], ["core", "service"])
         self.assertEqual(stored["config"]["repo"], str(self.repo.resolve()))
+        self.assertEqual(stored["config"]["worktree_root"], str(self.root / "isolated-worktrees"))
+
+    def test_engine_uses_configured_worktree_root_and_cleanup_owns_it(self):
+        root = self.root / "lane-tmp-worktrees"
+        self.configure_repositories(worktree_root=str(root))
+
+        _, workspaces = self.start_work()
+
+        self.assertEqual({Path(path).parent for path in workspaces.values()}, {root})
+        config = self.s.config()
+        with self.s.transaction():
+            self.assertTrue(all(owned_path(self.s, path, config) for path in workspaces.values()))
+        self.assertTrue(all(Path(path).is_dir() for path in workspaces.values()))
+
+    def test_worktree_root_rejects_relative_path_and_single_repository_config(self):
+        self.configure_repositories()
+        config = self.s.config()
+        config["worktree_root"] = "relative/worktrees"
+        with self.assertRaisesRegex(ValueError, "worktree_root"):
+            check_config(config)
+
+        config = self.s.config()
+        config.pop("repos")
+        config["worktree_root"] = str(self.root / "worktrees")
+        with self.assertRaisesRegex(ValueError, "worktree_root"):
+            check_config(config)
 
     def test_init_requires_command_adapter_for_multi_repository_routing(self):
         self.configure_repositories()
@@ -623,6 +659,375 @@ class MultiRepositoryTests(unittest.TestCase):
         self.assertEqual(command(["git", "rev-parse", "HEAD"], service), head_before)
         self.assertEqual(outside.read_text(), "preserve")
         self.assertGreaterEqual(len(routed_bad) + len(path_bad) + 4, 20)
+
+
+class CodexExecAdapterTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="codex-adapter-tests-")
+        self.root = Path(self.temporary.name)
+        self.adapter = Path(__file__).resolve().parents[1] / "examples" / "codex_exec_adapter.py"
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.workspaces = {}
+        self.repositories = {}
+        for name in ("npl-core", "npl-sentinel"):
+            repo = self.root / f"{name}-repo"
+            workspace = self.root / f"{name}-workspace"
+            repo.mkdir()
+            workspace.mkdir()
+            self.workspaces[name] = workspace
+            self.repositories[name] = {
+                "path": str(repo),
+                "base": "main",
+                "branch": f"todo/test-{name}",
+                "workspace": str(workspace),
+                "head": "a" * 40 if name == "npl-core" else "b" * 40,
+                "writable_patterns": ["*.md"],
+            }
+        self.heads = {name: row["head"] for name, row in self.repositories.items()}
+        self.fake_codex = self.bin / "codex"
+        self.fake_codex.write_text(
+            """#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+import time
+
+args = sys.argv[1:]
+prompt = sys.stdin.read()
+capture = os.environ.get("FAKE_CODEX_CAPTURE")
+if capture:
+    Path(capture).write_text(json.dumps({"argv": args, "prompt": prompt}), encoding="utf-8")
+time.sleep(float(os.environ.get("FAKE_CODEX_SLEEP", "0")))
+raw = os.environ.get("FAKE_CODEX_RAW") == "1"
+response = os.environ.get("FAKE_CODEX_RESPONSE", "{}")
+output = Path(args[args.index("--output-last-message") + 1])
+schema_path = Path(args[args.index("--output-schema") + 1])
+if not raw:
+    try:
+        value = json.loads(response)
+    except json.JSONDecodeError:
+        value = None
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    def fill(value, node):
+        if "anyOf" in node:
+            options = [item for item in node["anyOf"] if item.get("type") != "null"]
+            return value if value is None or not options else fill(value, options[0])
+        if node.get("type") == "object" and isinstance(value, dict):
+            for key, child in node.get("properties", {}).items():
+                if key not in value:
+                    value[key] = None
+                elif value[key] is not None:
+                    value[key] = fill(value[key], child)
+        elif node.get("type") == "array" and isinstance(value, list):
+            value = [fill(item, node["items"]) for item in value]
+        return value
+    if value is not None:
+        response = json.dumps(fill(value, schema), ensure_ascii=False)
+output.write_text(response, encoding="utf-8")
+sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
+""",
+            encoding="utf-8",
+        )
+        self.fake_codex.chmod(0o755)
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def context(self, kind="assess"):
+        heads = dict(self.heads)
+        return {
+            "worker_protocol": 2,
+            "task": {"id": "task-1", "kind": kind, "purpose": "Test adapter", "attempt": "a1"},
+            "workspace": str(self.workspaces["npl-core"]),
+            "head": heads["npl-core"],
+            "paths": {"document": str(self.root / "document.json")},
+            "repositories": dict(self.repositories),
+            "repository_heads": heads,
+            "aggregate_head": repositories.fingerprint(heads),
+            "writable_patterns": ["*.md"],
+            "language": "ko",
+        }
+
+    def invoke(self, context, response, *, kind="assess", timeout="5", raw_response=False):
+        capture = self.root / f"capture-{uuid.uuid4().hex}.json"
+        env = os.environ.copy()
+        env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
+        env["FAKE_CODEX_CAPTURE"] = str(capture)
+        env["FAKE_CODEX_RESPONSE"] = response if isinstance(response, str) else json.dumps(response)
+        env["FAKE_CODEX_RAW"] = "1" if raw_response else "0"
+        command = [
+            sys.executable,
+            str(self.adapter),
+            "--model",
+            "gpt-6-luna",
+            "--effort",
+            "max",
+            "--timeout",
+            timeout,
+            "--tmp-dir",
+            str(self.root),
+        ]
+        input_text = (
+            context if isinstance(context, str) else json.dumps(context, ensure_ascii=False)
+        )
+        result = subprocess.run(
+            command,
+            input=input_text,
+            text=True,
+            capture_output=True,
+            env=env,
+            timeout=10,
+            check=False,
+        )
+        return result, capture
+
+    def full_change(self, path, content="candidate\n"):
+        return {"path": path, "content": content}
+
+    def test_routes_all_four_worker_kinds_and_two_repository_changes(self):
+        cases = (
+            (
+                "assess",
+                {
+                    "summary": "assessment",
+                    "next": [{"kind": "work", "purpose": "Correct verified typo"}],
+                },
+            ),
+            (
+                "work",
+                {
+                    "summary": "two repository proposal",
+                    "changes": [
+                        self.full_change("npl-core:README.md", "core\n"),
+                        self.full_change("npl-sentinel:README.md", "sentinel\n"),
+                    ],
+                },
+            ),
+            (
+                "review",
+                {
+                    "summary": "reviewed",
+                    "verdict": "met",
+                    "conditions": [
+                        {"id": "c1", "verdict": "met", "evidence": "Observed exact result"}
+                    ],
+                },
+            ),
+            ("triage", {"summary": "no findings", "triage": []}),
+        )
+        for kind, response in cases:
+            with self.subTest(kind=kind):
+                result, capture = self.invoke(self.context(kind), response, kind=kind)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["summary"], response["summary"])
+                call = json.loads(capture.read_text(encoding="utf-8"))
+                argv = call["argv"]
+                self.assertEqual(argv[argv.index("--model") + 1], "gpt-6-luna")
+                self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
+                self.assertIn('model_reasoning_effort="max"', argv)
+                self.assertIn(str(self.workspaces["npl-sentinel"]), argv)
+                self.assertIn("npl-core", call["prompt"])
+                self.assertIn("Never inspect secret material", call["prompt"])
+                self.assertIn("shell history", call["prompt"])
+
+    def test_malformed_context_and_proposal_counterexamples_fail_closed(self):
+        valid_work = {
+            "summary": "change",
+            "changes": [self.full_change("npl-core:README.md")],
+        }
+        cases = []
+
+        def bad_context(name, mutate):
+            value = self.context()
+            mutate(value)
+            cases.append((name, value, {"summary": "unused"}, "assess", False))
+
+        def bad_output(name, response, *, kind="assess", raw=False):
+            cases.append((name, self.context(kind), response, kind, raw))
+
+        bad_context("protocol bool", lambda value: value.update(worker_protocol=True))
+        bad_context("protocol string", lambda value: value.update(worker_protocol="2"))
+        bad_context("legacy protocol", lambda value: value.update(worker_protocol=1))
+        bad_context("unsupported watch role", lambda value: value["task"].update(kind="watch"))
+        bad_context("task type mixing", lambda value: value.update(task=[]))
+        bad_context("path map type mixing", lambda value: value.update(paths=[]))
+        bad_context("short git object id", lambda value: value.update(head="1234"))
+        bad_context(
+            "missing workspace", lambda value: value.update(workspace=str(self.root / "missing"))
+        )
+        bad_context("repository list instead of map", lambda value: value.update(repositories=[]))
+        bad_context(
+            "duplicate repository workspace",
+            lambda value: value["repositories"]["npl-sentinel"].update(
+                workspace=value["repositories"]["npl-core"]["workspace"]
+            ),
+        )
+        bad_context("missing repository head", lambda value: value.update(repository_heads={}))
+        bad_context(
+            "stale aggregate generation", lambda value: value.update(aggregate_head="0" * 64)
+        )
+        bad_context("primary head disagreement", lambda value: value.update(head="f" * 40))
+        bad_context(
+            "missing repository root",
+            lambda value: value["repositories"]["npl-core"].update(path=""),
+        )
+        cases.append(("malformed input JSON", "{", {"summary": "unused"}, "assess", False))
+        cases.append(
+            (
+                "duplicate input JSON property",
+                '{"worker_protocol":2,"worker_protocol":2}',
+                {"summary": "unused"},
+                "assess",
+                False,
+            )
+        )
+        bad_output("malformed output JSON", "{", raw=True)
+        bad_output("duplicate output JSON property", '{"summary":"a","summary":"b"}', raw=True)
+        bad_output("top-level array", [])
+        bad_output("summary number", {"summary": 7})
+        bad_output("unknown result field", {"summary": "ok", "extra": True})
+        bad_output("changes type mixing", {"summary": "ok", "changes": "README.md"})
+        bad_output("assess proposes changes", valid_work)
+        bad_output("wrong role disposition", {"summary": "ok", "triage": []})
+        bad_output(
+            "invalid nested review condition",
+            {"summary": "review", "verdict": "met", "conditions": [{"id": "c1"}]},
+            kind="review",
+        )
+        bad_output(
+            "replace format bad head",
+            {
+                "summary": "bad replacement",
+                "changes": [
+                    {
+                        "path": "npl-core:README.md",
+                        "format": "replace-v1",
+                        "base_head": "short",
+                        "sha256": "0" * 64,
+                        "edits": [{"old": "before", "new": "after"}],
+                    }
+                ],
+            },
+            kind="work",
+        )
+        invalid_paths = (
+            ("repository name case", "NPL-core:README.md"),
+            ("unknown repository name", "ghost:README.md"),
+            ("missing repository separator", "README.md"),
+            ("parent traversal", "npl-core:../README.md"),
+            ("absolute path", "npl-core:/tmp/README.md"),
+            ("backslash path", "npl-core:docs\\README.md"),
+            ("decomposed unicode path", "npl-core:e\u0301.md"),
+            ("NUL path", "npl-core:bad\u0000.md"),
+        )
+        for name, path in invalid_paths:
+            bad_output(
+                name, {"summary": "bad path", "changes": [self.full_change(path)]}, kind="work"
+            )
+        bad_output(
+            "case-folded path alias",
+            {
+                "summary": "aliases",
+                "changes": [
+                    self.full_change("npl-core:Readme.md"),
+                    self.full_change("npl-core:README.md"),
+                ],
+            },
+            kind="work",
+        )
+        bad_output(
+            "nested ancestor and descendant paths",
+            {
+                "summary": "nested",
+                "changes": [
+                    self.full_change("npl-core:docs.md"),
+                    self.full_change("npl-core:docs.md/child.md"),
+                ],
+            },
+            kind="work",
+        )
+        outside = self.root / "outside.md"
+        outside.write_text("outside\n", encoding="utf-8")
+        (self.workspaces["npl-core"] / "escape.md").symlink_to(outside)
+        bad_output(
+            "symlink escape",
+            {"summary": "symlink", "changes": [self.full_change("npl-core:escape.md")]},
+            kind="work",
+        )
+
+        self.assertGreaterEqual(len(cases), 30)
+        for name, context, response, kind, raw in cases:
+            with self.subTest(counterexample=name):
+                result, _ = self.invoke(context, response, kind=kind, raw_response=raw)
+                self.assertNotEqual(result.returncode, 0, name)
+                self.assertIn("codex_exec_adapter:", result.stderr, name)
+
+    def test_timeout_kills_codex_process_and_returns_nonzero(self):
+        response = {"summary": "slow"}
+        env_capture = self.root / "timeout-capture.json"
+        env = os.environ.copy()
+        env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
+        env["FAKE_CODEX_CAPTURE"] = str(env_capture)
+        env["FAKE_CODEX_RESPONSE"] = json.dumps(response)
+        env["FAKE_CODEX_SLEEP"] = "0.5"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(self.adapter),
+                "--model",
+                "gpt-6-luna",
+                "--effort",
+                "max",
+                "--timeout",
+                "0.05",
+                "--tmp-dir",
+                str(self.root),
+            ],
+            input=json.dumps(self.context()),
+            text=True,
+            capture_output=True,
+            env=env,
+            timeout=10,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("timed out", result.stderr)
+        self.assertFalse(any(self.root.glob("todo-flow-codex-*/schema.json")))
+
+    def test_concurrent_runs_keep_prompts_and_proposals_separate(self):
+        def run(summary):
+            context = self.context()
+            context["task"]["id"] = summary
+            result, capture = self.invoke(context, {"summary": summary})
+            return result, json.loads(capture.read_text(encoding="utf-8"))
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first, second = list(pool.map(run, ("first-generation", "second-generation")))
+        self.assertEqual(json.loads(first[0].stdout)["summary"], "first-generation")
+        self.assertEqual(json.loads(second[0].stdout)["summary"], "second-generation")
+        self.assertNotEqual(first[1]["prompt"], second[1]["prompt"])
+
+    def test_new_repository_generation_reaches_codex_and_stale_binding_is_rejected(self):
+        updated = self.context("work")
+        updated["repositories"]["npl-core"]["head"] = "c" * 40
+        updated["repositories"]["npl-sentinel"]["head"] = "d" * 40
+        updated["repository_heads"] = {
+            name: row["head"] for name, row in updated["repositories"].items()
+        }
+        updated["head"] = updated["repository_heads"]["npl-core"]
+        updated["aggregate_head"] = repositories.fingerprint(updated["repository_heads"])
+        result, capture = self.invoke(updated, {"summary": "current generation"}, kind="work")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        prompt = json.loads(capture.read_text(encoding="utf-8"))["prompt"]
+        self.assertIn(updated["aggregate_head"], prompt)
+        self.assertIn("c" * 40, prompt)
+
+        stale = json.loads(json.dumps(updated))
+        stale["aggregate_head"] = "0" * 64
+        rejected, _ = self.invoke(stale, {"summary": "must not launch"}, kind="work")
+        self.assertNotEqual(rejected.returncode, 0)
 
 
 class RepositoryConfigTests(unittest.TestCase):

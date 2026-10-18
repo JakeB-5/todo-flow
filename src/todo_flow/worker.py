@@ -297,6 +297,33 @@ def codex_schema():
     return schema
 
 
+def codex_exec_base_args(executable="codex"):
+    """Shared read-only Codex CLI policy for built-in and protocol-2 workers."""
+    from .native_attempt import DISABLED
+
+    args = [
+        executable,
+        "exec",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "--enable",
+        "shell_tool",
+        "-c",
+        'approval_policy="never"',
+        "-c",
+        'web_search="disabled"',
+        "-c",
+        "project_doc_max_bytes=0",
+    ]
+    for feature in DISABLED:
+        args.extend(("--disable", feature))
+    return args
+
+
 def result_payload(output):
     """Accept one JSON envelope or a complete stream ending in one result."""
     try:
@@ -438,43 +465,16 @@ def _run_worker(config, context, task, state, heartbeat, observation):
             + "\nReturn optional fields as null when unused.\nTASK CONTEXT:\n"
             + encode(context)
         )
-        args = [
-            "codex",
-            "exec",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--ephemeral",
-            "--skip-git-repo-check",
-            "--sandbox",
-            "read-only",
+        args = codex_exec_base_args()
+        args += [
             "--json",
             "--enable",
-            "shell_tool",
-            "--enable",
             "code_mode_host",
-            "-c",
-            'approval_policy="never"',
-            "-c",
-            'web_search="disabled"',
-            "-c",
-            "project_doc_max_bytes=0",
             "--output-schema",
             str(folder / "schema.json"),
             "--output-last-message",
             str(folder / "final.json"),
         ]
-        for feature in (
-            "apps",
-            "plugins",
-            "multi_agent",
-            "browser_use",
-            "browser_use_external",
-            "computer_use",
-            "image_generation",
-            "hooks",
-            "code_mode",
-        ):
-            args += ["--disable", feature]
         if adapter.get("model"):
             args += ["--model", adapter["model"]]
         if adapter.get("effort"):
