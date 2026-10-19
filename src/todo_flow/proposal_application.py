@@ -335,7 +335,7 @@ def recover(engine, task, workspace):
         if (
             record["phase"] == "committed"
             and (
-                (record.get("adopted_by") or {}).get("task") == task["id"]
+                (record.get("recovered_by") or {}).get("task") == task["id"]
                 or (
                     record["intent"]["task"] == task["id"]
                     and record["intent"]["result"] is not None
@@ -353,8 +353,14 @@ def recover(engine, task, workspace):
     if str(workspace) != intent["workspace"]:
         raise Conflict("Unfinished proposal belongs to another checkout")
     head = command(["git", "rev-parse", "HEAD"], workspace)
+    # Normal apply also adopts a commit. Only actual recovery may skip a worker
+    # without a stored result; persist this receipt with the recovered adoption.
+    recovery_record = {
+        **record,
+        "recovered_by": {"task": task["id"], "attempt": task["attempt"]},
+    }
     if record["phase"] == "ready" and (head != intent["before_head"] or not record["commit"]):
-        return adopt(engine, task, workspace, record)
+        return adopt(engine, task, workspace, recovery_record)
     if (
         head == intent["before_head"]
         and integration.merge_head(workspace) == intent["merge_head"]
@@ -382,7 +388,7 @@ def recover(engine, task, workspace):
                 pending[key] != intent["repair"][key] for key in ("candidate", "base")
             ):
                 raise Conflict("Integration repair intent changed during recovery")
-        return finish(engine, task, workspace, record)
+        return finish(engine, task, workspace, recovery_record)
     raise Conflict(
         f"Interrupted proposal preserved at {journal_path(engine, task['track'])}; "
         "restore original target bytes/modes and index from intent, then retry. "

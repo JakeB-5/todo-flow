@@ -249,6 +249,34 @@ class InterruptedProposalTests(unittest.TestCase):
         self.assertIn("test_sum", verification["output"])
         self.assertFalse(self.s.snapshot()["decisions"])
 
+    def test_completed_application_reuses_only_a_stored_worker_result(self):
+        # journal-cross-task must preserve both normal worker execution after
+        # result-less setup and replay of the original task's stored result.
+        for with_result in (False, True):
+            with self.subTest(with_result=with_result):
+                case = InterruptedProposalTests()
+                case.setUp()
+                try:
+                    engine, task, workspace = case.workspace()
+                    changes = case.changes(workspace)
+                    result = {"summary": "Preserved proposal", "changes": changes}
+                    engine.apply_changes(
+                        task, workspace, changes, result=result if with_result else None
+                    )
+                    before = snapshot(workspace)
+                    path = application.journal_path(engine, task["track"])
+                    receipt = path.read_bytes()
+                    for retry in (engine, Engine(case.s)):
+                        recovered = application.recover(retry, task, workspace)
+                        if with_result:
+                            case.assertEqual(recovered["intent"]["result"], result)
+                        else:
+                            case.assertIsNone(recovered)
+                        case.assertEqual(snapshot(workspace), before)
+                        case.assertEqual(path.read_bytes(), receipt)
+                finally:
+                    case.tearDown()
+
     def test_same_legacy_and_edit_proposal_are_idempotent(self):
         engine, task, workspace = self.workspace()
         for changes in (
@@ -449,7 +477,19 @@ class SuccessorRecoveryTests(unittest.TestCase):
 
     def test_decision_answer_assess_successor_can_recover_before_choosing_more_work(self):
         engine, task, workspace = self.workspace()
-        record = interrupt(self, engine, task, workspace, self.changes(workspace), "after-stage")
+        changes = self.changes(workspace)
+        changes.append(
+            {
+                "path": "test_calc.py",
+                "content": (
+                    "import unittest\nfrom calc import add\n\n"
+                    "class AdditionTests(unittest.TestCase):\n"
+                    "    def test_sum(self):\n"
+                    "        self.assertEqual(add(2, 3), 5)\n"
+                ),
+            }
+        )
+        record = interrupt(self, engine, task, workspace, changes, "after-stage")
         engine.fail(task, RuntimeError("Interrupted proposal"))
         decision = self.s.snapshot()["decisions"][0]
         self.s.answer(decision["id"], "Resume the same request and revision")
