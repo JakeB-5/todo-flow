@@ -515,7 +515,7 @@ def finish(engine, task, workspace, record):
     pathspecs = specs(record)
     repair, merging = intent["repair"], intent["merge_head"]
     if paths:
-        command(["git", "add", "--", *pathspecs], workspace)
+        command(["git", "add", "--sparse", "--", *pathspecs], workspace)
     if integration.unmerged(workspace):
         raise Conflict("Cannot commit unresolved merge paths")
     dirty = (

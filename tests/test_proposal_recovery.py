@@ -395,6 +395,104 @@ class SuccessorRecoveryTests(unittest.TestCase):
             [(path.name, application.file_state(path)) for path in sorted(workspace.glob("*.py"))],
         )
 
+    def sparse_workspace(self):
+        for name, content in (
+            ("included/keep.py", "# included\n"),
+            ("excluded/target.py", "value = 1\n"),
+        ):
+            path = self.repo / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(content)
+        command(["git", "add", "."], self.repo)
+        command(["git", "commit", "-m", "Add sparse proposal fixture"], self.repo)
+        command(["git", "push", "origin", "main"], self.repo)
+        engine, task, workspace = self.workspace()
+        command(["git", "sparse-checkout", "init", "--cone"], workspace)
+        command(["git", "sparse-checkout", "set", "included"], workspace)
+        self.assertFalse((workspace / "excluded/target.py").exists())
+        self.assertEqual(
+            command(["git", "show", "HEAD:excluded/target.py"], workspace), "value = 1"
+        )
+        # journal-exact-state: unrelated staged, unstaged and untracked work survives.
+        (workspace / "included/keep.py").write_text("# staged user edit\n")
+        command(["git", "add", "--", "included/keep.py"], workspace)
+        (workspace / "included/keep.py").write_text("# unstaged user edit\n")
+        (workspace / "included/notes.txt").write_text("Preserve user notes\n")
+        return engine, task, workspace
+
+    def assert_sparse_commit(self, engine, task, workspace, before, outside):
+        record = application.read(engine, task["track"])
+        head = command(["git", "rev-parse", "HEAD"], workspace)
+        self.assertEqual(record["phase"], "committed")
+        self.assertEqual(record["head"], head)
+        self.assertEqual(engine.store.track(task["track"])["head"], head)
+        self.assertEqual(record["adopted_by"], {"task": task["id"], "attempt": task["attempt"]})
+        self.assertEqual(command(["git", "rev-list", "--count", before + "..HEAD"], workspace), "1")
+        self.assertEqual(command(["git", "show", "-s", "--format=%P", "HEAD"], workspace), before)
+        self.assertEqual(
+            command(["git", "diff", "--name-only", before, "HEAD"], workspace),
+            "excluded/target.py",
+        )
+        committed = subprocess.run(
+            ["git", "show", "HEAD:excluded/target.py"],
+            cwd=workspace,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(committed.stdout, b"value = 2\n")
+        self.assertEqual((workspace / "excluded/target.py").read_bytes(), b"value = 2\n")
+        self.assertEqual(
+            application.outside_state(workspace, [{"path": "excluded/target.py"}]), outside
+        )
+        self.assertEqual(
+            command(["git", "show", ":included/keep.py"], workspace), "# staged user edit"
+        )
+        self.assertEqual((workspace / "included/keep.py").read_bytes(), b"# unstaged user edit\n")
+        self.assertEqual((workspace / "included/notes.txt").read_bytes(), b"Preserve user notes\n")
+
+    def test_normal_apply_commits_tracked_target_outside_sparse_cone_once(self):
+        # decision-aa71971824c7438b: normal apply must retain its one-commit contract.
+        engine, task, workspace = self.sparse_workspace()
+        before = command(["git", "rev-parse", "HEAD"], workspace)
+        changes = [{"path": "excluded/target.py", "content": "value = 2\n"}]
+        outside = application.outside_state(workspace, changes)
+        engine.apply_changes(task, workspace, changes, expected_head=before)
+        self.assert_sparse_commit(engine, task, workspace, before, outside)
+        assert_retry_reuses_receipt(self, engine, task, workspace, changes, before)
+        self.assert_sparse_commit(engine, task, workspace, before, outside)
+
+    def test_successor_recovers_exact_after_outside_sparse_cone_once(self):
+        # journal-cross-task: exact after under the same request/revision is adopted once.
+        engine, task, workspace = self.sparse_workspace()
+        before = command(["git", "rev-parse", "HEAD"], workspace)
+        index_before = command(["git", "ls-files", "--stage", "-z"], workspace)
+        changes = [{"path": "excluded/target.py", "content": "value = 2\n"}]
+        outside = application.outside_state(workspace, changes)
+        record = interrupt(self, engine, task, workspace, changes, "after-files")
+        self.assertEqual(record["phase"], "applying")
+        self.assertEqual(record["intent"]["before_head"], before)
+        self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), before)
+        self.assertEqual(command(["git", "ls-files", "--stage", "-z"], workspace), index_before)
+        self.assertEqual(command(["git", "show", ":excluded/target.py"], workspace), "value = 1")
+        for row in record["intent"]["files"]:
+            self.assertIsNone(row["before"])
+            self.assertEqual(application.file_state(workspace / row["path"]), row["after"])
+        successor = self.successor(task)
+        self.assertNotEqual(successor["id"], task["id"])
+        self.assertEqual(successor["input_revision"], record["intent"]["scope"]["revision"])
+        self.assertEqual(
+            self.s.track(task["track"])["request"], record["intent"]["scope"]["request"]
+        )
+        recovered = application.recover(engine, successor, workspace)
+        self.assertEqual(
+            recovered["recovered_by"], {"task": successor["id"], "attempt": successor["attempt"]}
+        )
+        self.assert_sparse_commit(engine, successor, workspace, before, outside)
+        for retry in (engine, Engine(self.s)):
+            self.assertEqual(application.recover(retry, successor, workspace), recovered)
+        assert_retry_reuses_receipt(self, engine, successor, workspace, changes, before)
+        self.assert_sparse_commit(engine, successor, workspace, before, outside)
+
     def test_successor_releases_exact_before_without_applying_old_result(self):
         for legacy in (False, True):
             with self.subTest(legacy=legacy):
