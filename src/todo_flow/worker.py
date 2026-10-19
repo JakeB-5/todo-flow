@@ -154,6 +154,10 @@ existing authority and the document revision process; do not invent dependencies
 For changes use either {path,content} with complete UTF-8 content, or
 {path,format:"replace-v1",base_head,sha256,edits:[{old,new}]} for an existing UTF-8 file.
 Use the input head as base_head and the lowercase SHA-256 of the original raw file bytes as sha256.
+If permitted read-only tools cannot obtain that SHA-256, use {path,content} with complete UTF-8
+content even for an existing file. Do not guess a digest or broaden tool permissions to compute it.
+The full-content form needs no hash; the host still checks paths, the pre-execution HEAD and
+existing changes before applying it.
 Each old must be nonempty and occur exactly once in the original UTF-8 bytes. All edit ranges refer
 to that same original and must not overlap; replacements are not searched by later edits. new may
 be empty. Preserve exact line endings. Do not mix content with edit fields or invent other formats.
