@@ -7,13 +7,30 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+from time import monotonic, sleep
 import uuid
 
 from .adapters import command
 from .launchers import select_launcher
 from .orca_adoption import capture_creation_pins, creation_argv, validate_created_workspace
-from .orca_workspace import WorkspaceExpectation, show_created_workspace, validate_workspace
+from .orca_workspace import (
+    WorkspaceExpectation,
+    WorkspaceHeadLag,
+    show_created_workspace,
+    validate_workspace,
+)
+from .store import Conflict
 from .workspace_creation import WorkspaceCreationBlocked, WorkspaceCreationGate, _write_exclusive
+
+
+# Admission window for new observations, not a subprocess wall-time deadline.
+# At most 31 probes, one second apart. An admitted probe can take another
+# 3 * 30s (Orca) + 7 * 10s (Git), so subprocess/sleep time is bounded by 190s
+# with the monotonic clock, excluding local I/O and scheduling delays.
+# This is a bounded recovery policy, not a measured Orca convergence guarantee.
+_HEAD_RECHECK_SECONDS = 30.0
+_HEAD_RECHECK_INTERVAL = 1.0
+_HEAD_RECHECK_LIMIT = 31
 
 
 def _digest(value):
@@ -155,20 +172,59 @@ def _recover(engine, task, gate):
         expected = _expectation(old, track["head"] if track["branch"] else pins["base"])
         cli = intent["argv"][0]
 
-        def read(args):
-            return _call(cli, args, engine.root)
+        def check_owner():
+            _claim(engine, task)
+            current = engine.store.track(task["track"])
+            keys = ("request", "revision", "branch", "workspace", "head")
+            if any(current[key] != track[key] for key in keys):
+                raise WorkspaceCreationBlocked(
+                    "Owned workspace registration changed during recovery"
+                )
+            if current["branch"] is not None or current["workspace"] is not None:
+                if current["branch"] != expected.branch or current["workspace"] != expected.path:
+                    raise WorkspaceCreationBlocked(
+                        "Ownership disagrees with the registered candidate"
+                    )
+            if ownership(engine.store, current, engine.root) != (receipt, intent):
+                raise WorkspaceCreationBlocked("Workspace ownership changed during recovery")
 
-        checked = validate_workspace(
-            read(["status", "--json"]),
-            read(["repo", "show", "--repo", "id:" + pins["repo_id"], "--json"]),
-            read(["worktree", "show", "--worktree", "id:" + old["id"], "--json"]),
-            expected=expected,
-        )
-        if checked["common_dir"] != pins["common_dir"]:
-            raise ValueError("Git repository anchor changed")
-        _claim(engine, task)
-        return _register(engine, task, checked)
-    except WorkspaceCreationBlocked:
+        def read(args):
+            _claim(engine, task)
+            result = _call(cli, args, engine.root)
+            _claim(engine, task)
+            return result
+
+        deadline = monotonic() + _HEAD_RECHECK_SECONDS
+        last_lag = None
+        observations = 0
+        for _ in range(_HEAD_RECHECK_LIMIT):
+            if last_lag is not None and monotonic() >= deadline:
+                break
+            check_owner()
+            observations += 1
+            try:
+                checked = validate_workspace(
+                    read(["status", "--json"]),
+                    read(["repo", "show", "--repo", "id:" + pins["repo_id"], "--json"]),
+                    read(["worktree", "show", "--worktree", "id:" + old["id"], "--json"]),
+                    expected=expected,
+                    expected_common_dir=pins["common_dir"],
+                )
+            except WorkspaceHeadLag as error:
+                last_lag = error
+            else:
+                check_owner()
+                return _register(engine, task, checked)
+            check_owner()
+            remaining = deadline - monotonic()
+            if remaining <= 0 or observations == _HEAD_RECHECK_LIMIT:
+                break
+            sleep(min(_HEAD_RECHECK_INTERVAL, remaining))
+        raise WorkspaceCreationBlocked(
+            f"Owned workspace HEAD observation did not converge after {observations} probes: "
+            f"{last_lag}"
+        ) from last_lag
+    except (WorkspaceCreationBlocked, Conflict):
         raise
     except Exception as error:
         raise WorkspaceCreationBlocked("Owned workspace requires reconciliation") from error
