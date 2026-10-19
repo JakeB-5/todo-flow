@@ -163,13 +163,18 @@ def ownership(store, track, root, *, connection=None):
         raise WorkspaceCreationBlocked("Owned workspace requires reconciliation") from error
 
 
-def _recover(engine, task, gate):
+def _recover(engine, task, gate, *, proposal_recovery=False):
     try:
         track = engine.store.track(task["track"])
         receipt, intent = ownership(engine.store, track, engine.root)
         old = receipt["observation"]
         pins = intent["creation_pins"]
-        expected = _expectation(old, track["head"] if track["branch"] else pins["base"])
+        head = track["head"] if track["branch"] else pins["base"]
+        if proposal_recovery:
+            # Validate live ownership without adopting an interrupted commit's HEAD.
+            # The proposal journal separately proves its exact before/after boundary.
+            head = command(["git", "rev-parse", "HEAD"], old["path"])
+        expected = _expectation(old, head)
         cli = intent["argv"][0]
 
         def check_owner():
@@ -214,6 +219,8 @@ def _recover(engine, task, gate):
                 last_lag = error
             else:
                 check_owner()
+                if proposal_recovery:
+                    return Path(checked["path"])
                 return _register(engine, task, checked)
             check_owner()
             remaining = deadline - monotonic()
@@ -230,7 +237,7 @@ def _recover(engine, task, gate):
         raise WorkspaceCreationBlocked("Owned workspace requires reconciliation") from error
 
 
-def ensure(engine, task):
+def ensure(engine, task, *, proposal_recovery=False):
     """Return a managed checkout, or None for a pre-creation compatibility route.
 
     Caller holds Git metadata lock. No fallback is possible after a create intent.
@@ -239,8 +246,10 @@ def ensure(engine, task):
     _claim(engine, task)
     gate = WorkspaceCreationGate(engine.store.path, task["track"])
     if _exists(receipt_path(gate)):
-        return _recover(engine, task, gate)
+        return _recover(engine, task, gate, proposal_recovery=proposal_recovery)
     gate.require_clear()
+    if proposal_recovery:
+        return None
     track = engine.store.track(task["track"])
     if track["branch"] or track["workspace"]:
         return None
