@@ -210,7 +210,7 @@ class LauncherTests(unittest.TestCase):
                 "import json,os,sys\nfrom pathlib import Path\n"
                 "args=sys.argv\n"
                 "assert args[args.index('--sandbox')+1]=='workspace-write'\n"
-                "assert Path(os.environ['TMPDIR']).resolve()==(Path.cwd()/'.tmp').resolve()\n"
+                "assert Path(os.environ['TMPDIR']).resolve()==(Path.cwd().parents[0]/'state/attempts/workspace-write-terminal/tmp').resolve()\n"
                 "Path(args[args.index('--output-last-message')+1]).write_text("
                 "json.dumps({'summary':'terminal workspace-write'}))\n"
             )
@@ -232,7 +232,9 @@ class LauncherTests(unittest.TestCase):
                     lambda _: None,
                 )
             self.assertEqual(result["summary"], "terminal workspace-write")
-            self.assertTrue((workspace / ".tmp").is_dir())
+            expected = root / "state/attempts/workspace-write-terminal/tmp"
+            self.assertTrue(expected.is_dir())
+            self.assertFalse((workspace / ".tmp").exists())
 
     def test_terminal_timeout_stops_the_worker(self):
         with tempfile.TemporaryDirectory() as tmp:

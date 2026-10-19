@@ -878,6 +878,7 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         timeout="5",
         raw_response=False,
         sandbox="read-only",
+        provide_attempt_tmpdir=True,
     ):
         capture = self.root / f"capture-{uuid.uuid4().hex}.json"
         env = os.environ.copy()
@@ -886,6 +887,12 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         env["FAKE_CODEX_RESPONSE"] = response if isinstance(response, str) else json.dumps(response)
         env["FAKE_CODEX_RAW"] = "1" if raw_response else "0"
         env["TODO_FLOW_CODEX_SANDBOX"] = sandbox
+        if sandbox == "workspace-write" and provide_attempt_tmpdir:
+            attempt_tmpdir = self.root / "attempts" / context["task"]["attempt"] / "tmp"
+            attempt_tmpdir.mkdir(parents=True, exist_ok=True)
+            env["TMPDIR"] = str(attempt_tmpdir)
+        elif sandbox == "workspace-write":
+            env.pop("TMPDIR", None)
         command = [
             sys.executable,
             str(self.adapter),
@@ -1017,10 +1024,23 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         self.assertEqual(result.returncode, 0, result.stderr)
         call = json.loads(capture.read_text(encoding="utf-8"))
         self.assertEqual(call["argv"][call["argv"].index("--sandbox") + 1], "workspace-write")
-        expected_tmpdir = (self.workspaces[EXAMPLE_CORE_REPO] / ".tmp").resolve()
+        expected_tmpdir = (self.root / "attempts/a1/tmp").resolve()
         self.assertEqual(Path(call["tmpdir"]), expected_tmpdir)
         self.assertTrue(expected_tmpdir.is_dir())
+        self.assertFalse((self.workspaces[EXAMPLE_CORE_REPO] / ".tmp").exists())
         self.assertIn("Workspace-write permits project tests", call["prompt"])
+
+    def test_workspace_write_requires_host_attempt_tmpdir(self):
+        result, _ = self.invoke(
+            self.context("work"),
+            {"summary": "verified tests", "changes": []},
+            kind="work",
+            sandbox="workspace-write",
+            provide_attempt_tmpdir=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires TODO Flow to provide an attempt TMPDIR", result.stderr)
+        self.assertFalse((self.workspaces[EXAMPLE_CORE_REPO] / ".tmp").exists())
 
     def test_malformed_context_and_proposal_counterexamples_fail_closed(self):
         valid_work = {

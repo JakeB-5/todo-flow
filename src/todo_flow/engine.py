@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .adapters import GitHub, command, file_lock
 from .store import Conflict, encode, fingerprint, uid
-from .worker import run_worker
+from .worker import codex_workspace_tmpdir, run_worker
 from . import clean_integration, proposal_application, repositories
 from .verification_artifacts import checkout_identity
 from .maintenance import guarded
@@ -98,9 +98,16 @@ class Engine:
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
             if repositories.multi(self.config):
-                return self._ensure_repository_workspaces(task)
+                workspaces = self._ensure_repository_workspaces(task)
+                primary = repositories.specs(self.config)[0]["name"]
+                codex_workspace_tmpdir(
+                    workspaces[primary], self.store.path, task["attempt"], create=False
+                )
+                return workspaces
             managed = managed_workspace.ensure(self, task)
-            return managed if managed is not None else self._ensure_workspace(task)
+            workspace = managed if managed is not None else self._ensure_workspace(task)
+            codex_workspace_tmpdir(workspace, self.store.path, task["attempt"], create=False)
+            return workspace
 
     def repository_state(self, track, name):
         return repositories.state(track, self.config, name)

@@ -26,7 +26,9 @@ if sys.argv[1:] == ['--version']:
 assert sys.argv[1]=='app-server'
 sandbox=os.environ.get('TODO_FLOW_CODEX_SANDBOX','read-only')
 sandbox_type='readOnly' if sandbox=='read-only' else 'workspaceWrite'
-if sandbox=='workspace-write':assert os.environ['TMPDIR']==os.path.join(os.getcwd(),'.tmp')
+if sandbox=='workspace-write':
+ tmp=Path(os.environ['TMPDIR']).resolve();cwd=Path.cwd().resolve()
+ assert tmp.name=='tmp' and tmp!=cwd and cwd not in tmp.parents
 home=Path(os.environ['CODEX_HOME'])
 assert home == root/'auth'
 settings=[sys.argv[i+1] for i,arg in enumerate(sys.argv) if arg=='-c']
@@ -275,7 +277,9 @@ class NativeExecutionTests(unittest.TestCase):
             result = self.execute()
 
         self.assertEqual(result["summary"], "합성 native worker")
-        self.assertTrue((self.workspace / ".tmp").is_dir())
+        attempt_tmpdir = self.s.path / "attempts" / self.task["attempt"] / "tmp"
+        self.assertTrue(attempt_tmpdir.is_dir())
+        self.assertFalse((self.workspace / ".tmp").exists())
         requests = [
             json.loads(line) for line in (self.fixture / "requests.jsonl").read_text().splitlines()
         ]

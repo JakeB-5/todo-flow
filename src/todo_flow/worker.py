@@ -2,12 +2,15 @@
 
 import json
 import copy
+import shutil
 import os
 import stat
+import subprocess
 import time
+import uuid
 from pathlib import Path
 
-from .store import encode
+from .store import Conflict, encode
 from .maintenance import write_json
 from .terminal_release import retire_launch
 from .worker_stop import WorkerObservation
@@ -149,20 +152,132 @@ def codex_app_server_policy(sandbox):
     return sandbox, {"type": policy_type, "networkAccess": False}
 
 
-def codex_workspace_tmpdir(workspace):
+def codex_workspace_tmpdir(workspace, state, attempt, *, create=True):
     root = Path(workspace).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("Codex workspace must be a directory")
-    tmpdir = root / ".tmp"
+
+    legacy = root / ".tmp"
+    try:
+        legacy.lstat()
+        has_legacy = True
+    except FileNotFoundError:
+        has_legacy = False
+    if not create and not has_legacy:
+        return None
+
+    if (
+        type(attempt) is not str
+        or not attempt
+        or len(attempt) > 128
+        or not all(char.isascii() and (char.isalnum() or char in "-_") for char in attempt)
+    ):
+        raise ValueError("Worker attempt ID must be a safe path component")
+
+    state_root = Path(state).resolve()
+    if state_root == root or root in state_root.parents:
+        raise ValueError("TODO Flow state must be outside the Codex workspace")
+    state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    state_root = state_root.resolve(strict=True)
+    if not state_root.is_dir():
+        raise ValueError("TODO Flow state must be a directory")
+
+    attempts = state_root / "attempts"
+    attempt_root = attempts / attempt
+    tmpdir = attempt_root / "tmp"
+    if root == tmpdir or root in tmpdir.parents:
+        raise ValueError("Codex attempt TMPDIR must be outside the workspace")
+
+    for directory in (attempts, attempt_root):
+        try:
+            directory.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        info = directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or directory.resolve(strict=True) != directory:
+            raise ValueError("Codex attempt state directories must be real directories")
+
+    if has_legacy:
+        git_environment = {
+            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+        }
+        repository = subprocess.run(
+            ["git", "--no-replace-objects", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_environment,
+        )
+        if repository.returncode != 0:
+            raise Conflict("Cannot preserve legacy workspace .tmp outside a Git worktree")
+        tracked = subprocess.run(
+            ["git", "--no-replace-objects", "ls-files", "--", ".tmp"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_environment,
+        )
+        if tracked.returncode != 0:
+            raise Conflict("Cannot verify tracked files in legacy workspace .tmp")
+        if tracked.stdout:
+            raise Conflict("Legacy workspace .tmp contains tracked files; preserve and inspect it")
+
+        archive_root = attempt_root / "preserved-workspace-tmp"
+        try:
+            archive_root.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        info = archive_root.lstat()
+        if not stat.S_ISDIR(info.st_mode) or archive_root.resolve(strict=True) != archive_root:
+            raise ValueError("Preserved workspace scratch path must be a real directory")
+        destination = archive_root / uuid.uuid4().hex
+        try:
+            destination.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise Conflict("Preserved workspace scratch destination already exists")
+        try:
+            shutil.move(str(legacy), str(destination))
+        except OSError as error:
+            raise Conflict(
+                "Could not preserve legacy workspace .tmp; checkout remains blocked"
+            ) from error
+        try:
+            legacy.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise Conflict(
+                "Legacy workspace .tmp remains after preservation; checkout stays blocked"
+            )
+        try:
+            destination.lstat()
+        except FileNotFoundError as error:
+            raise Conflict(
+                "Legacy workspace .tmp destination is missing; checkout stays blocked"
+            ) from error
+
+    if not create:
+        return None
+
     try:
         tmpdir.mkdir(mode=0o700)
     except FileExistsError:
         pass
     info = tmpdir.lstat()
-    if not stat.S_ISDIR(info.st_mode) or tmpdir.resolve(strict=True) != tmpdir:
-        raise ValueError("Codex workspace .tmp must be a real directory inside the worktree")
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or tmpdir.resolve(strict=True) != tmpdir
+        or info.st_mode & 0o077
+    ):
+        raise ValueError(
+            "Codex attempt TMPDIR must be a private real directory outside the worktree"
+        )
     if not os.access(tmpdir, os.W_OK | os.X_OK):
-        raise ValueError("Codex workspace .tmp must be writable")
+        raise ValueError("Codex attempt TMPDIR must be writable")
     return tmpdir
 
 
@@ -340,7 +455,8 @@ def worker_instructions(sandbox):
         policy = (
             "Workspace-write permits project tests and verification commands. Keep product edits as "
             "JSON proposals; do not edit project files, commit, push or access the network. Use "
-            "the worktree .tmp for temporary files. The host applies your proposal."
+            "the host-provided attempt TMPDIR for temporary files; it is outside the worktree. "
+            "The host applies your proposal."
         )
     else:
         policy = (
@@ -486,8 +602,12 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     )
     context = worker_input(context, folder)
     tmpdir = None
-    if adapter["type"] == "codex" and sandbox == "workspace-write":
-        tmpdir = str(codex_workspace_tmpdir(context["workspace"]))
+    codex_workspace_write = adapter["type"] == "codex" and sandbox == "workspace-write"
+    example_workspace_write = (
+        adapter["type"] == "command" and os.environ.get(CODEX_SANDBOX_ENV) == "workspace-write"
+    )
+    if codex_workspace_write or example_workspace_write:
+        tmpdir = str(codex_workspace_tmpdir(context["workspace"], state, task["attempt"]))
     (folder / "input.json").write_text(encode(context))
     if adapter["type"] == "claude":
         args = [
@@ -597,7 +717,7 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     started = time.monotonic()
     timeout = config.get("worker_timeout")
     # Persistent stdout survives driver death. Built-in tools read the workspace; custom
-    # command adapters are trusted executables and must honor the read-only contract.
+    # command adapters remain trusted, and the protocol-2 Codex example consumes host TMPDIR.
     with (
         (folder / "input.json").open() as inp,
         (folder / "output.json").open("w") as out,

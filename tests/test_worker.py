@@ -62,7 +62,7 @@ class WorkerAdapterTests(unittest.TestCase):
             self.assertEqual(observed["tmpdir"], "/host/temp")
             self.assertFalse((workspace / ".tmp").exists())
 
-    def test_workspace_write_sandbox_uses_worktree_tmpdir_and_allows_tests(self):
+    def test_workspace_write_sandbox_uses_attempt_tmpdir_and_allows_tests(self):
         with tempfile.TemporaryDirectory() as tmp:
             environment = os.environ.copy()
             environment["TODO_FLOW_CODEX_SANDBOX"] = "workspace-write"
@@ -73,8 +73,10 @@ class WorkerAdapterTests(unittest.TestCase):
             args = observed["args"]
             self.assertEqual(args[args.index("--sandbox") + 1], "workspace-write")
             tmpdir = Path(observed["tmpdir"])
-            self.assertEqual(tmpdir, (workspace / ".tmp").resolve())
+            self.assertEqual(tmpdir, (Path(tmp) / "state/attempts/sandbox-test/tmp").resolve())
+            self.assertNotEqual(tmpdir, workspace / ".tmp")
             self.assertTrue(tmpdir.is_dir())
+            self.assertFalse((workspace / ".tmp").exists())
             self.assertIn("Workspace-write permits project tests", observed["prompt"])
 
     def test_codex_sandbox_rejects_more_than_twenty_invalid_values(self):
@@ -117,46 +119,64 @@ class WorkerAdapterTests(unittest.TestCase):
         self.assertEqual(validate_codex_sandbox("read-only"), "read-only")
         self.assertEqual(validate_codex_sandbox("workspace-write"), "workspace-write")
 
-    def test_codex_workspace_tmpdir_rejects_symlink_and_non_directory(self):
+    def test_codex_attempt_tmpdir_rejects_symlink_and_non_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             outside = root / "outside"
             outside.mkdir()
-            symlink_workspace = root / "symlink-worktree"
-            symlink_workspace.mkdir()
-            (symlink_workspace / ".tmp").symlink_to(outside, target_is_directory=True)
-            with self.assertRaisesRegex(ValueError, "real directory"):
-                codex_workspace_tmpdir(symlink_workspace)
+            workspace = root / "worktree"
+            workspace.mkdir()
+            state = root / "state"
+            symlink_tmpdir = state / "attempts/attempt-link/tmp"
+            symlink_tmpdir.parent.mkdir(parents=True)
+            symlink_tmpdir.symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "private real directory"):
+                codex_workspace_tmpdir(workspace, state, "attempt-link")
 
-            file_workspace = root / "file-worktree"
-            file_workspace.mkdir()
-            (file_workspace / ".tmp").write_text("not a directory")
-            with self.assertRaisesRegex(ValueError, "real directory"):
-                codex_workspace_tmpdir(file_workspace)
+            file_tmpdir = state / "attempts/attempt-file/tmp"
+            file_tmpdir.parent.mkdir(parents=True)
+            file_tmpdir.write_text("not a directory")
+            with self.assertRaisesRegex(ValueError, "private real directory"):
+                codex_workspace_tmpdir(workspace, state, "attempt-file")
 
-    def test_codex_workspace_tmpdir_is_exact_unicode_worktree_path_and_race_safe(self):
+    def test_codex_attempt_tmpdir_is_exact_unicode_worktree_path_and_race_safe(self):
         with tempfile.TemporaryDirectory(prefix="worker temp 한글 ") as tmp:
-            workspace = Path(tmp) / "nested" / "Repo Space"
+            root = Path(tmp)
+            workspace = root / "nested" / "Repo Space"
             workspace.mkdir(parents=True)
+            state = root / "state"
             with ThreadPoolExecutor(max_workers=12) as pool:
-                paths = list(pool.map(codex_workspace_tmpdir, [workspace] * 24))
-            expected = (workspace / ".tmp").resolve()
+                paths = list(
+                    pool.map(
+                        lambda _: codex_workspace_tmpdir(workspace, state, "attempt-unicode"),
+                        range(24),
+                    )
+                )
+            expected = (state / "attempts/attempt-unicode/tmp").resolve()
             self.assertEqual(set(paths), {expected})
             self.assertTrue(expected.is_dir())
 
             next_generation = Path(tmp) / "nested" / "Repo Space generation 2"
             next_generation.mkdir()
-            self.assertEqual(
-                codex_workspace_tmpdir(next_generation), (next_generation / ".tmp").resolve()
-            )
+            next_path = codex_workspace_tmpdir(next_generation, state, "attempt-generation-2")
+            self.assertEqual(next_path, (state / "attempts/attempt-generation-2/tmp").resolve())
+            self.assertNotEqual(next_path, expected)
 
-    def test_codex_workspace_tmpdir_propagates_creation_errors(self):
+    def test_codex_attempt_tmpdir_propagates_creation_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "worktree"
             workspace.mkdir()
-            with patch.object(Path, "mkdir", side_effect=PermissionError("denied")):
+            state = Path(tmp) / "state"
+            original_mkdir = Path.mkdir
+
+            def deny_tmpdir(path, *args, **kwargs):
+                if path.name == "tmp":
+                    raise PermissionError("denied")
+                return original_mkdir(path, *args, **kwargs)
+
+            with patch.object(Path, "mkdir", deny_tmpdir):
                 with self.assertRaisesRegex(PermissionError, "denied"):
-                    codex_workspace_tmpdir(workspace)
+                    codex_workspace_tmpdir(workspace, state, "attempt-permission")
 
     def test_codex_sandbox_rejects_invalid_value_before_launcher_selection(self):
         with tempfile.TemporaryDirectory() as tmp:

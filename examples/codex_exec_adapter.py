@@ -22,7 +22,6 @@ from todo_flow import repositories  # noqa: E402
 from todo_flow.worker import (  # noqa: E402
     codex_exec_base_args,
     codex_schema,
-    codex_workspace_tmpdir,
     configured_codex_sandbox,
     validate,
     worker_instructions,
@@ -319,7 +318,9 @@ def main(argv=None):
         context = json.load(sys.stdin, object_pairs_hook=_object, parse_constant=_constant)
         workspace, declarations = validate_context(context)
         sandbox = configured_codex_sandbox()
-        tmpdir = codex_workspace_tmpdir(workspace) if sandbox == "workspace-write" else None
+        tmpdir = os.environ.get("TMPDIR") if sandbox == "workspace-write" else None
+        if sandbox == "workspace-write" and (not tmpdir or not Path(tmpdir).is_absolute()):
+            raise ValueError("workspace-write requires TODO Flow to provide an attempt TMPDIR")
         temp_root = args.tmp_dir or (tmpdir if tmpdir is not None else Path(tempfile.gettempdir()))
         if args.tmp_dir and args.tmp_dir.is_symlink():
             raise ValueError("tmp-dir must not be a symlink")
