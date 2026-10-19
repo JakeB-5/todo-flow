@@ -91,7 +91,25 @@ class Engine:
             )
 
     def ensure_workspace(self, task):
-        proposal_application.read(self, task["track"])
+        record = proposal_application.read(self, task["track"])
+        if record and record["phase"] in proposal_application.ACTIVE:
+            # Do not create/rebind a checkout or refresh track HEAD before recovery.
+            self.process_barrier(task["track"]).require_clear()
+            proposal_application.require_scope(self, task, record)
+            track = self.store.track(task["track"])
+            workspace = Path(track["workspace"] or "").resolve()
+            if (
+                not track["workspace"]
+                or not workspace.is_dir()
+                or str(workspace) != record["intent"]["workspace"]
+                or command(["git", "branch", "--show-current"], workspace) != track["branch"]
+            ):
+                raise Conflict("Unfinished proposal checkout ownership changed; preserve evidence")
+            with file_lock(self.store.path / "locks" / "git-metadata.lock", blocking=True):
+                managed = managed_workspace.ensure(self, task, proposal_recovery=True)
+                if managed is not None and managed != workspace:
+                    raise Conflict("Proposal checkout differs from managed ownership evidence")
+            return workspace
         # Git worktree registration writes shared .git/config even for different tracks.
         with file_lock(self.store.path / "locks" / "git-metadata.lock", blocking=True):
             with self.store.transaction() as c:
@@ -650,10 +668,8 @@ class Engine:
                 self.process_barrier(task["track"]).require_clear()
                 workspace = self.ensure_workspace(task)
                 recovered = None
-                if task["kind"] == "work":
+                if task["kind"] in ("work", "assess"):
                     recovered = proposal_application.recover(self, task, workspace)
-                    if recovered and recovered["intent"]["task"] != task["id"]:
-                        recovered = None
                 else:
                     proposal_application.require_clear(self, task["track"])
                 t = self.store.track(task["track"])
@@ -684,7 +700,7 @@ class Engine:
                 else:
                     repair = (
                         integration_repair.prepare(self, task, workspace)
-                        if task["kind"] == "work"
+                        if task["kind"] == "work" or (recovered and recovered["intent"]["repair"])
                         else None
                     )
                     context = self.context(task, workspace)

@@ -12,12 +12,14 @@ from unittest.mock import patch
 import test_change_proposals
 import test_flow
 import test_integration_repair
+import test_managed_workspace
 from todo_flow import integration, proposal_application as application
 from todo_flow.adapters import command
 from todo_flow.checkout import snapshot
 from todo_flow.engine import Engine
-from todo_flow.store import Conflict
+from todo_flow.store import Conflict, fingerprint
 from todo_flow.worker import result_payload, run_worker
+from todo_flow.workspace_creation import WorkspaceCreationBlocked
 
 
 CHILD = """
@@ -34,9 +36,15 @@ engine = Engine(Store(data["state"]))
 workspace = Path(data["workspace"])
 original_replace = application.os.replace
 original_command = application.command
+original_atomic_file = application.atomic_file
 
 def die():
     os.kill(os.getpid(), signal.SIGKILL)
+
+def atomic_file(*args, **kwargs):
+    if data["boundary"] == "before-files":
+        die()
+    return original_atomic_file(*args, **kwargs)
 
 def replace(source, target):
     original_replace(source, target)
@@ -45,17 +53,25 @@ def replace(source, target):
         assert record["phase"] == "applying"
         assert record["intent"]["files"][0]["before"] is not None
         die()
+    if Path(target) == workspace / data["changes"][-1]["path"] and data["boundary"] == "after-files":
+        die()
 
 def command(argv, *args, **kwargs):
     if argv[:2] == ["git", "commit"] and data["boundary"] == "before-commit":
         die()
     result = original_command(argv, *args, **kwargs)
+    if argv[:2] == ["git", "add"] and data["boundary"] == "after-stage":
+        die()
     if argv[:2] == ["git", "commit"] and data["boundary"] == "after-commit":
         die()
     return result
 
 with file_lock(engine.store.path / "locks" / (data["task"]["track"] + ".lock")):
-    with patch.object(application.os, "replace", replace), patch.object(application, "command", command):
+    with (
+        patch.object(application.os, "replace", replace),
+        patch.object(application, "command", command),
+        patch.object(application, "atomic_file", atomic_file),
+    ):
         engine.apply_changes(
             data["task"], workspace, data["changes"], data["repair"],
             expected_head=data["head"], result=data["result"]
@@ -179,18 +195,27 @@ class InterruptedProposalTests(unittest.TestCase):
         engine.apply_changes(task, workspace, changes)
         self.assertEqual((workspace / "new.py").read_text(), "# 새 파일 🌿\n")
 
-    def test_real_precommit_interrupt_does_not_adopt_all_written_and_staged_files(self):
+    def test_real_precommit_interrupt_adopts_exact_staged_after_once(self):
         engine, task, workspace = self.workspace()
-        record = interrupt(self, engine, task, workspace, self.changes(workspace), "before-commit")
+        changes = self.changes(workspace)
+        record = interrupt(self, engine, task, workspace, changes, "before-commit")
         self.assertEqual(record["phase"], "ready")
         self.assertTrue((workspace / "new.py").exists())
         self.assert_blocked(engine, task, workspace)
-        before = snapshot(workspace)
-        with self.assertRaisesRegex(Conflict, "Interrupted proposal preserved"):
-            application.recover(engine, task, workspace)
-        self.assertEqual(snapshot(workspace), before)
-        restore_original(workspace, record)
-        self.assertIsNone(application.recover(engine, task, workspace))
+        # journal-cross-task authorizes exact after recovery within the same scope.
+        # Previously even this fully staged checkpoint always raised Conflict.
+        recovered = application.recover(engine, task, workspace)
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(
+            command(
+                ["git", "rev-list", "--count", record["intent"]["before_head"] + "..HEAD"],
+                workspace,
+            ),
+            "1",
+        )
+        assert_retry_reuses_receipt(
+            self, engine, task, workspace, changes, record["intent"]["before_head"]
+        )
 
     def test_real_postcommit_interrupt_recovers_exact_commit_without_replaying_worker(self):
         engine, task, workspace = self.workspace()
@@ -297,6 +322,281 @@ class InterruptedProposalTests(unittest.TestCase):
         with self.assertRaises(Conflict):
             application.recover(engine, task, workspace)
         self.assertEqual(application.journal_path(engine, task["track"]).read_bytes(), preserved)
+
+
+class SuccessorRecoveryTests(unittest.TestCase):
+    setUp = test_flow.IntegrationTests.setUp
+    tearDown = test_flow.IntegrationTests.tearDown
+    workspace = test_change_proposals.ProposalApplicationTests.workspace
+    changes = InterruptedProposalTests.changes
+
+    def successor(self, task, *, request=False, revision=False):
+        original_request = self.s.track(task["track"])["request"]
+        self.s.finish(task, {"summary": "Original task ended"})
+        if revision:
+            self.s.control(task["track"], "pause")
+            self.s.register({**test_flow.DOC, "goal": "Read-only inspection"}, 1)
+        elif request:
+            self.s.control(task["track"], "cancel")
+        if request or revision:
+            self.s.start(task["track"], None if request else original_request)
+        # A new request enqueues assess; finish it without changing the journal.
+        if request:
+            assess = self.s.claim("successor-assessor")
+            self.s.finish(assess, {"summary": "Inspect interrupted proposal"})
+        with self.s.transaction() as connection:
+            self.s.enqueue(connection, task["track"], "work", "Recover proposal", "successor")
+        return self.s.claim("successor")
+
+    def legacy(self, engine, task):
+        record = application.read(engine, task["track"])
+        for field in ("scope", "outside", "index_entries"):
+            record["intent"].pop(field)
+        record["id"] = fingerprint(record["intent"])
+        application.journal_path(engine, task["track"]).write_text(json.dumps(record))
+
+    def preserved(self, engine, task, workspace):
+        checkout = snapshot(workspace)
+        index = Path(command(["git", "rev-parse", "--git-path", "index"], workspace))
+        if not index.is_absolute():
+            index = workspace / index
+        return (
+            checkout,
+            index.read_bytes(),
+            application.journal_path(engine, task["track"]).read_bytes(),
+            [(path.name, application.file_state(path)) for path in sorted(workspace.glob("*.py"))],
+        )
+
+    def test_successor_releases_exact_before_without_applying_old_result(self):
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                case = SuccessorRecoveryTests()
+                case.setUp()
+                try:
+                    engine, task, workspace = case.workspace()
+                    before = snapshot(workspace)
+                    interrupt(
+                        case, engine, task, workspace, case.changes(workspace), "before-files"
+                    )
+                    if legacy:
+                        case.legacy(engine, task)
+                    successor = case.successor(task)
+                    case.assertEqual(engine.ensure_workspace(successor), workspace)
+                    for retry in (engine, Engine(case.s)):
+                        case.assertIsNone(application.recover(retry, successor, workspace))
+                    case.assertEqual(application.read(engine, task["track"])["phase"], "restored")
+                    case.assertEqual(snapshot(workspace), before)
+                    case.assertFalse((workspace / "new.py").exists())
+                finally:
+                    case.tearDown()
+
+    def test_successor_adopts_exact_after_once_and_engine_verifies_without_worker(self):
+        scenarios = [
+            (boundary, False)
+            for boundary in ("after-files", "after-stage", "before-commit", "after-commit")
+        ] + [("after-files", True), ("after-stage", True)]
+        for boundary, legacy in scenarios:
+            with self.subTest(boundary=boundary, legacy=legacy):
+                case = SuccessorRecoveryTests()
+                case.setUp()
+                try:
+                    engine, task, workspace = case.workspace()
+                    changes = case.changes(workspace)
+                    changes.append(
+                        {
+                            "path": "test_calc.py",
+                            "content": (
+                                "import unittest\nfrom calc import add\n\n"
+                                "class AdditionTests(unittest.TestCase):\n"
+                                "    def test_sum(self):\n"
+                                "        self.assertEqual(add(2, 3), 5)\n"
+                            ),
+                        }
+                    )
+                    record = interrupt(case, engine, task, workspace, changes, boundary)
+                    if legacy:
+                        case.legacy(engine, task)
+                    successor = case.successor(task)
+                    case.assertEqual(engine.ensure_workspace(successor), workspace)
+                    recovered = application.recover(engine, successor, workspace)
+                    case.assertEqual(recovered["phase"], "committed")
+                    head = recovered["head"]
+                    case.assertEqual(
+                        command(
+                            [
+                                "git",
+                                "rev-list",
+                                "--count",
+                                record["intent"]["before_head"] + "..HEAD",
+                            ],
+                            workspace,
+                        ),
+                        "1",
+                    )
+                    assert_retry_reuses_receipt(
+                        case, engine, successor, workspace, changes, record["intent"]["before_head"]
+                    )
+                    with patch("todo_flow.engine.run_worker") as worker:
+                        Engine(case.s).execute(successor)
+                        worker.assert_not_called()
+                    verification = json.loads(case.s.track(task["track"])["verification"])
+                    case.assertTrue(verification["ok"], verification["output"])
+                    case.assertEqual(verification["head"], head)
+                    case.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), head)
+                    case.assertFalse(case.s.snapshot()["decisions"])
+                finally:
+                    case.tearDown()
+
+    def test_decision_answer_assess_successor_can_recover_before_choosing_more_work(self):
+        engine, task, workspace = self.workspace()
+        record = interrupt(self, engine, task, workspace, self.changes(workspace), "after-stage")
+        engine.fail(task, RuntimeError("Interrupted proposal"))
+        decision = self.s.snapshot()["decisions"][0]
+        self.s.answer(decision["id"], "Resume the same request and revision")
+        successor = self.s.claim("successor-assessor")
+        self.assertEqual(successor["kind"], "assess")
+        # Store.answer resumes ordinary failures with assess, not work.
+        # This host recovery must happen before require_clear could block that path.
+        with patch("todo_flow.engine.run_worker") as worker:
+            Engine(self.s).execute(successor)
+            worker.assert_not_called()
+        self.assertEqual(application.read(engine, task["track"])["phase"], "committed")
+        self.assertEqual(
+            command(
+                ["git", "rev-list", "--count", record["intent"]["before_head"] + "..HEAD"],
+                workspace,
+            ),
+            "1",
+        )
+        verification = json.loads(self.s.track(task["track"])["verification"])
+        self.assertTrue(verification["ok"], verification["output"])
+        self.assertFalse(any(row["status"] == "open" for row in self.s.snapshot()["decisions"]))
+
+    def test_request_revision_mismatch_preserves_checkout_index_and_journal(self):
+        # journal-scope-fence: a read-only revision cannot authorize old writes.
+        for request, revision in ((True, False), (False, True), (True, True)):
+            for boundary, legacy in (
+                ("after-stage", False),
+                ("after-stage", True),
+                ("after-commit", False),
+            ):
+                with self.subTest(
+                    request=request, revision=revision, boundary=boundary, legacy=legacy
+                ):
+                    case = SuccessorRecoveryTests()
+                    case.setUp()
+                    try:
+                        engine, task, workspace = case.workspace()
+                        changes = case.changes(workspace)
+                        record = interrupt(case, engine, task, workspace, changes, boundary)
+                        if legacy:
+                            case.legacy(engine, task)
+                        successor = case.successor(task, request=request, revision=revision)
+                        # Mutable task input is not proof of the original attempt's revision.
+                        if revision:
+                            with case.s.transaction() as connection:
+                                connection.execute(
+                                    "UPDATE tasks SET input_revision=? WHERE id=?",
+                                    (successor["input_revision"], task["id"]),
+                                )
+                        before = case.preserved(engine, task, workspace)
+                        with (
+                            patch.object(application, "atomic_file") as write,
+                            patch.object(application, "write_json") as save,
+                            patch.object(application, "command", wraps=command) as git,
+                        ):
+                            for action in (
+                                lambda: engine.ensure_workspace(successor),
+                                lambda: application.recover(engine, successor, workspace),
+                                lambda: engine.apply_changes(
+                                    successor,
+                                    workspace,
+                                    changes,
+                                    expected_head=record["intent"]["before_head"],
+                                ),
+                            ):
+                                with case.assertRaisesRegex(Conflict, "request/revision mismatch"):
+                                    action()
+                            write.assert_not_called()
+                            save.assert_not_called()
+                            case.assertFalse(
+                                any(
+                                    call.args[0][:2] in (["git", "add"], ["git", "commit"])
+                                    for call in git.call_args_list
+                                )
+                            )
+                        case.assertEqual(case.preserved(engine, task, workspace), before)
+                    finally:
+                        case.tearDown()
+
+    def test_successor_preserves_partial_and_tampered_states(self):
+        # journal-exact-state: scope validity never licenses overwriting user state.
+        for tamper in (
+            "partial",
+            "file",
+            "mode",
+            "index",
+            "head",
+            "outside",
+            "claim",
+            "origin",
+            "running",
+        ):
+            with self.subTest(tamper=tamper):
+                case = SuccessorRecoveryTests()
+                case.setUp()
+                try:
+                    engine, task, workspace = case.workspace()
+                    interrupt(
+                        case,
+                        engine,
+                        task,
+                        workspace,
+                        case.changes(workspace),
+                        "file" if tamper == "partial" else "after-stage",
+                    )
+                    successor = case.successor(task)
+                    if tamper == "file":
+                        (workspace / "calc.py").write_text("# User edit\n")
+                    elif tamper == "mode":
+                        (workspace / "calc.py").chmod(0o755)
+                    elif tamper == "index":
+                        command(["git", "reset", "HEAD", "--", "new.py"], workspace)
+                    elif tamper == "head":
+                        command(["git", "commit", "--allow-empty", "-m", "Other commit"], workspace)
+                    elif tamper == "outside":
+                        (workspace / "operator.txt").write_text("Preserve user data\n")
+                        command(["git", "add", "operator.txt"], workspace)
+                    elif tamper == "claim":
+                        case.s.control(task["track"], "cancel")
+                    elif tamper == "running":
+                        with case.s.transaction() as connection:
+                            connection.execute(
+                                "UPDATE attempts SET status='running' WHERE id=?",
+                                (task["attempt"],),
+                            )
+                    elif tamper == "origin":
+                        case.legacy(engine, task)
+                        with case.s.transaction() as connection:
+                            for row in connection.execute(
+                                "SELECT seq,body FROM events WHERE type='worker.claimed'"
+                            ).fetchall():
+                                if json.loads(row["body"])["attemptId"] == task["attempt"]:
+                                    connection.execute(
+                                        "DELETE FROM events WHERE seq=?", (row["seq"],)
+                                    )
+                    before = case.preserved(engine, task, workspace)
+                    with (
+                        patch.object(application, "atomic_file") as write,
+                        patch.object(application, "write_json") as save,
+                    ):
+                        with case.assertRaises(Conflict):
+                            application.recover(engine, successor, workspace)
+                        write.assert_not_called()
+                        save.assert_not_called()
+                    case.assertEqual(case.preserved(engine, task, workspace), before)
+                finally:
+                    case.tearDown()
 
 
 class InterruptedRepairTests(unittest.TestCase):
@@ -443,6 +743,36 @@ class InterruptedRepairTests(unittest.TestCase):
             ["review"],
         )
 
+    def test_successor_recovers_exact_staged_merge_and_keeps_both_parents(self):
+        self.ready()
+        task, workspace = self.repair_task()
+        repair = integration.prepare(self.e, task, workspace)
+        changes = [{"path": "calc.py", "content": test_integration_repair.RESOLVED}]
+        interrupt(self, self.e, task, workspace, changes, "before-commit", repair)
+        self.s.finish(
+            task,
+            {
+                "summary": "Interrupted repair released",
+                "next": [{"kind": "work", "purpose": "Recover the same merge"}],
+            },
+        )
+        successor = self.s.claim("successor")
+        # journal-cross-task also preserves the existing integration-repair contract.
+        with patch("todo_flow.engine.run_worker") as worker:
+            Engine(self.s).execute(successor)
+            worker.assert_not_called()
+        head = command(["git", "rev-parse", "HEAD"], workspace)
+        self.assertEqual(
+            command(["git", "show", "-s", "--format=%P", "HEAD"], workspace).split(),
+            [repair["candidate"], repair["base"]],
+        )
+        self.assertEqual(application.read(self.e, task["track"])["phase"], "committed")
+        self.assertIsNone(integration.pending(self.s.track(task["track"])))
+        verification = json.loads(self.s.track(task["track"])["verification"])
+        self.assertTrue(verification["ok"], verification["output"])
+        self.assertEqual(verification["head"], head)
+        self.assertFalse(self.s.snapshot()["decisions"])
+
     def test_precommit_merge_restoration_restores_original_conflict_checkpoint(self):
         self.ready()
         task, workspace = self.repair_task()
@@ -450,6 +780,8 @@ class InterruptedRepairTests(unittest.TestCase):
         original = snapshot(workspace)
         changes = [{"path": "calc.py", "content": test_integration_repair.RESOLVED}]
         record = interrupt(self, self.e, task, workspace, changes, "before-commit", repair)
+        # Exact after is now recoverable; a user edit must still hold the merge.
+        (workspace / "calc.py").write_text("# User edit after interruption\n")
         with self.assertRaises(Conflict):
             application.recover(self.e, task, workspace)
         restore_original(workspace, record)
@@ -458,6 +790,42 @@ class InterruptedRepairTests(unittest.TestCase):
         resumed = integration.prepare(self.e, task, workspace)
         self.assertEqual(resumed["checkout"], repair["checkout"])
         self.assertTrue(integration.unmerged(workspace))
+
+
+class ManagedProposalRecoveryTests(unittest.TestCase):
+    setUp = test_flow.IntegrationTests.setUp
+    tearDown = test_flow.IntegrationTests.tearDown
+    start = test_managed_workspace.ManagedWorkspaceTests.start
+    call = test_managed_workspace.ManagedWorkspaceTests.call
+
+    def test_interrupted_commit_checks_live_ownership_before_adoption(self):
+        self.start()
+        workspace = self.engine.ensure_workspace(self.task)
+        before = self.s.track("addition")["head"]
+        changes = [{"path": "calc.py", "content": "def add(a, b):\n    return a + b\n"}]
+        interrupt(self, self.engine, self.task, workspace, changes, "after-commit")
+        self.s.finish(
+            self.task,
+            {
+                "summary": "Original task ended",
+                "next": [{"kind": "work", "purpose": "Recover managed proposal"}],
+            },
+        )
+        successor = self.s.claim("successor")
+        receipt = application.journal_path(self.engine, "addition").read_bytes()
+        identity = self.shown["result"]["worktree"]["instanceId"]
+        self.shown["result"]["worktree"]["instanceId"] = "replaced-instance"
+        with self.assertRaises(WorkspaceCreationBlocked):
+            self.engine.ensure_workspace(successor)
+        self.assertEqual(application.journal_path(self.engine, "addition").read_bytes(), receipt)
+        self.assertEqual(self.s.track("addition")["head"], before)
+        self.shown["result"]["worktree"]["instanceId"] = identity
+        self.assertEqual(self.engine.ensure_workspace(successor), workspace)
+        self.assertEqual(self.s.track("addition")["head"], before)
+        recovered = application.recover(self.engine, successor, workspace)
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(self.s.track("addition")["head"], recovered["head"])
+        self.assertEqual(self.created, 1)
 
 
 class CompleteWorkerOutputTests(unittest.TestCase):
