@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import tempfile
 import unittest
 import sys
@@ -36,7 +37,9 @@ class WorkerAdapterTests(unittest.TestCase):
                 self.assertIn("identity", kwargs)
                 self.assertIn("--output-schema", args)
                 self.assertIn("--ignore-user-config", args)
-                self.assertIn("read-only", args)
+                self.assertEqual(args[args.index("--sandbox") + 1], "read-only")
+                self.assertNotIn("workspace-write", args)
+                self.assertIn('approval_policy="never"', args)
                 disabled = [args[i + 1] for i, arg in enumerate(args) if arg == "--disable"]
                 self.assertTrue({"apps", "plugins", "multi_agent"} <= set(disabled))
                 self.assertNotIn("shell_tool", disabled)
@@ -59,7 +62,11 @@ class WorkerAdapterTests(unittest.TestCase):
 
             # Replace only the adapter's module reference so cleanup still uses
             # real subprocesses for process inspection and a real child to reap.
-            with patch("todo_flow.worker.SupervisedProcess", spawn):
+            # readonly-codex-sandbox: an inherited override must not grant writes.
+            with (
+                patch.dict(os.environ, {"TODO_FLOW_CODEX_SANDBOX": "workspace-write"}),
+                patch("todo_flow.worker.SupervisedProcess", spawn),
+            ):
                 result = run_worker(
                     {"worker": {"type": "codex"}, "worker_launcher": "headless"},
                     {"goal": "Example", "workspace": tmp},

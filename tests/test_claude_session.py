@@ -31,6 +31,9 @@ assert '--no-session-persistence' not in sys.argv
 assert all(os.isatty(fd) for fd in (0,1,2))
 assert '--safe-mode' in sys.argv and '--restricted' in sys.argv
 assert sys.argv[sys.argv.index('--tools')+1]=='Read,Glob,Grep'
+assert sys.argv[sys.argv.index('--allowedTools')+1]=='Read,Glob,Grep'
+assert '--strict-mcp-config' in sys.argv and '--disable-slash-commands' in sys.argv
+assert json.loads(sys.argv[sys.argv.index('--mcp-config')+1])=={'mcpServers':{}}
 assert sys.argv[sys.argv.index('--permission-mode')+1]=='dontAsk'
 session=sys.argv[sys.argv.index('--session-id')+1]
 prompt=sys.argv[-1]
@@ -40,8 +43,8 @@ path=root/'projects/fixture'/f'{session}.jsonl'
 path.parent.mkdir(parents=True,exist_ok=True)
 def row(kind, **extra):
  return dict(type=kind,sessionId=session,cwd=os.getcwd(),uuid=str(uuid.uuid4()),isSidechain=False,**extra)
-def emit(obj):
- with path.open('a') as f:f.write(json.dumps(obj)+'\n')
+def emit(*objects):
+ with path.open('a') as f:f.write(''.join(json.dumps(obj)+'\n' for obj in objects))
 emit(row('user',message={'content':prompt}))
 print('Synthetic interactive Claude session',flush=True)
 if (root/'hang').exists():
@@ -50,9 +53,18 @@ if (root/'hang').exists():
  subprocess.Popen([sys.executable,'-c',child])
  time.sleep(60)
 if (root/'wrong-session').exists():session='foreign'
-emit(row('assistant',message={'model':'synthetic-claude','stop_reason':'end_turn','content':[{'type':'text','text':json.dumps({'summary':'Read-only interactive result','changes':[{'path':'calc.py','content':'# proposal\n'*20000}]})}]}))
-if (root/'partial').exists():time.sleep(60)
-emit(row('system',subtype='turn_duration',durationMs=123))
+for tool in ('Read','Glob','Grep'):
+ emit(
+  row('assistant',message={'content':[{'type':'tool_use','name':tool,'id':tool}]}),
+  row('user',message={'content':[{'type':'tool_result','tool_use_id':tool,'content':'source'}]}),
+ )
+violations=[]
+if (root/'forbidden-tool').exists():
+ tool=(root/'forbidden-tool').read_text()
+ violations.append(row('assistant',message={'content':[{'type':'tool_use','name':tool,'id':'forbidden'}]}))
+answer=row('assistant',message={'model':'synthetic-claude','stop_reason':'end_turn','content':[{'type':'text','text':json.dumps({'summary':'Read-only interactive result','changes':[{'path':'calc.py','content':'# proposal\n'*(1 if violations else 20000)}]})}]})
+if (root/'partial').exists():emit(answer);time.sleep(60)
+emit(*violations,answer,row('system',subtype='turn_duration',durationMs=123))
 time.sleep(60)
 """
 
@@ -184,11 +196,60 @@ class ClaudeSessionTests(unittest.TestCase):
         self.assertEqual(record["task"], self.task)
         self.assertEqual(record["status"], "complete")
         self.assertEqual(record["model"], "synthetic-claude")
+        rows = [
+            json.loads(line)
+            for line in (self.folder / "claude-transcript.jsonl").read_text().splitlines()
+        ]
+        tools = [
+            block["name"]
+            for row in rows
+            if row["type"] == "assistant"
+            for block in row["message"]["content"]
+            if block["type"] == "tool_use"
+        ]
+        self.assertEqual(tools, ["Read", "Glob", "Grep"])
         ProcessBarrier(self.s.path, "addition").require_clear()
         summary = worker_stop_summary(self.s.path, "addition", self.task["attempt"])
         execution = next(row for row in summary["executions"] if row["proposal"] is not None)
         self.assertTrue(execution["process"]["group_exit_confirmed"])
         self.assertTrue(execution["proposal"]["validated"])
+
+    def test_forbidden_tools_reject_even_valid_json_and_preserve_exit_evidence(self):
+        # readonly-claude-tools: JSON correctness never authorizes an out-of-contract
+        # tool, including EndConversation. This fixture does not prove CLI support.
+        for tool in ("Bash", "Edit", "Write", "EndConversation"):
+            with self.subTest(tool=tool):
+                case = ClaudeSessionTests()
+                case.setUp()
+                try:
+                    case.prepare()
+                    (case.home / "forbidden-tool").write_text(tool)
+                    with self.assertRaisesRegex(RuntimeError, "read-only contract"):
+                        case.execute()
+                    self.assertEqual((case.workspace / "calc.py").read_bytes(), case.before)
+                    spec = json.loads((case.folder / "terminal-spec.json").read_text())
+                    session = spec["interactive"]["session"]
+                    source = case.home / "projects" / "fixture" / (session + ".jsonl")
+                    rows = [json.loads(line) for line in source.read_text().splitlines()]
+                    violation = rows[-3]["message"]["content"][0]
+                    self.assertEqual((violation["type"], violation["name"]), ("tool_use", tool))
+                    proposal = json.loads(rows[-2]["message"]["content"][0]["text"])
+                    self.assertEqual(proposal["summary"], "Read-only interactive result")
+                    self.assertEqual(rows[-1]["subtype"], "turn_duration")
+                    record = json.loads((case.folder / "claude-session.json").read_text())
+                    self.assertEqual(record["status"], "stopped")
+                    self.assertFalse((case.folder / "output.json").read_text().strip())
+                    receipt_path = case.folder / "terminal-process.json"
+                    receipt = json.loads(receipt_path.read_text())
+                    self.assertNotEqual(receipt["returncode"], 0)
+                    self.assertTrue(receipt["cleanup_confirmed"])
+                    self.assertIn("read-only contract", receipt["error"])
+                    self.assertIn("read-only contract", (case.folder / "stderr.log").read_text())
+                    launches = (case.home / "launches").read_text().splitlines()
+                    self.assertEqual(len(launches), 1)
+                    ProcessBarrier(case.s.path, "addition").require_clear()
+                finally:
+                    case.tearDown()
 
     def test_cancel_stops_the_owned_group_and_never_replays_as_headless(self):
         self.prepare()
