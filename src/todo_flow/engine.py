@@ -265,7 +265,7 @@ class Engine:
                 "verify": spec["verify"],
                 "writable_patterns": spec["writable"],
             }
-        proposal_application.require_clear(self, task["track"])
+        proposal_application.require_clear(self, task["track"], task)
         self.process_barrier(task["track"]).require_clear()
         self.check_claim(task)
         if integration_repair.merge_head(workspace) or integration_repair.unmerged(workspace):
@@ -347,7 +347,7 @@ class Engine:
                     if limit is not None:
                         # Waiting grants capacity only, never claim/input validity.
                         self.check_claim(task)
-                        proposal_application.require_clear(self, task["track"])
+                        proposal_application.require_clear(self, task["track"], task)
                         self.process_barrier(task["track"]).require_clear()
                         require_clean(workspace, head)
                         current = verification_identity.capture(
@@ -544,7 +544,7 @@ class Engine:
         )
 
     def publish(self, task, workspace, doc):
-        proposal_application.require_clear(self, task["track"])
+        proposal_application.require_clear(self, task["track"], task)
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
         repositories.require_current(self, t, workspace, t["verification"])
@@ -672,7 +672,7 @@ class Engine:
         return context
 
     def record_review(self, task, result, expected_head=None):
-        proposal_application.require_clear(self, task["track"])
+        proposal_application.require_clear(self, task["track"], task)
         self.check_claim(task)
         t = self.store.track(task["track"])
         actual_head = (
@@ -743,7 +743,7 @@ class Engine:
         self.update(task, review=encode(review))
 
     def gate(self, task):
-        proposal_application.require_clear(self, task["track"])
+        proposal_application.require_clear(self, task["track"], task)
         self.process_barrier(task["track"]).require_clear()
         t = self.store.track(task["track"])
         if integration_repair.pending(t):
@@ -1169,7 +1169,7 @@ class Engine:
                     if recovered and recovered["intent"]["task"] != task["id"]:
                         recovered = None
                 else:
-                    proposal_application.require_clear(self, task["track"])
+                    proposal_application.require_clear(self, task["track"], task)
                 t = self.store.track(task["track"])
                 doc = json.loads(t["document"])
                 if self.remote and self.remote.repo and not t["issue"]:

@@ -1,16 +1,15 @@
-"""Durable proposal adoption under the engine's checkout lock and live claim.
+"""Durable proposal application and state-based recovery under a live claim.
 
-An interrupted write is never guessed complete. Restore the target bytes/modes
-and index from intent.files[*].before and intent.index (base64), preserving any
-later user work separately, then retry the work task. Recovery accepts that
-boundary only when the original HEAD, merge, files and checkout snapshot match.
-Do not delete the journal to bypass a hold.
+Recovery closes an interrupted journal only when checkout matches its exact
+before or proposal-after state. Any mixed state remains preserved for inspection.
 """
 
 import base64
 import json
 import os
+import shlex
 import stat
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -125,15 +124,255 @@ def read(engine, track, repo_name=None):
         raise Conflict(f"Invalid or unsupported proposal journal: {path}; preserve it") from error
 
 
-def require_clear(engine, track):
+def _registered_workspace(engine, track, repo_name):
+    current = engine.store.track(track)
+    if repositories.multi(engine.config):
+        return engine.repository_state(current, repo_name)["workspace"]
+    return current.get("workspace")
+
+
+def _workspace_outside_snapshot(workspace, paths):
+    pathspec = [".", *[":(exclude,literal)" + path for path in paths]]
+    return fingerprint(
+        [
+            command(
+                ["git", "diff", "--no-ext-diff", "--no-textconv", "--binary", "--", *pathspec],
+                workspace,
+            ),
+            command(
+                ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--", *pathspec],
+                workspace,
+            ),
+        ]
+    )
+
+
+def _index_entries(workspace, index=None):
+    env = dict(os.environ)
+    env.pop("GIT_INDEX_FILE", None)
+    if index is not None:
+        env["GIT_INDEX_FILE"] = str(index)
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--stage", "-z"],
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise Conflict("Cannot inspect proposal recovery index; preserve the journal") from error
+    if result.returncode:
+        raise Conflict("Cannot inspect proposal recovery index; preserve the journal")
+    return result.stdout
+
+
+def _recovery_index_state(engine, workspace, record):
+    intent = record["intent"]
+    with tempfile.TemporaryDirectory(prefix="todo-flow-proposal-index-") as folder:
+        index = Path(folder) / "index"
+        index.write_bytes(base64.b64decode(intent["index"], validate=True))
+        before = _index_entries(workspace, index)
+        env = dict(os.environ)
+        env["GIT_INDEX_FILE"] = str(index)
+        try:
+            staged = subprocess.run(
+                ["git", "add", "--", *specs(record)],
+                cwd=workspace,
+                env=env,
+                capture_output=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise Conflict("Cannot verify proposal recovery index; preserve the journal") from error
+        if staged.returncode:
+            raise Conflict("Cannot verify proposal recovery index; preserve the journal")
+        after = _index_entries(workspace, index)
+        current = _index_entries(workspace)
+    if current == before:
+        return "before"
+    if current == after:
+        return "after"
+    return None
+
+
+def _after_state(engine, task, workspace, record, repo_name):
+    intent = record["intent"]
+    if (
+        command(["git", "rev-parse", "HEAD"], workspace) != intent["before_head"]
+        or integration.merge_head(workspace) != intent["merge_head"]
+        or any(file_state(workspace / row["path"]) != row["after"] for row in intent["files"])
+    ):
+        return None
+    if (
+        intent.get("outside_snapshot")
+        and _workspace_outside_snapshot(workspace, [row["path"] for row in intent["files"]])
+        != intent["outside_snapshot"]
+    ):
+        return None
+    repair = intent.get("repair")
+    if repair:
+        changes = [
+            {
+                "path": row["path"],
+                "content": base64.b64decode(row["after"]["bytes"], validate=True).decode(
+                    "utf-8", errors="strict"
+                ),
+            }
+            for row in intent["files"]
+        ]
+        integration.validate_resolution(workspace, changes, repair, check_snapshot=False)
+        pending = integration.pending(engine.store.track(task["track"]))
+        if (
+            not pending
+            or pending["candidate"] != repair["candidate"]
+            or pending["base"] != repair["base"]
+            or pending.get("repository") != repo_name
+        ):
+            raise Conflict("Integration repair intent changed during proposal recovery")
+    elif integration.unmerged(workspace):
+        return None
+    return _recovery_index_state(engine, workspace, record)
+
+
+def require_clear(engine, track, task=None):
     records = read(engine, track)
     if repositories.multi(engine.config):
         records = {name: record for name, record in records.items() if record is not None}
     else:
         records = {None: records} if records else {}
+    if task is not None:
+        for name, record in records.items():
+            if record["phase"] not in ACTIVE:
+                continue
+            workspace = _registered_workspace(engine, track, name)
+            if not workspace or str(Path(workspace).resolve()) != record["intent"]["workspace"]:
+                raise _manual_recovery_conflict(engine, track, workspace, name)
+            recover(engine, task, workspace, name)
+        records = read(engine, track)
+        if repositories.multi(engine.config):
+            records = {name: record for name, record in records.items() if record is not None}
+        else:
+            records = {None: records} if records else {}
+        if repositories.multi(engine.config):
+            batch = read_batch(engine, track)
+            if batch and batch["phase"] in ACTIVE:
+                workspaces = {
+                    spec["name"]: _registered_workspace(engine, track, spec["name"])
+                    for spec in repositories.specs(engine.config)
+                }
+                if any(not workspace for workspace in workspaces.values()):
+                    raise Conflict(
+                        f"Unfinished multi-repository proposal application: {batch_path(engine, track)}; "
+                        "a registered workspace is missing, preserve the journal"
+                    )
+                recover(engine, task, workspaces)
+                batch = read_batch(engine, track)
+                if batch and batch["phase"] in ACTIVE:
+                    raise Conflict(
+                        f"Unfinished multi-repository proposal application: {batch_path(engine, track)}"
+                    )
     for name, record in records.items():
         if record["phase"] in ACTIVE:
             raise Conflict(f"Unfinished proposal application: {journal_path(engine, track, name)}")
+
+
+def _manual_recovery_conflict(engine, track, workspace, repo_name):
+    journal = journal_path(engine, track, repo_name)
+    workspace_arg = shlex.quote(str(workspace)) if workspace else "<registered-workspace>"
+    state_arg = shlex.quote(str(engine.store.path))
+    return Conflict(
+        f"Unfinished proposal application: interrupted proposal preserved at {journal}; "
+        "workspace matches neither the recorded before state nor the exact proposal after state. "
+        "Inspect with "
+        f"`git -C {workspace_arg} status --short`; restore target bytes/modes and the index "
+        "from this journal, then resume with "
+        f"`todo-flow --state {state_arg} run`. Do not delete the journal."
+    )
+
+
+def _entries(workspace, record):
+    result = {}
+    for row in record["intent"]["files"]:
+        staged = command(
+            ["git", "ls-files", "--stage", "--", ":(literal)" + row["path"]], workspace
+        )
+        fields = staged.split("\t", 1)[0].split()
+        if len(fields) != 3 or fields[2] != "0":
+            raise Conflict("Proposal index is unresolved; preserve the journal")
+        result[row["path"]] = fields[:2]
+    return result
+
+
+def _ready_record(engine, task, workspace, record):
+    intent = record["intent"]
+    pathspecs = specs(record)
+    repair = intent.get("repair")
+    merging = intent["merge_head"]
+    dirty = (
+        command(
+            ["git", "diff", "--cached", "--name-only", "-z"]
+            + ([] if repair else ["--", *pathspecs]),
+            workspace,
+        )
+        if (pathspecs or repair)
+        else ""
+    )
+    ready = {
+        **record,
+        "phase": "ready",
+        "commit": bool(dirty or (repair and merging)),
+        "changed_paths": sorted(filter(None, dirty.split("\0"))),
+        "entries": _entries(workspace, record),
+        "message": "Implement " + task["track"] + "\n\nTODO-Flow-Proposal: " + record["id"],
+    }
+    if repair and merging:
+        integration.record_resolution(engine, task, workspace, repair)
+        ready["resolved_tree"] = command(["git", "write-tree"], workspace)
+    save(engine, task, ready)
+    return ready
+
+
+def _validate_ready(workspace, record):
+    intent = record["intent"]
+    pathspecs = specs(record)
+    repair = intent.get("repair")
+    merging = intent["merge_head"]
+    dirty = (
+        command(
+            ["git", "diff", "--cached", "--name-only", "-z"]
+            + ([] if repair else ["--", *pathspecs]),
+            workspace,
+        )
+        if (pathspecs or repair)
+        else ""
+    )
+    expected = {
+        "commit": bool(dirty or (repair and merging)),
+        "changed_paths": sorted(filter(None, dirty.split("\0"))),
+        "entries": _entries(workspace, record),
+        "message": "Implement " + intent["track"] + "\n\nTODO-Flow-Proposal: " + record["id"],
+    }
+    if any(record.get(key) != value for key, value in expected.items()):
+        raise Conflict("Ready proposal metadata changed; preserve the journal")
+    if (
+        repair
+        and merging
+        and record.get("resolved_tree") != command(["git", "write-tree"], workspace)
+    ):
+        raise Conflict("Ready proposal merge tree changed; preserve the journal")
+
+
+def _commit_and_adopt(engine, task, workspace, record):
+    pathspecs = specs(record)
+    if record["commit"]:
+        engine.check_claim(task)
+        command(
+            ["git", "commit", "-m", record["message"]]
+            + ([] if record["intent"].get("repair") else ["--only", "--", *pathspecs]),
+            workspace,
+        )
+    return adopt(engine, task, workspace, record)
 
 
 def file_state(path):
@@ -270,8 +509,6 @@ def recover(engine, task, workspace, repo_name=None):
                 raise Conflict("Committed multi-repository proposal HEAD map changed")
             repositories.require_clean(engine.store.track(task["track"]), engine.config, workspace)
             return {"intent": {"task": task["id"], "result": intent["result"]}, "head": None}
-        if intent["task"] != task["id"]:
-            raise Conflict("Unfinished multi-repository proposal belongs to another task")
         if set(intent["base_heads"]) != {row["name"] for row in repositories.specs(engine.config)}:
             raise Conflict("Multi-repository proposal no longer matches configured repositories")
         engine.apply_changes(
@@ -301,17 +538,27 @@ def recover(engine, task, workspace, repo_name=None):
         return None
     workspace = Path(workspace).resolve()
     intent = record["intent"]
-    if str(workspace) != intent["workspace"]:
-        raise Conflict("Unfinished proposal belongs to another checkout")
-    head = command(["git", "rev-parse", "HEAD"], workspace)
-    if record["phase"] == "ready" and (head != intent["before_head"] or not record["commit"]):
-        return adopt(engine, task, workspace, record)
+    registered = _registered_workspace(engine, task["track"], repo_name)
     if (
-        head == intent["before_head"]
-        and integration.merge_head(workspace) == intent["merge_head"]
-        and snapshot(workspace) == intent["snapshot"]
-        and all(file_state(workspace / row["path"]) == row["before"] for row in intent["files"])
+        str(workspace) != intent["workspace"]
+        or not registered
+        or str(Path(registered).resolve()) != str(workspace)
     ):
+        raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
+    head = command(["git", "rev-parse", "HEAD"], workspace)
+    if record["phase"] == "ready" and head != intent["before_head"]:
+        return adopt(engine, task, workspace, record)
+    try:
+        before_state = (
+            record["phase"] == "applying"
+            and head == intent["before_head"]
+            and integration.merge_head(workspace) == intent["merge_head"]
+            and snapshot(workspace) == intent["snapshot"]
+            and all(file_state(workspace / row["path"]) == row["before"] for row in intent["files"])
+        )
+    except (OSError, ValueError, TypeError, KeyError, Conflict, RuntimeError) as error:
+        raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name) from error
+    if before_state:
         if intent["repair"]:
             pending = integration.pending(engine.store.track(task["track"]))
             if (
@@ -323,11 +570,19 @@ def recover(engine, task, workspace, repo_name=None):
             engine.update(task, landing=encode(intent["repair"]), review=None, verification=None)
         save(engine, task, {**record, "phase": "restored"})
         return None
-    raise Conflict(
-        f"Interrupted proposal preserved at {journal_path(engine, task['track'], repo_name)}; "
-        "restore original target bytes/modes and index from intent, then retry. "
-        "Recovery requires the original HEAD, merge and checkout snapshot; do not delete evidence."
-    )
+    try:
+        index_state = _after_state(engine, task, workspace, record, repo_name)
+    except (OSError, ValueError, TypeError, KeyError, Conflict, RuntimeError) as error:
+        raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name) from error
+    if index_state == "after":
+        if record["phase"] == "applying":
+            if integration.unmerged(workspace):
+                raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
+            record = _ready_record(engine, task, workspace, record)
+        else:
+            _validate_ready(workspace, record)
+        return _commit_and_adopt(engine, task, workspace, record)
+    raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
 
 
 def apply(
@@ -417,6 +672,7 @@ def apply(
         "proposal": changes,
         "files": files,
         "snapshot": snapshot(workspace),
+        "outside_snapshot": _workspace_outside_snapshot(workspace, paths),
         "index": base64.b64encode(index.read_bytes()).decode("ascii"),
         "repair": repair,
         "result": result,
@@ -458,40 +714,5 @@ def apply(
         command(["git", "add", "--", *pathspecs], workspace)
     if integration.unmerged(workspace):
         raise Conflict("Cannot commit unresolved merge paths")
-    dirty = (
-        command(
-            ["git", "diff", "--cached", "--name-only", "-z"]
-            + ([] if repair else ["--", *pathspecs]),
-            workspace,
-        )
-        if (paths or repair)
-        else ""
-    )
-    entries = {}
-    for row in files:
-        staged = command(
-            ["git", "ls-files", "--stage", "--", ":(literal)" + row["path"]], workspace
-        )
-        mode, blob, stage = staged.split("\t", 1)[0].split()
-        if stage != "0":
-            raise Conflict("Unresolved proposal index")
-        entries[row["path"]] = [mode, blob]
-    record.update(
-        phase="ready",
-        commit=bool(dirty or (repair and merging)),
-        changed_paths=sorted(filter(None, dirty.split("\0"))),
-        entries=entries,
-        message="Implement " + task["track"] + "\n\nTODO-Flow-Proposal: " + record["id"],
-    )
-    if repair and merging:
-        integration.record_resolution(engine, task, workspace, repair)
-        record["resolved_tree"] = command(["git", "write-tree"], workspace)
-    save(engine, task, record)
-    if record["commit"]:
-        engine.check_claim(task)
-        command(
-            ["git", "commit", "-m", record["message"]]
-            + ([] if repair else ["--only", "--", *pathspecs]),
-            workspace,
-        )
-    adopt(engine, task, workspace, record)
+    record = _ready_record(engine, task, workspace, record)
+    _commit_and_adopt(engine, task, workspace, record)

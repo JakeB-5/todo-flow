@@ -297,6 +297,50 @@ class MultiRepositoryTests(unittest.TestCase):
         self.assertIn("return a + b", (Path(workspaces["core"]) / "calc.py").read_text())
         self.assertIn("return a * b + 2", (Path(workspaces["service"]) / "calc.py").read_text())
 
+    def test_new_task_recovers_partial_batch_before_require_clear(self):
+        self.configure_repositories()
+        task, workspaces = self.start_work()
+        before = self.engine.context(task, workspaces)
+        changes = [
+            {"path": "core:calc.py", "content": "def add(a, b):\n    return a + b\n"},
+            {"path": "service:calc.py", "content": "def multiply(a, b):\n    return a * b + 4\n"},
+        ]
+        apply = proposal_application.apply
+
+        def fail_second_repository(*args, **kwargs):
+            if kwargs.get("repo_name") == "service":
+                raise RuntimeError("injected second-repository interruption")
+            return apply(*args, **kwargs)
+
+        with patch("todo_flow.proposal_application.apply", side_effect=fail_second_repository):
+            with self.assertRaisesRegex(RuntimeError, "second-repository interruption"):
+                self.engine.apply_changes(
+                    task,
+                    workspaces,
+                    changes,
+                    expected_head=before["aggregate_head"],
+                    result={"summary": "two-repository change"},
+                )
+        self.s.finish(task, {"summary": "Prior task ended after partial proposal"})
+        with self.s.transaction() as connection:
+            self.s.enqueue(
+                connection,
+                task["track"],
+                "work",
+                "Continue after interrupted batch",
+                "proposal-batch-successor",
+            )
+        successor = self.s.claim("proposal-batch-successor")
+        self.assertNotEqual(successor["id"], task["id"])
+
+        proposal_application.require_clear(self.engine, task["track"], successor)
+
+        self.assertEqual(
+            proposal_application.read_batch(self.engine, task["track"])["phase"], "committed"
+        )
+        self.assertIn("return a + b", (Path(workspaces["core"]) / "calc.py").read_text())
+        self.assertIn("return a * b + 4", (Path(workspaces["service"]) / "calc.py").read_text())
+
     def test_commit_before_track_adoption_recovers_before_workspace_head_guard(self):
         self.configure_repositories()
         task, workspaces = self.start_work()

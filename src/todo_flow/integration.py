@@ -215,13 +215,14 @@ def prepare(engine, task, workspace):
     }
 
 
-def validate_resolution(workspace, changes, record):
+def validate_resolution(workspace, changes, record, *, check_snapshot=True):
     if command(["git", "rev-parse", "HEAD"], workspace) != record["workspace_head"]:
         raise Conflict("Integration repair HEAD changed during worker execution")
     if merge_head(workspace) != record["merge_head"]:
         raise Conflict("Integration repair merge changed during worker execution")
     if record["workspace_head"] == record["candidate"]:
-        require_snapshot(workspace, record["checkout"])
+        if check_snapshot:
+            require_snapshot(workspace, record["checkout"])
     elif command(["git", "status", "--porcelain", "--untracked-files=all"], workspace):
         raise Conflict("Recovered repair checkout changed; preserve it for inspection")
     conflicts = unmerged(workspace)

@@ -1,6 +1,7 @@
 import base64
 import copy
 import json
+import os
 from pathlib import Path
 import signal
 import subprocess
@@ -34,6 +35,7 @@ engine = Engine(Store(data["state"]))
 workspace = Path(data["workspace"])
 original_replace = application.os.replace
 original_command = application.command
+original_write_json = application.write_json
 
 def die():
     os.kill(os.getpid(), signal.SIGKILL)
@@ -45,17 +47,39 @@ def replace(source, target):
         assert record["phase"] == "applying"
         assert record["intent"]["files"][0]["before"] is not None
         die()
+    if Path(target) == workspace / data["changes"][-1]["path"] and data["boundary"] == "after-files":
+        record = application.read(engine, data["task"]["track"])
+        assert record["phase"] == "applying"
+        assert all(
+            application.file_state(workspace / row["path"]) == row["after"]
+            for row in record["intent"]["files"]
+        )
+        die()
+
+def write_json(path, value):
+    original_write_json(path, value)
+    if Path(path) == Path(data["journal"]) and data["boundary"] == "after-intent":
+        assert value["phase"] == "applying"
+        die()
 
 def command(argv, *args, **kwargs):
     if argv[:2] == ["git", "commit"] and data["boundary"] == "before-commit":
         die()
     result = original_command(argv, *args, **kwargs)
+    if argv[:2] == ["git", "add"] and data["boundary"] == "after-stage":
+        record = application.read(engine, data["task"]["track"])
+        assert record["phase"] == "applying"
+        die()
     if argv[:2] == ["git", "commit"] and data["boundary"] == "after-commit":
         die()
     return result
 
 with file_lock(engine.store.path / "locks" / (data["task"]["track"] + ".lock")):
-    with patch.object(application.os, "replace", replace), patch.object(application, "command", command):
+    with (
+        patch.object(application.os, "replace", replace),
+        patch.object(application, "write_json", write_json),
+        patch.object(application, "command", command),
+    ):
         engine.apply_changes(
             data["task"], workspace, data["changes"], data["repair"],
             expected_head=data["head"], result=data["result"]
@@ -68,6 +92,7 @@ def interrupt(case, engine, task, workspace, changes, boundary, repair=None):
     payload = {
         "state": str(engine.store.path),
         "workspace": str(workspace),
+        "journal": str(application.journal_path(engine, task["track"])),
         "task": task,
         "head": command(["git", "rev-parse", "HEAD"], workspace),
         "changes": changes,
@@ -99,6 +124,50 @@ def restore_original(workspace, record):
     if not index.is_absolute():
         index = workspace / index
     index.write_bytes(base64.b64decode(record["intent"]["index"]))
+
+
+def workspace_evidence(workspace):
+    files = {}
+    for path in sorted(workspace.rglob("*")):
+        relative = path.relative_to(workspace)
+        if relative.parts[0] == ".git":
+            continue
+        metadata = path.lstat()
+        if path.is_symlink():
+            content = ("symlink", os.readlink(path))
+        elif path.is_file():
+            content = ("file", path.read_bytes())
+        else:
+            content = ("directory", None)
+        files[str(relative)] = (metadata.st_mode & 0o777, content)
+    index = Path(command(["git", "rev-parse", "--git-path", "index"], workspace))
+    if not index.is_absolute():
+        index = workspace / index
+    merge_head = Path(command(["git", "rev-parse", "--git-path", "MERGE_HEAD"], workspace))
+    if not merge_head.is_absolute():
+        merge_head = workspace / merge_head
+    return {
+        "files": files,
+        "head": command(["git", "rev-parse", "HEAD"], workspace),
+        "index": index.read_bytes() if index.exists() else None,
+        "merge_head": merge_head.read_bytes() if merge_head.exists() else None,
+    }
+
+
+def successor(case, old_task):
+    case.s.finish(old_task, {"summary": "Prior task ended after proposal interruption"})
+    with case.s.transaction() as connection:
+        case.s.enqueue(
+            connection,
+            old_task["track"],
+            "work",
+            "Continue after interrupted proposal",
+            "proposal-recovery-successor",
+        )
+    task = case.s.claim("proposal-recovery-successor")
+    case.assertIsNotNone(task)
+    case.assertNotEqual(task["id"], old_task["id"])
+    return task
 
 
 def assert_retry_reuses_receipt(case, engine, task, workspace, changes, before, repair=None):
@@ -150,6 +219,221 @@ class InterruptedProposalTests(unittest.TestCase):
                     action()
             verify.assert_not_called()
 
+    def test_other_task_adopts_exact_applying_after_state_instead_of_blocking(self):
+        engine, old_task, workspace = self.workspace()
+        changes = self.changes(workspace)
+        record = interrupt(self, engine, old_task, workspace, changes, "after-stage")
+        self.assertEqual(record["phase"], "applying")
+        self.assertTrue(
+            all(
+                application.file_state(workspace / row["path"]) == row["after"]
+                for row in record["intent"]["files"]
+            )
+        )
+        new_task = successor(self, old_task)
+        with patch(
+            "todo_flow.engine.run_worker",
+            return_value={"summary": "Successor task ran after proposal adoption"},
+        ) as worker:
+            engine.execute(new_task)
+        worker.assert_called_once()
+        recovered = application.read(engine, old_task["track"])
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(recovered["intent"]["task"], old_task["id"])
+        self.assertNotEqual(recovered["head"], record["intent"]["before_head"])
+        self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), recovered["head"])
+
+    def test_other_task_closes_exact_before_state_as_restored(self):
+        engine, old_task, workspace = self.workspace()
+        record = interrupt(
+            self, engine, old_task, workspace, self.changes(workspace), "after-intent"
+        )
+        before_head = record["intent"]["before_head"]
+        self.assertEqual(record["phase"], "applying")
+        self.assertEqual(snapshot(workspace), record["intent"]["snapshot"])
+        new_task = successor(self, old_task)
+        with patch(
+            "todo_flow.engine.run_worker", return_value={"summary": "New task after restore"}
+        ) as worker:
+            engine.execute(new_task)
+        worker.assert_called_once()
+        self.assertEqual(application.read(engine, old_task["track"])["phase"], "restored")
+        self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), before_head)
+
+    def test_other_task_rejects_written_but_unstaged_mixed_state(self):
+        engine, old_task, workspace = self.workspace()
+        record = interrupt(
+            self, engine, old_task, workspace, self.changes(workspace), "after-files"
+        )
+        self.assertEqual(record["phase"], "applying")
+        new_task = successor(self, old_task)
+
+        with self.assertRaises(Conflict) as raised:
+            engine.gate(new_task)
+
+        self.assertIn("matches neither", str(raised.exception))
+        self.assertEqual(application.read(engine, old_task["track"])["phase"], "applying")
+
+    def test_other_task_mixed_state_conflict_has_inspect_and_resume_commands(self):
+        engine, old_task, workspace = self.workspace()
+        record = interrupt(
+            self, engine, old_task, workspace, self.changes(workspace), "after-stage"
+        )
+        (workspace / "new.py").write_text("# unexpected edit\n")
+        new_task = successor(self, old_task)
+        journal = application.journal_path(engine, old_task["track"]).read_bytes()
+        before = snapshot(workspace)
+        with self.assertRaises(Conflict) as raised:
+            engine.gate(new_task)
+        self.assertIn("git -C", str(raised.exception))
+        self.assertIn("todo-flow --state", str(raised.exception))
+        self.assertEqual(snapshot(workspace), before)
+        self.assertEqual(application.journal_path(engine, old_task["track"]).read_bytes(), journal)
+        self.assertEqual(record["phase"], "applying")
+
+    def test_other_task_rejects_unrelated_worktree_drift_after_proposal_write(self):
+        engine, old_task, workspace = self.workspace()
+        record = interrupt(
+            self, engine, old_task, workspace, self.changes(workspace), "after-stage"
+        )
+        extra = workspace / "unrelated" / "자료 🌱.txt"
+        extra.parent.mkdir()
+        extra.write_text("later work\n")
+        new_task = successor(self, old_task)
+        journal = application.journal_path(engine, old_task["track"]).read_bytes()
+        before = snapshot(workspace)
+
+        with self.assertRaises(Conflict):
+            engine.gate(new_task)
+
+        self.assertEqual(snapshot(workspace), before)
+        self.assertEqual(application.journal_path(engine, old_task["track"]).read_bytes(), journal)
+        self.assertEqual(record["phase"], "applying")
+
+    def test_recovery_rejects_25_adversarial_states_without_mutating_evidence(self):
+        variants = [
+            "target-bytes",
+            "target-mode",
+            "target-missing",
+            "new-file-missing",
+            "untracked-simple",
+            "untracked-nested",
+            "untracked-case",
+            "untracked-unicode-nfc",
+            "untracked-unicode-nfd",
+            "untracked-newline",
+            "untracked-tab",
+            "untracked-leading-space",
+            "untracked-trailing-space",
+            "untracked-emoji",
+            "untracked-hidden",
+            "untracked-long-name",
+            "untracked-symlink",
+            "unrelated-worktree-edit",
+            "written-but-unstaged",
+            "index-reset-to-before",
+            "index-empty",
+            "head-generation-change",
+            "merge-marker-change",
+            "journal-fingerprint-change",
+            "journal-shape-change",
+        ]
+        for variant in variants:
+            with self.subTest(counterexample=variant):
+                case = InterruptedProposalTests()
+                case.setUp()
+                try:
+                    engine, old_task, workspace = case.workspace()
+                    record = interrupt(
+                        case, engine, old_task, workspace, case.changes(workspace), "after-stage"
+                    )
+                    journal_path = application.journal_path(engine, old_task["track"])
+                    if variant == "target-bytes":
+                        (workspace / "calc.py").write_text("changed\n")
+                    elif variant == "target-mode":
+                        (workspace / "calc.py").chmod(0o755)
+                    elif variant == "target-missing":
+                        (workspace / "calc.py").unlink()
+                    elif variant == "new-file-missing":
+                        (workspace / "new.py").unlink()
+                    elif variant.startswith("untracked-"):
+                        names = {
+                            "untracked-simple": "extra.txt",
+                            "untracked-nested": "extra/nested/file.txt",
+                            "untracked-case": "ExtraCase.TXT",
+                            "untracked-unicode-nfc": "café.txt",
+                            "untracked-unicode-nfd": "cafe\u0301.txt",
+                            "untracked-newline": "line\nbreak.txt",
+                            "untracked-tab": "tab\tname.txt",
+                            "untracked-leading-space": " leading.txt",
+                            "untracked-trailing-space": "trailing .txt",
+                            "untracked-emoji": "🌱.txt",
+                            "untracked-hidden": ".extra",
+                            "untracked-long-name": "x" * 100 + ".txt",
+                            "untracked-symlink": "extra-link",
+                        }
+                        extra = workspace / names[variant]
+                        extra.parent.mkdir(parents=True, exist_ok=True)
+                        if variant == "untracked-symlink":
+                            extra.symlink_to("missing-target")
+                        else:
+                            extra.write_text("later work\n")
+                    elif variant == "unrelated-worktree-edit":
+                        extra = workspace / "calc.py.copy"
+                        extra.write_text("unrelated later file\n")
+                    elif variant == "written-but-unstaged":
+                        restore_original(workspace, record)
+                        for row in record["intent"]["files"]:
+                            target = workspace / row["path"]
+                            after = row["after"]
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            target.write_bytes(base64.b64decode(after["bytes"]))
+                            target.chmod(after["mode"])
+                    elif variant == "index-reset-to-before":
+                        restore_original(workspace, record)
+                        for row in record["intent"]["files"]:
+                            target = workspace / row["path"]
+                            after = row["after"]
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            target.write_bytes(base64.b64decode(after["bytes"]))
+                            target.chmod(after["mode"])
+                    elif variant == "index-empty":
+                        index = Path(
+                            command(["git", "rev-parse", "--git-path", "index"], workspace)
+                        )
+                        if not index.is_absolute():
+                            index = workspace / index
+                        index.write_bytes(b"invalid index")
+                    elif variant == "head-generation-change":
+                        command(
+                            ["git", "commit", "--allow-empty", "-m", "later generation"], workspace
+                        )
+                    elif variant == "merge-marker-change":
+                        git_dir = Path(
+                            command(["git", "rev-parse", "--absolute-git-dir"], workspace)
+                        )
+                        head = command(["git", "rev-parse", "HEAD"], workspace)
+                        (git_dir / "MERGE_HEAD").write_text(head + "\n")
+                    elif variant == "journal-fingerprint-change":
+                        payload = json.loads(journal_path.read_text())
+                        payload["id"] = "0" * 64
+                        journal_path.write_text(json.dumps(payload))
+                    elif variant == "journal-shape-change":
+                        payload = json.loads(journal_path.read_text())
+                        payload["intent"]["files"] = {"path": "not-a-list"}
+                        journal_path.write_text(json.dumps(payload))
+
+                    new_task = successor(case, old_task)
+                    before_workspace = workspace_evidence(workspace)
+                    before_journal = journal_path.read_bytes()
+                    with self.assertRaises(Conflict):
+                        engine.gate(new_task)
+                    self.assertEqual(workspace_evidence(workspace), before_workspace)
+                    self.assertEqual(journal_path.read_bytes(), before_journal)
+                    self.assertEqual(record["phase"], "applying")
+                finally:
+                    case.tearDown()
+
     def test_real_file_replacement_interrupt_preserves_partial_files_and_blocks_adoption(self):
         engine, task, workspace = self.workspace()
         before = snapshot(workspace)
@@ -166,7 +450,7 @@ class InterruptedProposalTests(unittest.TestCase):
         )
         partial = snapshot(workspace)
         self.assert_blocked(engine, task, workspace)
-        with self.assertRaisesRegex(Conflict, "Interrupted proposal preserved"):
+        with self.assertRaisesRegex(Conflict, "interrupted proposal preserved"):
             application.recover(engine, task, workspace)
         with self.assertRaises(Conflict):
             engine.apply_changes(task, workspace, changes)
@@ -179,18 +463,15 @@ class InterruptedProposalTests(unittest.TestCase):
         engine.apply_changes(task, workspace, changes)
         self.assertEqual((workspace / "new.py").read_text(), "# 새 파일 🌿\n")
 
-    def test_real_precommit_interrupt_does_not_adopt_all_written_and_staged_files(self):
+    def test_real_precommit_interrupt_adopts_exact_written_and_staged_files(self):
         engine, task, workspace = self.workspace()
         record = interrupt(self, engine, task, workspace, self.changes(workspace), "before-commit")
         self.assertEqual(record["phase"], "ready")
         self.assertTrue((workspace / "new.py").exists())
-        self.assert_blocked(engine, task, workspace)
-        before = snapshot(workspace)
-        with self.assertRaisesRegex(Conflict, "Interrupted proposal preserved"):
-            application.recover(engine, task, workspace)
-        self.assertEqual(snapshot(workspace), before)
-        restore_original(workspace, record)
-        self.assertIsNone(application.recover(engine, task, workspace))
+        recovered = application.recover(engine, task, workspace)
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(application.read(engine, task["track"])["phase"], "committed")
+        self.assertNotEqual(recovered["head"], record["intent"]["before_head"])
 
     def test_real_postcommit_interrupt_recovers_exact_commit_without_replaying_worker(self):
         engine, task, workspace = self.workspace()
@@ -210,7 +491,6 @@ class InterruptedProposalTests(unittest.TestCase):
         record = interrupt(self, engine, task, workspace, changes, "after-commit")
         head = command(["git", "rev-parse", "HEAD"], workspace)
         self.assertNotEqual(head, record["intent"]["before_head"])
-        self.assert_blocked(engine, task, workspace)
         recovered = Engine(self.s)
         with patch("todo_flow.engine.run_worker") as worker:
             recovered.execute(task)
@@ -443,21 +723,27 @@ class InterruptedRepairTests(unittest.TestCase):
             ["review"],
         )
 
-    def test_precommit_merge_restoration_restores_original_conflict_checkpoint(self):
+    def test_precommit_merge_interruption_adopts_exact_merge_after_state(self):
         self.ready()
         task, workspace = self.repair_task()
         repair = integration.prepare(self.e, task, workspace)
         original = snapshot(workspace)
         changes = [{"path": "calc.py", "content": test_integration_repair.RESOLVED}]
         record = interrupt(self, self.e, task, workspace, changes, "before-commit", repair)
-        with self.assertRaises(Conflict):
-            application.recover(self.e, task, workspace)
-        restore_original(workspace, record)
-        self.assertEqual(snapshot(workspace), original)
-        self.assertIsNone(application.recover(self.e, task, workspace))
-        resumed = integration.prepare(self.e, task, workspace)
-        self.assertEqual(resumed["checkout"], repair["checkout"])
-        self.assertTrue(integration.unmerged(workspace))
+        self.assertEqual(record["phase"], "ready")
+        recovered = application.recover(self.e, task, workspace)
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(application.read(self.e, task["track"])["phase"], "committed")
+        self.assertFalse(integration.merge_head(workspace))
+        pending = integration.pending(self.s.track(task["track"]))
+        self.assertEqual(pending["status"], "integration-repair")
+        self.assertEqual(pending["resolved_tree"], record["resolved_tree"])
+        self.assertEqual(
+            command(["git", "show", "-s", "--format=%P", "HEAD"], workspace).split(),
+            [repair["candidate"], repair["base"]],
+        )
+        self.assertEqual((workspace / "calc.py").read_text(), test_integration_repair.RESOLVED)
+        self.assertNotEqual(snapshot(workspace), original)
 
 
 class CompleteWorkerOutputTests(unittest.TestCase):
