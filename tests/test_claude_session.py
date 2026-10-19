@@ -62,7 +62,7 @@ violations=[]
 if (root/'forbidden-tool').exists():
  tool=(root/'forbidden-tool').read_text()
  violations.append(row('assistant',message={'content':[{'type':'tool_use','name':tool,'id':'forbidden'}]}))
-answer=row('assistant',message={'model':'synthetic-claude','stop_reason':'end_turn','content':[{'type':'text','text':json.dumps({'summary':'Read-only interactive result','changes':[{'path':'calc.py','content':'# proposal\n'*(1 if violations else 20000)}]})}]}))
+answer=row('assistant',message={'model':'synthetic-claude','stop_reason':'end_turn','content':[{'type':'text','text':json.dumps({'summary':'Read-only interactive result','changes':[{'path':'calc.py','content':'# proposal\n'*(1 if violations else 20000)}]})}]})
 if (root/'partial').exists():emit(answer);time.sleep(60)
 emit(*violations,answer,row('system',subtype='turn_duration',durationMs=123))
 time.sleep(60)
