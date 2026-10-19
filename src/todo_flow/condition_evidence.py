@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 
-from . import verification_logs as logs
-from . import verification_outcomes
+from . import repositories, verification_logs as logs, verification_outcomes
+from .store import Conflict
 
 
 LOG_REFERENCE_SCHEMA = {
@@ -81,37 +81,40 @@ def artifact(directory, reference, stream):
     return {"stream": stream, "path": str(path), "sha256": digest.hexdigest()}
 
 
-def _checks(track):
-    verification = _decode(track.get("verification")) or {}
+def _checks(track, config=None):
+    try:
+        verification = _decode(track.get("verification")) or {}
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(verification, dict):
+        return []
     if verification.get("head") != track["head"]:
         return []
     records = verification.get("repositories")
-    if isinstance(records, dict):
-        names = list(records)
+    if isinstance(config, dict) and repositories.multi(config):
+        if not isinstance(records, dict):
+            return []
+        try:
+            names = [row["name"] for row in repositories.specs(config)]
+            states = repositories.all_states(track, config)
+        except (Conflict, ValueError, TypeError, KeyError):
+            return []
         heads = verification.get("heads")
         if (
             len(names) < 2
+            or set(records) != set(names)
             or not isinstance(heads, dict)
             or set(heads) != set(names)
             or heads.get(names[0]) != track["head"]
             or not verification_outcomes.passed(verification)
         ):
             return []
-        raw_state = _decode(track.get("repo_state")) or {}
-        if not isinstance(raw_state, dict):
-            return []
         result = []
         for repository in names:
             record = records.get(repository)
             if not isinstance(record, dict) or not verification_outcomes.passed(record):
                 return []
-            if repository == names[0]:
-                current_head = track["head"]
-            else:
-                state = raw_state.get(repository)
-                if not isinstance(state, dict):
-                    return []
-                current_head = state.get("head")
+            current_head = states[repository]["head"]
             if record.get("head") != heads.get(repository) or heads[repository] != current_head:
                 return []
             checks = record.get("checks", [])
@@ -119,6 +122,8 @@ def _checks(track):
                 return []
             result.extend((repository, heads[repository], check) for check in checks)
         return result
+    if isinstance(records, dict):
+        return []
     return [
         (None, track["head"], check)
         for check in verification.get("checks", [])
@@ -128,10 +133,10 @@ def _checks(track):
     ]
 
 
-def available(directory, track):
+def available(directory, track, config=None):
     """Offer unassigned artifacts; a reviewer must explicitly select a condition."""
     result = []
-    for repository, candidate_head, check in _checks(track):
+    for repository, candidate_head, check in _checks(track, config):
         reference = check["logReference"]
         for stream in logs.STREAMS:
             try:
@@ -151,7 +156,7 @@ def available(directory, track):
     return result
 
 
-def validate(directory, track, condition, reference):
+def validate(directory, track, condition, reference, config=None):
     """Reject incomplete, stale, foreign or changed explicit references."""
     required = set(REFERENCE_SCHEMA["required"])
     allowed = required | {"repository"}
@@ -189,7 +194,7 @@ def validate(directory, track, condition, reference):
         reference["logReference"] == check["logReference"]
         and repository == name
         and reference["head"] == candidate_head
-        for name, candidate_head, check in _checks(track)
+        for name, candidate_head, check in _checks(track, config)
     ):
         raise ValueError("Evidence does not belong to a recorded candidate verification execution")
     observed = artifact(directory, reference["logReference"], reference["stream"])
@@ -197,7 +202,7 @@ def validate(directory, track, condition, reference):
         raise ValueError("Evidence artifact path or SHA-256 does not match the sealed original")
 
 
-def inspect_row(directory, track, row):
+def inspect_row(directory, track, row, config=None):
     """Never trust a persisted integrity label; recompute it from current originals."""
     references = row.get("evidenceRefs")
     if references is None or references == []:
@@ -206,24 +211,24 @@ def inspect_row(directory, track, row):
         if not isinstance(references, list):
             raise ValueError("evidenceRefs must be an array")
         for reference in references:
-            validate(directory, track, row["id"], reference)
+            validate(directory, track, row["id"], reference, config)
     except (OSError, ValueError, TypeError, KeyError) as error:
         return {"status": "invalid", "diagnostic": str(error)[:1000]}
     return {"status": "integrity-checked"}
 
 
-def require_rows(directory, track, rows):
+def require_rows(directory, track, rows, config=None):
     for row in rows:
-        status = inspect_row(directory, track, row)
+        status = inspect_row(directory, track, row, config)
         if status["status"] == "invalid":
             raise ValueError("Invalid condition evidence: " + status["diagnostic"])
 
 
-def review_view(directory, track):
+def review_view(directory, track, config=None):
     review = copy.deepcopy(_decode(track.get("review")))
     if review is None:
         return None
     for key in ("conditions", "additional_assessments"):
         for row in review.get(key, []):
-            row["evidenceIntegrity"] = inspect_row(directory, track, row)
+            row["evidenceIntegrity"] = inspect_row(directory, track, row, config)
     return review

@@ -41,6 +41,13 @@ class StoreTests(unittest.TestCase):
             self.s.register(modified)
         self.assertEqual(self.s.register(modified, 1)["revision"], 2)
 
+    def test_config_reuses_existing_connection_without_reopening_store_lock(self):
+        expected = {"github": None, "base": "main", "endpoint": "review"}
+        self.s.configure(expected)
+        with self.s.connect() as connection:
+            with patch.object(self.s, "connect", side_effect=AssertionError("reopened")):
+                self.assertEqual(self.s.config(connection), expected)
+
     def test_concurrent_claim_only_one_winner(self):
         self.s.start("addition", "same")
         self.assertTrue(self.s.start("addition", "same")["existing"])

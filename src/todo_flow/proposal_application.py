@@ -61,7 +61,7 @@ def read_batch(engine, track):
         ) from error
 
 
-def begin_batch(engine, task, base_heads, changes, result):
+def begin_batch(engine, task, base_heads, grouped, changes, result):
     intent = {
         "track": task["track"],
         "task": task["id"],
@@ -69,7 +69,7 @@ def begin_batch(engine, task, base_heads, changes, result):
         "generation": task["generation"],
         "base_heads": dict(base_heads),
         "aggregate_head": repositories.fingerprint(base_heads),
-        "repositories": sorted({row["path"].partition(":")[0] for row in changes}),
+        "repositories": sorted(grouped),
         "changes": changes,
         "result": result,
     }

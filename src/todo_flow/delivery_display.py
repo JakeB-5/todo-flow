@@ -26,14 +26,21 @@ def summary(phase, reason=None, detail=None):
     }
 
 
-def landing_matches(c, track, review, landing):
+def landing_matches(c, track, review, landing, config):
     # Same local proof as cleanup.confirmed_landing, without its finished/triage
     # preconditions: landing must also be visible before completion adoption.
     repository_heads = review.get("heads")
     if isinstance(repository_heads, dict):
-        names = list(repository_heads)
+        if not isinstance(config, dict) or not repositories.multi(config):
+            return False
+        try:
+            names = [row["name"] for row in repositories.specs(config)]
+            states = repositories.all_states(track, config)
+        except (Conflict, ValueError, TypeError, KeyError):
+            return False
         if (
             len(names) < 2
+            or set(repository_heads) != set(names)
             or review.get("verdict") != "met"
             or review.get("head") != track["head"]
             or review.get("documentRevision") != track["revision"]
@@ -45,16 +52,7 @@ def landing_matches(c, track, review, landing):
             or set(landing["repositories"]) != set(names)
         ):
             return False
-        try:
-            states = object_value(track.get("repo_state"))
-        except (ValueError, TypeError):
-            return False
-        current_heads = {names[0]: track["head"]}
-        for name in names[1:]:
-            state = states.get(name)
-            if not isinstance(state, dict) or not isinstance(state.get("head"), str):
-                return False
-            current_heads[name] = state["head"]
+        current_heads = {name: states[name]["head"] for name in names}
         if repository_heads != current_heads:
             return False
         for name, candidate in current_heads.items():
@@ -192,7 +190,7 @@ def _delivery_summary(store, c, track_id):
         return (
             summary("check-needed", "landing-missing") if finished or report else summary("pending")
         )
-    if not landing_matches(c, track, review, landing):
+    if not landing_matches(c, track, review, landing, store.config(c)):
         return summary("check-needed", "landing-unconfirmed")
     key = state_key(store, c, track_id)
     cleared = c.execute(

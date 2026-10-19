@@ -519,7 +519,9 @@ class Engine:
                 if actual != heads[name]:
                     raise Conflict("Repository candidate changed before proposal replay: " + name)
                 prepare_changes(workspace[name], items, declarations[name]["writable"], heads[name])
-            batch = _batch or proposal_application.begin_batch(self, task, heads, changes, result)
+            batch = _batch or proposal_application.begin_batch(
+                self, task, heads, grouped, changes, result
+            )
             for name in declarations:
                 items = grouped.get(name)
                 if not items:
@@ -602,8 +604,8 @@ class Engine:
                 t["id"],
                 json.loads(t["verification"]) if t["verification"] else None,
             ),
-            "evidence_artifacts": condition_evidence.available(self.store.path, t),
-            "review": condition_evidence.review_view(self.store.path, t),
+            "evidence_artifacts": condition_evidence.available(self.store.path, t, self.config),
+            "review": condition_evidence.review_view(self.store.path, t, self.config),
             "landing": json.loads(t["landing"]) if t["landing"] else None,
             "recent_results": [
                 json.loads(r["body"])
@@ -709,7 +711,7 @@ class Engine:
                 repositories.require_current(self, t, workspaces, t["verification"])
             else:
                 require_current(self.config, t["workspace"], t["head"], t["verification"])
-        condition_evidence.require_rows(self.store.path, t, rows)
+        condition_evidence.require_rows(self.store.path, t, rows, self.config)
         review = {
             "head": t["head"],
             **(
@@ -770,6 +772,7 @@ class Engine:
                 self.store.path,
                 t,
                 review.get("conditions", []) + review.get("additional_assessments", []),
+                self.config,
             )
         except ValueError as error:
             raise Conflict(str(error)) from error

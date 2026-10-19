@@ -44,9 +44,11 @@ class Store:
             c.execute("BEGIN IMMEDIATE")
             yield c
 
-    def config(self):
-        with self.connect() as c:
-            row = c.execute("SELECT body FROM config WHERE id=1").fetchone()
+    def config(self, connection=None):
+        if connection is None:
+            with self.connect() as c:
+                return self.config(c)
+        row = connection.execute("SELECT body FROM config WHERE id=1").fetchone()
         if not row:
             raise ValueError("Project not initialized")
         from .release import check_config
