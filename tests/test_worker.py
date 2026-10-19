@@ -1,16 +1,188 @@
 import copy
 import json
+import os
 import tempfile
 import unittest
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from todo_flow.supervised_process import SupervisedProcess
 from unittest.mock import patch
 
-from todo_flow.worker import SCHEMA, codex_schema, run_worker, worker_error
+from todo_flow.worker import (
+    SCHEMA,
+    codex_schema,
+    codex_workspace_tmpdir,
+    run_worker,
+    validate_codex_sandbox,
+    worker_error,
+)
 
 
 class WorkerAdapterTests(unittest.TestCase):
+    def run_codex(self, root, environment):
+        root = Path(root)
+        workspace = root / "worktree"
+        workspace.mkdir()
+        state = root / "state"
+        observed = {}
+
+        def spawn(args, **kwargs):
+            observed["args"] = args
+            observed["tmpdir"] = kwargs["env"].get("TMPDIR")
+            observed["prompt"] = kwargs["stdin"].read()
+            Path(args[args.index("--output-last-message") + 1]).write_text(
+                json.dumps({"summary": "Inspected and verified"})
+            )
+            return SupervisedProcess([sys.executable, "-c", "pass"], **kwargs)
+
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch("todo_flow.worker.SupervisedProcess", spawn),
+        ):
+            result = run_worker(
+                {"worker": {"type": "codex"}, "worker_launcher": "headless"},
+                {"workspace": str(workspace)},
+                {"attempt": "sandbox-test", "kind": "assess"},
+                state,
+                lambda _: None,
+            )
+        return result, workspace, observed
+
+    def test_codex_sandbox_defaults_to_read_only_and_keeps_inherited_tmpdir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            environment = os.environ.copy()
+            environment.pop("TODO_FLOW_CODEX_SANDBOX", None)
+            environment["TMPDIR"] = "/host/temp"
+            result, workspace, observed = self.run_codex(tmp, environment)
+
+            self.assertEqual(result["summary"], "Inspected and verified")
+            args = observed["args"]
+            self.assertEqual(args[args.index("--sandbox") + 1], "read-only")
+            self.assertEqual(observed["tmpdir"], "/host/temp")
+            self.assertFalse((workspace / ".tmp").exists())
+
+    def test_workspace_write_sandbox_uses_worktree_tmpdir_and_allows_tests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            environment = os.environ.copy()
+            environment["TODO_FLOW_CODEX_SANDBOX"] = "workspace-write"
+            environment["TMPDIR"] = "/host/temp"
+            result, workspace, observed = self.run_codex(tmp, environment)
+
+            self.assertEqual(result["summary"], "Inspected and verified")
+            args = observed["args"]
+            self.assertEqual(args[args.index("--sandbox") + 1], "workspace-write")
+            tmpdir = Path(observed["tmpdir"])
+            self.assertEqual(tmpdir, (workspace / ".tmp").resolve())
+            self.assertTrue(tmpdir.is_dir())
+            self.assertIn("Workspace-write permits project tests", observed["prompt"])
+
+    def test_codex_sandbox_rejects_more_than_twenty_invalid_values(self):
+        invalid = [
+            "",
+            " ",
+            "read-only ",
+            " read-only",
+            "READ-ONLY",
+            "Workspace-Write",
+            "workspace_write",
+            "workspace write",
+            "workspace",
+            "readonly",
+            "read-only,workspace-write",
+            "--sandbox=workspace-write",
+            "/workspace-write",
+            "workspace-write\n",
+            "\nworkspace-write",
+            "workspаce-write",
+            "workspace\u2010write",
+            "workspace-write\u200b",
+            None,
+            True,
+            False,
+            0,
+            1,
+            3.14,
+            [],
+            {},
+            (),
+            set(),
+            b"read-only",
+            bytearray(b"read-only"),
+            object(),
+        ]
+        for value in invalid:
+            with self.subTest(value=repr(value)), self.assertRaises(ValueError):
+                validate_codex_sandbox(value)
+        self.assertEqual(validate_codex_sandbox("read-only"), "read-only")
+        self.assertEqual(validate_codex_sandbox("workspace-write"), "workspace-write")
+
+    def test_codex_workspace_tmpdir_rejects_symlink_and_non_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outside = root / "outside"
+            outside.mkdir()
+            symlink_workspace = root / "symlink-worktree"
+            symlink_workspace.mkdir()
+            (symlink_workspace / ".tmp").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                codex_workspace_tmpdir(symlink_workspace)
+
+            file_workspace = root / "file-worktree"
+            file_workspace.mkdir()
+            (file_workspace / ".tmp").write_text("not a directory")
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                codex_workspace_tmpdir(file_workspace)
+
+    def test_codex_workspace_tmpdir_is_exact_unicode_worktree_path_and_race_safe(self):
+        with tempfile.TemporaryDirectory(prefix="worker temp 한글 ") as tmp:
+            workspace = Path(tmp) / "nested" / "Repo Space"
+            workspace.mkdir(parents=True)
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                paths = list(pool.map(codex_workspace_tmpdir, [workspace] * 24))
+            expected = (workspace / ".tmp").resolve()
+            self.assertEqual(set(paths), {expected})
+            self.assertTrue(expected.is_dir())
+
+            next_generation = Path(tmp) / "nested" / "Repo Space generation 2"
+            next_generation.mkdir()
+            self.assertEqual(
+                codex_workspace_tmpdir(next_generation), (next_generation / ".tmp").resolve()
+            )
+
+    def test_codex_workspace_tmpdir_propagates_creation_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "worktree"
+            workspace.mkdir()
+            with patch.object(Path, "mkdir", side_effect=PermissionError("denied")):
+                with self.assertRaisesRegex(PermissionError, "denied"):
+                    codex_workspace_tmpdir(workspace)
+
+    def test_codex_sandbox_rejects_invalid_value_before_launcher_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "worktree"
+            workspace.mkdir()
+            for value in ("", "workspace-write-now", " read-only", "workspace-write\n"):
+                with self.subTest(value=value):
+                    environment = os.environ.copy()
+                    environment["TODO_FLOW_CODEX_SANDBOX"] = value
+                    with (
+                        patch.dict(os.environ, environment, clear=True),
+                        patch(
+                            "todo_flow.worker.select_launcher",
+                            side_effect=AssertionError("invalid sandbox reached launcher"),
+                        ) as select,
+                    ):
+                        with self.assertRaisesRegex(ValueError, "TODO_FLOW_CODEX_SANDBOX"):
+                            run_worker(
+                                {"worker": {"type": "codex"}, "worker_launcher": "headless"},
+                                {"workspace": str(workspace)},
+                                {"attempt": "invalid-sandbox", "kind": "assess"},
+                                Path(tmp) / "state",
+                                lambda _: None,
+                            )
+                    select.assert_not_called()
+
     def test_codex_schema_keeps_original_contract_and_nullable_optionals(self):
         original = copy.deepcopy(SCHEMA)
         schema = codex_schema()

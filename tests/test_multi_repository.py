@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
 from io import StringIO
@@ -27,7 +28,10 @@ from todo_flow.cleanup import owned_path
 from todo_flow import clean_integration
 from todo_flow import proposal_application
 from todo_flow import condition_evidence
-from todo_flow.delivery_display import delivery_summary
+from todo_flow.delivery_display import delivery_summary, landing_matches
+
+EXAMPLE_CORE_REPO = "core-service"
+EXAMPLE_REPORTING_REPO = "reporting-service"
 
 
 class MultiRepositoryTests(unittest.TestCase):
@@ -340,6 +344,10 @@ class MultiRepositoryTests(unittest.TestCase):
             [{"path": "service:calc.py", "content": "def multiply(a, b):\\n    return 99\\n"}],
             expected_head=context["aggregate_head"],
         )
+        self.assertEqual(
+            proposal_application.read_batch(self.engine, "addition")["intent"]["repositories"],
+            ["service"],
+        )
         self.assertEqual(command(["git", "rev-parse", "HEAD"], workspaces["core"]), core_before)
         self.assertNotEqual(
             command(["git", "rev-parse", "HEAD"], workspaces["service"]), service_before
@@ -370,6 +378,70 @@ class MultiRepositoryTests(unittest.TestCase):
         self.engine.update(task, verification=json.dumps(record))
         with self.assertRaises(Conflict):
             repositories.require_current(self.engine, self.s.track("addition"), workspaces, record)
+
+    def test_condition_evidence_reads_all_repository_heads_from_canonical_owner(self):
+        self.configure_repositories()
+        track = self.s.track("addition")
+        primary = "e" * 40
+        track["head"] = primary
+        secondary = "a" * 40
+        track["repo_state"] = encode({"service": {"head": secondary}})
+        check = {"ok": True, "logReference": {"track": "addition"}}
+        track["verification"] = {
+            "ok": True,
+            "head": primary,
+            "heads": {"core": primary, "service": secondary},
+            "repositories": {
+                name: {"ok": True, "head": head, "checks": [check]}
+                for name, head in (("core", primary), ("service", secondary))
+            },
+        }
+
+        checks = condition_evidence._checks(track, self.s.config())
+        self.assertEqual(
+            [(name, head) for name, head, _ in checks], [("core", primary), ("service", secondary)]
+        )
+
+        track["repo_state"] = encode({"service": {"head": "b" * 40}})
+        self.assertEqual(condition_evidence._checks(track, self.s.config()), [])
+        self.assertEqual(condition_evidence._checks(track), [])
+
+    def test_landing_summary_uses_canonical_heads_and_fails_closed(self):
+        self.configure_repositories()
+        track = self.s.track("addition")
+        primary = "e" * 40
+        track["head"] = primary
+        secondary = "c" * 40
+        track["repo_state"] = encode({"service": {"head": secondary}})
+        heads = {"core": primary, "service": secondary}
+        review = {
+            "heads": heads,
+            "verdict": "met",
+            "head": primary,
+            "documentRevision": track["revision"],
+        }
+        landing = {
+            "heads": heads,
+            "head": primary,
+            "status": "complete",
+            "repositories": {
+                name: {
+                    "head": head,
+                    "merged": head,
+                    "recovered": True,
+                    "baseBefore": head,
+                }
+                for name, head in heads.items()
+            },
+        }
+        config = self.s.config()
+        self.assertTrue(landing_matches(None, track, review, landing, config))
+        self.assertFalse(landing_matches(None, track, review, landing, None))
+
+        track["repo_state"] = encode({"service": {"head": "d" * 40}})
+        self.assertFalse(landing_matches(None, track, review, landing, config))
+        track["repo_state"] = encode({"service": []})
+        self.assertFalse(landing_matches(None, track, review, landing, config))
 
     def test_publish_pushes_each_repository_branch(self):
         self.configure_repositories()
@@ -422,7 +494,7 @@ class MultiRepositoryTests(unittest.TestCase):
         review = json.loads(self.s.track("addition")["review"])
         self.assertEqual(
             condition_evidence.inspect_row(
-                self.s.path, self.s.track("addition"), review["conditions"][0]
+                self.s.path, self.s.track("addition"), review["conditions"][0], self.s.config()
             )["status"],
             "integrity-checked",
         )
@@ -670,7 +742,7 @@ class CodexExecAdapterTests(unittest.TestCase):
         self.bin.mkdir()
         self.workspaces = {}
         self.repositories = {}
-        for name in ("npl-core", "npl-sentinel"):
+        for name in (EXAMPLE_CORE_REPO, EXAMPLE_REPORTING_REPO):
             repo = self.root / f"{name}-repo"
             workspace = self.root / f"{name}-workspace"
             repo.mkdir()
@@ -681,7 +753,7 @@ class CodexExecAdapterTests(unittest.TestCase):
                 "base": "main",
                 "branch": f"todo/test-{name}",
                 "workspace": str(workspace),
-                "head": "a" * 40 if name == "npl-core" else "b" * 40,
+                "head": "a" * 40 if name == EXAMPLE_CORE_REPO else "b" * 40,
                 "writable_patterns": ["*.md"],
             }
         self.heads = {name: row["head"] for name, row in self.repositories.items()}
@@ -698,7 +770,10 @@ args = sys.argv[1:]
 prompt = sys.stdin.read()
 capture = os.environ.get("FAKE_CODEX_CAPTURE")
 if capture:
-    Path(capture).write_text(json.dumps({"argv": args, "prompt": prompt}), encoding="utf-8")
+    Path(capture).write_text(
+        json.dumps({"argv": args, "prompt": prompt, "tmpdir": os.environ.get("TMPDIR")}),
+        encoding="utf-8",
+    )
 time.sleep(float(os.environ.get("FAKE_CODEX_SLEEP", "0")))
 raw = os.environ.get("FAKE_CODEX_RAW") == "1"
 response = os.environ.get("FAKE_CODEX_RESPONSE", "{}")
@@ -740,8 +815,8 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         return {
             "worker_protocol": 2,
             "task": {"id": "task-1", "kind": kind, "purpose": "Test adapter", "attempt": "a1"},
-            "workspace": str(self.workspaces["npl-core"]),
-            "head": heads["npl-core"],
+            "workspace": str(self.workspaces[EXAMPLE_CORE_REPO]),
+            "head": heads[EXAMPLE_CORE_REPO],
             "paths": {"document": str(self.root / "document.json")},
             "repositories": dict(self.repositories),
             "repository_heads": heads,
@@ -750,13 +825,23 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
             "language": "ko",
         }
 
-    def invoke(self, context, response, *, kind="assess", timeout="5", raw_response=False):
+    def invoke(
+        self,
+        context,
+        response,
+        *,
+        kind="assess",
+        timeout="5",
+        raw_response=False,
+        sandbox="read-only",
+    ):
         capture = self.root / f"capture-{uuid.uuid4().hex}.json"
         env = os.environ.copy()
         env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
         env["FAKE_CODEX_CAPTURE"] = str(capture)
         env["FAKE_CODEX_RESPONSE"] = response if isinstance(response, str) else json.dumps(response)
         env["FAKE_CODEX_RAW"] = "1" if raw_response else "0"
+        env["TODO_FLOW_CODEX_SANDBOX"] = sandbox
         command = [
             sys.executable,
             str(self.adapter),
@@ -801,7 +886,7 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
     def test_watch_task_is_accepted_and_cannot_change_files(self):
         result, _ = self.invoke(self.context("watch"), {"summary": "condition not met yet"})
         self.assertEqual(result.returncode, 0, result.stderr)
-        change = {"changes": [self.full_change("npl-core:note.md")], "summary": "x"}
+        change = {"changes": [self.full_change(f"{EXAMPLE_CORE_REPO}:note.md")], "summary": "x"}
         result, _ = self.invoke(self.context("watch"), change)
         self.assertNotEqual(result.returncode, 0)
 
@@ -846,8 +931,8 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
                 {
                     "summary": "two repository proposal",
                     "changes": [
-                        self.full_change("npl-core:README.md", "core\n"),
-                        self.full_change("npl-sentinel:README.md", "sentinel\n"),
+                        self.full_change(f"{EXAMPLE_CORE_REPO}:README.md", "core\n"),
+                        self.full_change(f"{EXAMPLE_REPORTING_REPO}:README.md", "sentinel\n"),
                     ],
                 },
             ),
@@ -873,15 +958,30 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
                 self.assertEqual(argv[argv.index("--model") + 1], "gpt-6-luna")
                 self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
                 self.assertIn('model_reasoning_effort="max"', argv)
-                self.assertIn(str(self.workspaces["npl-sentinel"]), argv)
-                self.assertIn("npl-core", call["prompt"])
+                self.assertIn(str(self.workspaces[EXAMPLE_REPORTING_REPO]), argv)
+                self.assertIn(EXAMPLE_CORE_REPO, call["prompt"])
                 self.assertIn("Never inspect secret material", call["prompt"])
                 self.assertIn("shell history", call["prompt"])
+
+    def test_codex_example_uses_workspace_write_and_primary_worktree_tmpdir(self):
+        result, capture = self.invoke(
+            self.context("work"),
+            {"summary": "verified tests", "changes": []},
+            kind="work",
+            sandbox="workspace-write",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        call = json.loads(capture.read_text(encoding="utf-8"))
+        self.assertEqual(call["argv"][call["argv"].index("--sandbox") + 1], "workspace-write")
+        expected_tmpdir = (self.workspaces[EXAMPLE_CORE_REPO] / ".tmp").resolve()
+        self.assertEqual(Path(call["tmpdir"]), expected_tmpdir)
+        self.assertTrue(expected_tmpdir.is_dir())
+        self.assertIn("Workspace-write permits project tests", call["prompt"])
 
     def test_malformed_context_and_proposal_counterexamples_fail_closed(self):
         valid_work = {
             "summary": "change",
-            "changes": [self.full_change("npl-core:README.md")],
+            "changes": [self.full_change(f"{EXAMPLE_CORE_REPO}:README.md")],
         }
         cases = []
 
@@ -906,8 +1006,8 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         bad_context("repository list instead of map", lambda value: value.update(repositories=[]))
         bad_context(
             "duplicate repository workspace",
-            lambda value: value["repositories"]["npl-sentinel"].update(
-                workspace=value["repositories"]["npl-core"]["workspace"]
+            lambda value: value["repositories"][EXAMPLE_REPORTING_REPO].update(
+                workspace=value["repositories"][EXAMPLE_CORE_REPO]["workspace"]
             ),
         )
         bad_context("missing repository head", lambda value: value.update(repository_heads={}))
@@ -917,7 +1017,7 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         bad_context("primary head disagreement", lambda value: value.update(head="f" * 40))
         bad_context(
             "missing repository root",
-            lambda value: value["repositories"]["npl-core"].update(path=""),
+            lambda value: value["repositories"][EXAMPLE_CORE_REPO].update(path=""),
         )
         cases.append(("malformed input JSON", "{", {"summary": "unused"}, "assess", False))
         cases.append(
@@ -948,7 +1048,7 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
                 "summary": "bad replacement",
                 "changes": [
                     {
-                        "path": "npl-core:README.md",
+                        "path": f"{EXAMPLE_CORE_REPO}:README.md",
                         "format": "replace-v1",
                         "base_head": "short",
                         "sha256": "0" * 64,
@@ -959,14 +1059,14 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
             kind="work",
         )
         invalid_paths = (
-            ("repository name case", "NPL-core:README.md"),
+            ("repository name case", f"{EXAMPLE_CORE_REPO.upper()}:README.md"),
             ("unknown repository name", "ghost:README.md"),
             ("missing repository separator", "README.md"),
-            ("parent traversal", "npl-core:../README.md"),
-            ("absolute path", "npl-core:/tmp/README.md"),
-            ("backslash path", "npl-core:docs\\README.md"),
-            ("decomposed unicode path", "npl-core:e\u0301.md"),
-            ("NUL path", "npl-core:bad\u0000.md"),
+            ("parent traversal", f"{EXAMPLE_CORE_REPO}:../README.md"),
+            ("absolute path", f"{EXAMPLE_CORE_REPO}:/tmp/README.md"),
+            ("backslash path", f"{EXAMPLE_CORE_REPO}:docs\\README.md"),
+            ("decomposed unicode path", f"{EXAMPLE_CORE_REPO}:e\u0301.md"),
+            ("NUL path", f"{EXAMPLE_CORE_REPO}:bad\u0000.md"),
         )
         for name, path in invalid_paths:
             bad_output(
@@ -977,8 +1077,8 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
             {
                 "summary": "aliases",
                 "changes": [
-                    self.full_change("npl-core:Readme.md"),
-                    self.full_change("npl-core:README.md"),
+                    self.full_change(f"{EXAMPLE_CORE_REPO}:Readme.md"),
+                    self.full_change(f"{EXAMPLE_CORE_REPO}:README.md"),
                 ],
             },
             kind="work",
@@ -988,18 +1088,18 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
             {
                 "summary": "nested",
                 "changes": [
-                    self.full_change("npl-core:docs.md"),
-                    self.full_change("npl-core:docs.md/child.md"),
+                    self.full_change(f"{EXAMPLE_CORE_REPO}:docs.md"),
+                    self.full_change(f"{EXAMPLE_CORE_REPO}:docs.md/child.md"),
                 ],
             },
             kind="work",
         )
         outside = self.root / "outside.md"
         outside.write_text("outside\n", encoding="utf-8")
-        (self.workspaces["npl-core"] / "escape.md").symlink_to(outside)
+        (self.workspaces[EXAMPLE_CORE_REPO] / "escape.md").symlink_to(outside)
         bad_output(
             "symlink escape",
-            {"summary": "symlink", "changes": [self.full_change("npl-core:escape.md")]},
+            {"summary": "symlink", "changes": [self.full_change(f"{EXAMPLE_CORE_REPO}:escape.md")]},
             kind="work",
         )
 
@@ -1057,12 +1157,12 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
 
     def test_new_repository_generation_reaches_codex_and_stale_binding_is_rejected(self):
         updated = self.context("work")
-        updated["repositories"]["npl-core"]["head"] = "c" * 40
-        updated["repositories"]["npl-sentinel"]["head"] = "d" * 40
+        updated["repositories"][EXAMPLE_CORE_REPO]["head"] = "c" * 40
+        updated["repositories"][EXAMPLE_REPORTING_REPO]["head"] = "d" * 40
         updated["repository_heads"] = {
             name: row["head"] for name, row in updated["repositories"].items()
         }
-        updated["head"] = updated["repository_heads"]["npl-core"]
+        updated["head"] = updated["repository_heads"][EXAMPLE_CORE_REPO]
         updated["aggregate_head"] = repositories.fingerprint(updated["repository_heads"])
         result, capture = self.invoke(updated, {"summary": "current generation"}, kind="work")
         self.assertEqual(result.returncode, 0, result.stderr)

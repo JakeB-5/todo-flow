@@ -22,6 +22,7 @@ from .native_proposal import NativeProposalBinding
 from .native_recovery import recover
 from .store import Store
 from .unix_websocket import UnixWebSocket
+from .worker import codex_app_server_policy
 from .workspace_creation import _write_exclusive
 
 
@@ -38,11 +39,12 @@ DISABLED = (
 )
 
 
-def server_overrides(workspace):
+def server_overrides(workspace, sandbox="read-only"):
     """Keep worker policy separate from Codex's existing login storage."""
+    sandbox, _ = codex_app_server_policy(sandbox)
     settings = [
         'approval_policy="never"',
-        'sandbox_mode="read-only"',
+        f'sandbox_mode="{sandbox}"',
         "project_doc_max_bytes=0",
         'web_search="disabled"',
         "analytics.enabled=false",
@@ -218,6 +220,10 @@ def run(spec):
     failure = None
     env = dict(os.environ)
     env.update(CODEX_HOME=str(home), TERM="xterm-256color")
+    sandbox = spec.get("sandbox", "read-only")
+    _, expected_sandbox = codex_app_server_policy(sandbox)
+    if spec.get("tmpdir") is not None:
+        env["TMPDIR"] = spec["tmpdir"]
 
     def save(status, **fields):
         record.update(status=status, **fields)
@@ -242,7 +248,7 @@ def run(spec):
             "app-server",
             "--listen",
             "unix://" + str(socket_path),
-            *server_overrides(spec["workspace"]),
+            *server_overrides(spec["workspace"], sandbox),
         ]
         save("server-intent", socket=str(socket_path), argv=argv)
         with (folder / "native-server.log").open("wb") as log:
@@ -262,7 +268,7 @@ def run(spec):
                 time.sleep(0.05)
             socket_identity = (socket_path.stat().st_dev, socket_path.stat().st_ino)
             client = UnixWebSocket(socket_path, deadline=startup_deadline)
-            connection = AppServerConnection(max_buffer_bytes=16_000_000)
+            connection = AppServerConnection(max_buffer_bytes=16_000_000, sandbox=sandbox)
             send(client, connection.initialize())
             while connection.state != "initialized-response":
                 connection.receive(client.receive())
@@ -284,12 +290,12 @@ def run(spec):
                     response = message.get("result", {})
                     if (
                         response.get("approvalPolicy") != "never"
-                        or response.get("sandbox") != {"type": "readOnly", "networkAccess": False}
+                        or response.get("sandbox") != expected_sandbox
                         or Path(response.get("cwd", "")).resolve()
                         != Path(spec["workspace"]).resolve()
                         or response.get("instructionSources")
                     ):
-                        raise ValueError("Native thread did not confirm isolated read-only policy")
+                        raise ValueError("Native thread did not confirm configured sandbox policy")
                 connection.receive(message)
             save(
                 "thread-created",

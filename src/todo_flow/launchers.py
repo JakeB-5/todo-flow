@@ -270,10 +270,12 @@ class TerminalProcess:
 
 
 def spawn_terminal(
-    launcher, argv, workspace, folder, title, *, launch_identity=None, interactive=None
+    launcher, argv, workspace, folder, title, *, launch_identity=None, interactive=None, tmpdir=None
 ):
     argv = [shutil.which(argv[0]) or argv[0], *argv[1:]]
     spec = {"argv": argv, "cwd": workspace, "title": title}
+    if tmpdir is not None:
+        spec["tmpdir"] = tmpdir
     if interactive is not None:
         spec["interactive"] = interactive
     if launch_identity is not None:

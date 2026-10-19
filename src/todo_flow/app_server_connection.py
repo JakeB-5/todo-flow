@@ -18,6 +18,7 @@ from .app_server_session import (
     thread_start_params,
     turn_start_params,
 )
+from .worker import codex_app_server_policy
 
 
 class AppServerConnection:
@@ -29,9 +30,10 @@ class AppServerConnection:
     authority. Unsupported server requests fail closed without granting approval.
     """
 
-    def __init__(self, *, max_buffer_bytes=4_000_000):
+    def __init__(self, *, max_buffer_bytes=4_000_000, sandbox="read-only"):
         if type(max_buffer_bytes) is not int or max_buffer_bytes < 1:
             raise ValueError("Invalid App Server buffer limit")
+        self._sandbox, _ = codex_app_server_policy(sandbox)
         self._state = "new"
         self._next_id = 1
         self._pending = {}
@@ -109,7 +111,7 @@ class AppServerConnection:
 
     def start_thread(self, workspace):
         self._require("ready")
-        params = thread_start_params(workspace)
+        params = thread_start_params(workspace, self._sandbox)
         if self._mcp_servers is not None:
             params["config"] = {
                 "mcp_servers": {name: {"enabled": False} for name in self._mcp_servers}
@@ -131,7 +133,7 @@ class AppServerConnection:
         self._require("thread-ready")
         return self._request(
             "turn/start",
-            turn_start_params(workspace, self._thread, prompt),
+            turn_start_params(workspace, self._thread, prompt, self._sandbox),
             "turn-pending",
         )
 

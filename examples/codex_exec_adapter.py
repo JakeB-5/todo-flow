@@ -1,4 +1,4 @@
-"""Run a protocol-2 TODO Flow worker with read-only ``codex exec``."""
+"""Run a protocol-2 TODO Flow worker with configured ``codex exec`` sandbox."""
 
 import argparse
 import json
@@ -20,10 +20,12 @@ from todo_flow.language import output_instruction  # noqa: E402
 from todo_flow.native_proposal import _check_schema, _constant, _object  # noqa: E402
 from todo_flow import repositories  # noqa: E402
 from todo_flow.worker import (  # noqa: E402
-    INSTRUCTIONS,
     codex_exec_base_args,
     codex_schema,
+    codex_workspace_tmpdir,
+    configured_codex_sandbox,
     validate,
+    worker_instructions,
 )
 
 KINDS = {"assess", "work", "review", "triage", "watch"}
@@ -164,10 +166,10 @@ def _schema_response(text, kind, context):
     return result
 
 
-def _prompt(context):
+def _prompt(context, sandbox):
     language = context.get("language", "en")
     return (
-        INSTRUCTIONS
+        worker_instructions(sandbox)
         + "\nNever inspect secret material, including .env files, API keys, tokens, credentials, or shell history.\n"
         + "\n"
         + output_instruction(language)
@@ -224,11 +226,11 @@ def _kill_group(process):
         pass
 
 
-def _run_codex(args, workspace, declarations, prompt, schema_path, output_path):
+def _run_codex(args, workspace, declarations, prompt, schema_path, output_path, sandbox, tmpdir):
     executable = shutil.which("codex")
     if executable is None:
         raise RuntimeError("codex executable was not found on PATH")
-    command = codex_exec_base_args(executable)
+    command = codex_exec_base_args(executable, sandbox=sandbox)
     if declarations:
         for name, row in declarations.items():
             candidate = _directory(row["workspace"], f"{name} workspace")
@@ -261,6 +263,9 @@ def _run_codex(args, workspace, declarations, prompt, schema_path, output_path):
     for signum in (signal.SIGTERM, signal.SIGINT):
         previous_handlers[signum] = signal.signal(signum, stop_on_signal)
     try:
+        env = dict(os.environ)
+        if tmpdir is not None:
+            env["TMPDIR"] = str(tmpdir)
         process = subprocess.Popen(
             command,
             cwd=workspace,
@@ -271,6 +276,7 @@ def _run_codex(args, workspace, declarations, prompt, schema_path, output_path):
             encoding="utf-8",
             errors="replace",
             start_new_session=True,
+            env=env,
         )
         child["process"] = process
         try:
@@ -312,7 +318,9 @@ def main(argv=None):
     try:
         context = json.load(sys.stdin, object_pairs_hook=_object, parse_constant=_constant)
         workspace, declarations = validate_context(context)
-        temp_root = args.tmp_dir or Path(tempfile.gettempdir())
+        sandbox = configured_codex_sandbox()
+        tmpdir = codex_workspace_tmpdir(workspace) if sandbox == "workspace-write" else None
+        temp_root = args.tmp_dir or (tmpdir if tmpdir is not None else Path(tempfile.gettempdir()))
         if args.tmp_dir and args.tmp_dir.is_symlink():
             raise ValueError("tmp-dir must not be a symlink")
         temp_root = temp_root.resolve(strict=True)
@@ -327,9 +335,11 @@ def main(argv=None):
                 args,
                 workspace,
                 declarations,
-                _prompt(context),
+                _prompt(context, sandbox),
                 schema_path,
                 output_path,
+                sandbox,
+                tmpdir,
             )
             result = _schema_response(
                 output_path.read_text(encoding="utf-8"), context["task"]["kind"], context

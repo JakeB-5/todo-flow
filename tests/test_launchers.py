@@ -197,6 +197,43 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(duplicate.returncode, 1)
             self.assertEqual(json.loads((folder / "terminal-process.json").read_text()), receipt)
 
+    def test_workspace_write_tmpdir_reaches_codex_through_terminal_bridge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "worktree"
+            workspace.mkdir()
+            binary = root / "bin"
+            binary.mkdir()
+            codex = binary / "codex"
+            codex.write_text(
+                "#!" + sys.executable + "\n"
+                "import json,os,sys\nfrom pathlib import Path\n"
+                "args=sys.argv\n"
+                "assert args[args.index('--sandbox')+1]=='workspace-write'\n"
+                "assert Path(os.environ['TMPDIR']).resolve()==(Path.cwd()/'.tmp').resolve()\n"
+                "Path(args[args.index('--output-last-message')+1]).write_text("
+                "json.dumps({'summary':'terminal workspace-write'}))\n"
+            )
+            codex.chmod(0o700)
+            config = self.terminal_config(root, ["codex"])
+            config["worker"] = {"type": "codex"}
+            environment = os.environ.copy()
+            environment.update(
+                TODO_FLOW_CODEX_SANDBOX="workspace-write",
+                TMPDIR="/host/temp",
+                PATH=str(binary) + os.pathsep + os.environ["PATH"],
+            )
+            with patch.dict(os.environ, environment, clear=True):
+                result = run_worker(
+                    config,
+                    {"workspace": str(workspace)},
+                    {"attempt": "workspace-write-terminal", "kind": "work"},
+                    root / "state",
+                    lambda _: None,
+                )
+            self.assertEqual(result["summary"], "terminal workspace-write")
+            self.assertTrue((workspace / ".tmp").is_dir())
+
     def test_terminal_timeout_stops_the_worker(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
