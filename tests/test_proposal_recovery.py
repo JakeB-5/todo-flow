@@ -260,19 +260,30 @@ class InterruptedProposalTests(unittest.TestCase):
         self.assertEqual(application.read(engine, old_task["track"])["phase"], "restored")
         self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), before_head)
 
-    def test_other_task_rejects_written_but_unstaged_mixed_state(self):
+    def test_other_task_adopts_exact_unstaged_after_state_and_continues(self):
         engine, old_task, workspace = self.workspace()
         record = interrupt(
             self, engine, old_task, workspace, self.changes(workspace), "after-files"
         )
         self.assertEqual(record["phase"], "applying")
+        self.assertTrue(
+            all(
+                application.file_state(workspace / row["path"]) == row["after"]
+                for row in record["intent"]["files"]
+            )
+        )
         new_task = successor(self, old_task)
 
-        with self.assertRaises(Conflict) as raised:
-            engine.gate(new_task)
+        with patch(
+            "todo_flow.engine.run_worker",
+            return_value={"summary": "Successor continued after unstaged proposal recovery"},
+        ) as worker:
+            engine.execute(new_task)
 
-        self.assertIn("matches neither", str(raised.exception))
-        self.assertEqual(application.read(engine, old_task["track"])["phase"], "applying")
+        worker.assert_called_once()
+        recovered = application.read(engine, old_task["track"])
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(recovered["intent"]["task"], old_task["id"])
 
     def test_other_task_mixed_state_conflict_has_inspect_and_resume_commands(self):
         engine, old_task, workspace = self.workspace()
@@ -289,6 +300,33 @@ class InterruptedProposalTests(unittest.TestCase):
         self.assertIn("todo-flow --state", str(raised.exception))
         self.assertEqual(snapshot(workspace), before)
         self.assertEqual(application.journal_path(engine, old_task["track"]).read_bytes(), journal)
+        self.assertEqual(record["phase"], "applying")
+
+    def test_partial_recovery_preserves_journal_if_unrelated_edit_arrives_during_replay(self):
+        engine, old_task, workspace = self.workspace()
+        record = interrupt(self, engine, old_task, workspace, self.changes(workspace), "file")
+        new_task = successor(self, old_task)
+        journal = application.journal_path(engine, old_task["track"]).read_bytes()
+        index = Path(command(["git", "rev-parse", "--git-path", "index"], workspace))
+        if not index.is_absolute():
+            index = workspace / index
+        before_index = index.read_bytes()
+        head = command(["git", "rev-parse", "HEAD"], workspace)
+        original_atomic_file = application.atomic_file
+        unrelated = workspace / "during-recovery.txt"
+
+        def introduce_concurrent_edit(path, content, mode):
+            original_atomic_file(path, content, mode)
+            unrelated.write_text("concurrent change\n")
+
+        with patch.object(application, "atomic_file", side_effect=introduce_concurrent_edit):
+            with self.assertRaisesRegex(Conflict, "interrupted proposal preserved"):
+                application.recover(engine, new_task, workspace)
+
+        self.assertEqual(application.journal_path(engine, old_task["track"]).read_bytes(), journal)
+        self.assertEqual(index.read_bytes(), before_index)
+        self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), head)
+        self.assertEqual(unrelated.read_text(), "concurrent change\n")
         self.assertEqual(record["phase"], "applying")
 
     def test_other_task_rejects_unrelated_worktree_drift_after_proposal_write(self):
@@ -330,9 +368,9 @@ class InterruptedProposalTests(unittest.TestCase):
             "untracked-long-name",
             "untracked-symlink",
             "unrelated-worktree-edit",
-            "written-but-unstaged",
-            "index-reset-to-before",
+            "partial-worktree-index-after",
             "index-empty",
+            "index-target-unexpected",
             "head-generation-change",
             "merge-marker-change",
             "journal-fingerprint-change",
@@ -381,22 +419,15 @@ class InterruptedProposalTests(unittest.TestCase):
                     elif variant == "unrelated-worktree-edit":
                         extra = workspace / "calc.py.copy"
                         extra.write_text("unrelated later file\n")
-                    elif variant == "written-but-unstaged":
-                        restore_original(workspace, record)
-                        for row in record["intent"]["files"]:
-                            target = workspace / row["path"]
-                            after = row["after"]
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            target.write_bytes(base64.b64decode(after["bytes"]))
-                            target.chmod(after["mode"])
-                    elif variant == "index-reset-to-before":
-                        restore_original(workspace, record)
-                        for row in record["intent"]["files"]:
-                            target = workspace / row["path"]
-                            after = row["after"]
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            target.write_bytes(base64.b64decode(after["bytes"]))
-                            target.chmod(after["mode"])
+                    elif variant == "partial-worktree-index-after":
+                        row = record["intent"]["files"][-1]
+                        target = workspace / row["path"]
+                        if row["before"] is None:
+                            target.unlink()
+                        else:
+                            before = row["before"]
+                            target.write_bytes(base64.b64decode(before["bytes"]))
+                            target.chmod(before["mode"])
                     elif variant == "index-empty":
                         index = Path(
                             command(["git", "rev-parse", "--git-path", "index"], workspace)
@@ -404,6 +435,13 @@ class InterruptedProposalTests(unittest.TestCase):
                         if not index.is_absolute():
                             index = workspace / index
                         index.write_bytes(b"invalid index")
+                    elif variant == "index-target-unexpected":
+                        row = record["intent"]["files"][0]
+                        target = workspace / row["path"]
+                        target.write_text("unexpected staged content\n")
+                        command(["git", "add", "--", ":(literal)" + row["path"]], workspace)
+                        target.write_bytes(base64.b64decode(row["after"]["bytes"]))
+                        target.chmod(row["after"]["mode"])
                     elif variant == "head-generation-change":
                         command(
                             ["git", "commit", "--allow-empty", "-m", "later generation"], workspace
@@ -434,34 +472,32 @@ class InterruptedProposalTests(unittest.TestCase):
                 finally:
                     case.tearDown()
 
-    def test_real_file_replacement_interrupt_preserves_partial_files_and_blocks_adoption(self):
+    def test_real_file_replacement_interrupt_recovers_partial_files_and_continues(self):
         engine, task, workspace = self.workspace()
-        before = snapshot(workspace)
-        original = (workspace / "calc.py").read_bytes()
         changes = self.changes(workspace)
         record = interrupt(self, engine, task, workspace, changes, "file")
         self.assertEqual(
-            base64.b64decode(record["intent"]["files"][0]["before"]["bytes"]), original
+            application.file_state(workspace / "calc.py"), record["intent"]["files"][0]["after"]
         )
-        self.assertIn(b"return a + b", (workspace / "calc.py").read_bytes())
         self.assertFalse((workspace / "new.py").exists())
         self.assertEqual(
             command(["git", "rev-parse", "HEAD"], workspace), record["intent"]["before_head"]
         )
-        partial = snapshot(workspace)
-        self.assert_blocked(engine, task, workspace)
-        with self.assertRaisesRegex(Conflict, "interrupted proposal preserved"):
-            application.recover(engine, task, workspace)
-        with self.assertRaises(Conflict):
-            engine.apply_changes(task, workspace, changes)
-        self.assertEqual(snapshot(workspace), partial)
-        # Exact restoration is a checkable recovery boundary, never a blind retry.
-        restore_original(workspace, record)
-        self.assertEqual(snapshot(workspace), before)
-        self.assertIsNone(application.recover(engine, task, workspace))
-        self.assertEqual(application.read(engine, task["track"])["phase"], "restored")
-        engine.apply_changes(task, workspace, changes)
+        new_task = successor(self, task)
+        with patch(
+            "todo_flow.engine.run_worker",
+            return_value={"summary": "Successor continued after partial proposal recovery"},
+        ) as worker:
+            engine.execute(new_task)
+
+        worker.assert_called_once()
+        recovered = application.read(engine, task["track"])
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(recovered["intent"]["task"], task["id"])
         self.assertEqual((workspace / "new.py").read_text(), "# 새 파일 🌿\n")
+        self.assertNotEqual(
+            command(["git", "rev-parse", "HEAD"], workspace), record["intent"]["before_head"]
+        )
 
     def test_real_precommit_interrupt_adopts_exact_written_and_staged_files(self):
         engine, task, workspace = self.workspace()

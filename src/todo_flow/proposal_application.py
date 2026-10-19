@@ -167,12 +167,17 @@ def _index_entries(workspace, index=None):
     return result.stdout
 
 
-def _recovery_index_state(engine, workspace, record):
+def _recovery_index_state(engine, workspace, record, *, compare_after=True):
     intent = record["intent"]
     with tempfile.TemporaryDirectory(prefix="todo-flow-proposal-index-") as folder:
         index = Path(folder) / "index"
         index.write_bytes(base64.b64decode(intent["index"], validate=True))
         before = _index_entries(workspace, index)
+        current = _index_entries(workspace)
+        if current == before:
+            return "before"
+        if not compare_after:
+            return None
         env = dict(os.environ)
         env["GIT_INDEX_FILE"] = str(index)
         try:
@@ -188,40 +193,38 @@ def _recovery_index_state(engine, workspace, record):
         if staged.returncode:
             raise Conflict("Cannot verify proposal recovery index; preserve the journal")
         after = _index_entries(workspace, index)
-        current = _index_entries(workspace)
-    if current == before:
-        return "before"
     if current == after:
         return "after"
     return None
 
 
+def _generation_matches(workspace, intent):
+    return (
+        command(["git", "rev-parse", "HEAD"], workspace) == intent["before_head"]
+        and integration.merge_head(workspace) == intent["merge_head"]
+    )
+
+
+def _outside_snapshot_matches(workspace, intent):
+    return not intent.get("outside_snapshot") or (
+        _workspace_outside_snapshot(workspace, [row["path"] for row in intent["files"]])
+        == intent["outside_snapshot"]
+    )
+
+
 def _after_state(engine, task, workspace, record, repo_name):
     intent = record["intent"]
-    if (
-        command(["git", "rev-parse", "HEAD"], workspace) != intent["before_head"]
-        or integration.merge_head(workspace) != intent["merge_head"]
-        or any(file_state(workspace / row["path"]) != row["after"] for row in intent["files"])
+    if not _generation_matches(workspace, intent) or any(
+        file_state(workspace / row["path"]) != row["after"] for row in intent["files"]
     ):
         return None
-    if (
-        intent.get("outside_snapshot")
-        and _workspace_outside_snapshot(workspace, [row["path"] for row in intent["files"]])
-        != intent["outside_snapshot"]
-    ):
+    if not _outside_snapshot_matches(workspace, intent):
         return None
     repair = intent.get("repair")
     if repair:
-        changes = [
-            {
-                "path": row["path"],
-                "content": base64.b64decode(row["after"]["bytes"], validate=True).decode(
-                    "utf-8", errors="strict"
-                ),
-            }
-            for row in intent["files"]
-        ]
-        integration.validate_resolution(workspace, changes, repair, check_snapshot=False)
+        integration.validate_resolution(
+            workspace, _after_changes(record), repair, check_snapshot=False
+        )
         pending = integration.pending(engine.store.track(task["track"]))
         if (
             not pending
@@ -233,6 +236,51 @@ def _after_state(engine, task, workspace, record, repo_name):
     elif integration.unmerged(workspace):
         return None
     return _recovery_index_state(engine, workspace, record)
+
+
+def _after_changes(record):
+    return [
+        {
+            "path": row["path"],
+            "content": base64.b64decode(row["after"]["bytes"], validate=True).decode(
+                "utf-8", errors="strict"
+            ),
+        }
+        for row in record["intent"]["files"]
+    ]
+
+
+def _partial_after_state(engine, task, workspace, record, repo_name):
+    """Accept only journal-described file mixtures before the proposal index write."""
+    intent = record["intent"]
+    if record["phase"] != "applying" or not _generation_matches(workspace, intent):
+        return False
+    states = [file_state(workspace / row["path"]) for row in intent["files"]]
+    if not any(state == row["after"] for state, row in zip(states, intent["files"])):
+        return False
+    if not all(
+        state == row["before"] or state == row["after"]
+        for state, row in zip(states, intent["files"])
+    ):
+        return False
+    if not _outside_snapshot_matches(workspace, intent):
+        return False
+    repair = intent.get("repair")
+    if repair:
+        integration.validate_resolution(
+            workspace, _after_changes(record), repair, check_snapshot=False
+        )
+        pending = integration.pending(engine.store.track(task["track"]))
+        if (
+            not pending
+            or pending["candidate"] != repair["candidate"]
+            or pending["base"] != repair["base"]
+            or pending.get("repository") != repo_name
+        ):
+            raise Conflict("Integration repair intent changed during proposal recovery")
+    elif integration.unmerged(workspace):
+        return False
+    return _recovery_index_state(engine, workspace, record, compare_after=False) == "before"
 
 
 def require_clear(engine, track, task=None):
@@ -581,6 +629,42 @@ def recover(engine, task, workspace, repo_name=None):
             record = _ready_record(engine, task, workspace, record)
         else:
             _validate_ready(workspace, record)
+        return _commit_and_adopt(engine, task, workspace, record)
+    try:
+        partial_after = _partial_after_state(engine, task, workspace, record, repo_name)
+    except (OSError, ValueError, TypeError, KeyError, Conflict, RuntimeError) as error:
+        raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name) from error
+    if partial_after:
+        engine.check_claim(task)
+        if not _partial_after_state(engine, task, workspace, record, repo_name):
+            raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
+        for row in intent["files"]:
+            if file_state(workspace / row["path"]) == row["before"]:
+                atomic_file(
+                    workspace / row["path"],
+                    base64.b64decode(row["after"]["bytes"], validate=True),
+                    row["after"]["mode"],
+                )
+        if (
+            not _generation_matches(workspace, intent)
+            or not all(
+                file_state(workspace / row["path"]) == row["after"] for row in intent["files"]
+            )
+            or not _outside_snapshot_matches(workspace, intent)
+            or _recovery_index_state(engine, workspace, record, compare_after=False) != "before"
+        ):
+            raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
+        engine.check_claim(task)
+        command(["git", "add", "--", *specs(record)], workspace)
+        if (
+            not _generation_matches(workspace, intent)
+            or not _outside_snapshot_matches(workspace, intent)
+            or _recovery_index_state(engine, workspace, record) != "after"
+        ):
+            raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
+        if integration.unmerged(workspace):
+            raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
+        record = _ready_record(engine, task, workspace, record)
         return _commit_and_adopt(engine, task, workspace, record)
     raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
 
