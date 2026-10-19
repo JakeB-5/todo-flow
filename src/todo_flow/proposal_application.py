@@ -167,6 +167,22 @@ def _index_entries(workspace, index=None):
     return result.stdout
 
 
+def _stage_paths(workspace, pathspecs, *, env=None):
+    if not pathspecs:
+        return None
+    argv = ["git", "add", "--sparse", "--", *pathspecs]
+    if env is None:
+        command(argv, workspace)
+        return None
+    return subprocess.run(
+        argv,
+        cwd=workspace,
+        env=env,
+        capture_output=True,
+        timeout=120,
+    )
+
+
 def _recovery_index_state(engine, workspace, record, *, compare_after=True):
     intent = record["intent"]
     with tempfile.TemporaryDirectory(prefix="todo-flow-proposal-index-") as folder:
@@ -181,16 +197,10 @@ def _recovery_index_state(engine, workspace, record, *, compare_after=True):
         env = dict(os.environ)
         env["GIT_INDEX_FILE"] = str(index)
         try:
-            staged = subprocess.run(
-                ["git", "add", "--", *specs(record)],
-                cwd=workspace,
-                env=env,
-                capture_output=True,
-                timeout=120,
-            )
+            staged = _stage_paths(workspace, specs(record), env=env)
         except (OSError, subprocess.SubprocessError) as error:
             raise Conflict("Cannot verify proposal recovery index; preserve the journal") from error
-        if staged.returncode:
+        if staged is None or staged.returncode:
             raise Conflict("Cannot verify proposal recovery index; preserve the journal")
         after = _index_entries(workspace, index)
     if current == after:
@@ -655,7 +665,7 @@ def recover(engine, task, workspace, repo_name=None):
         ):
             raise _manual_recovery_conflict(engine, task["track"], workspace, repo_name)
         engine.check_claim(task)
-        command(["git", "add", "--", *specs(record)], workspace)
+        _stage_paths(workspace, specs(record))
         if (
             not _generation_matches(workspace, intent)
             or not _outside_snapshot_matches(workspace, intent)
@@ -795,7 +805,7 @@ def apply(
             )
     engine.check_claim(task)
     if paths:
-        command(["git", "add", "--", *pathspecs], workspace)
+        _stage_paths(workspace, pathspecs)
     if integration.unmerged(workspace):
         raise Conflict("Cannot commit unresolved merge paths")
     record = _ready_record(engine, task, workspace, record)

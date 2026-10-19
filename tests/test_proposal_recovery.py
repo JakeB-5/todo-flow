@@ -285,6 +285,66 @@ class InterruptedProposalTests(unittest.TestCase):
         self.assertEqual(recovered["phase"], "committed")
         self.assertEqual(recovered["intent"]["task"], old_task["id"])
 
+    def test_sparse_checkout_recovers_and_commits_exact_path_outside_cone(self):
+        engine, old_task, workspace = self.workspace()
+        target = workspace / "docs/outside.py"
+        target.parent.mkdir()
+        target.write_text("baseline\n")
+        command(["git", "add", "--", "docs/outside.py"], workspace)
+        command(
+            ["git", "commit", "-m", "add sparse target", "--only", "--", "docs/outside.py"],
+            workspace,
+        )
+        command(["git", "sparse-checkout", "init", "--cone"], workspace)
+        command(["git", "sparse-checkout", "set", "src"], workspace)
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("baseline\n")
+        changes = [
+            test_change_proposals.replacement(
+                workspace, path="docs/outside.py", old="baseline", new="sparse recovery"
+            )
+        ]
+        record = interrupt(self, engine, old_task, workspace, changes, "file")
+
+        self.assertEqual(record["phase"], "applying")
+        self.assertEqual(
+            application._recovery_index_state(engine, workspace, record, compare_after=False),
+            "before",
+        )
+        self.assertEqual(
+            application.file_state(workspace / "docs/outside.py"),
+            record["intent"]["files"][0]["after"],
+        )
+
+        new_task = successor(self, old_task)
+        with patch(
+            "todo_flow.engine.run_worker",
+            return_value={"summary": "Sparse checkout proposal recovered"},
+        ) as worker:
+            engine.execute(new_task)
+
+        worker.assert_called_once()
+        recovered = application.read(engine, old_task["track"])
+        self.assertEqual(recovered["phase"], "committed")
+        self.assertEqual(
+            command(["git", "show", "HEAD:docs/outside.py"], workspace), "sparse recovery"
+        )
+
+    def test_sparse_checkout_initial_apply_stages_exact_path_outside_cone(self):
+        engine, task, workspace = self.workspace()
+        command(["git", "sparse-checkout", "init", "--cone"], workspace)
+        command(["git", "sparse-checkout", "set", "src"], workspace)
+
+        engine.apply_changes(
+            task, workspace, [{"path": "docs/outside.py", "content": "sparse apply\n"}]
+        )
+
+        record = application.read(engine, task["track"])
+        self.assertEqual(record["phase"], "committed")
+        self.assertEqual(
+            command(["git", "show", "HEAD:docs/outside.py"], workspace), "sparse apply"
+        )
+
     def test_other_task_mixed_state_conflict_has_inspect_and_resume_commands(self):
         engine, old_task, workspace = self.workspace()
         record = interrupt(
