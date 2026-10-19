@@ -231,7 +231,10 @@ class NativeExecutionTests(unittest.TestCase):
 
     def test_real_supervised_native_roundtrip_preserves_long_proposal_and_cleanup(self):
         self.prepare()
-        result = self.execute()
+        # readonly-codex-sandbox: server argv, thread/turn requests and the remote
+        # terminal must retain the read-only contract despite this inherited value.
+        with patch.dict(os.environ, {"TODO_FLOW_CODEX_SANDBOX": "workspace-write"}):
+            result = self.execute()
         self.assertEqual(result["summary"], "합성 native worker")
         summary = worker_stop_summary(self.s.path, self.task["track"], self.task["attempt"])
         row = next(row for row in summary["executions"] if row["proposal"] is not None)

@@ -89,8 +89,35 @@ def show_created_workspace(response, *, read):
         raise WorkspaceCreationBlocked("Created workspace requires reconciliation") from error
 
 
-def validate_workspace(status, repo_response, show_response, *, expected):
-    """Return checked observation only; no registration or ownership is implied."""
+class WorkspaceHeadLag(WorkspaceCreationBlocked):
+    """Only the catalog HEAD differs; identity and actual Git checks passed."""
+
+
+def _head_label(value):
+    if value is None:
+        return "not-checked"
+    if isinstance(value, str) and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", value):
+        return value
+    return "invalid-or-missing"
+
+
+def _diagnostic(reason, expected, observed, actual):
+    # Do not echo arbitrary response fields, paths or subprocess stderr.
+    return (
+        f"Workspace observation failed validation: {reason}; "
+        f"expected HEAD={_head_label(expected)}; Orca HEAD={_head_label(observed)}; "
+        f"actual Git HEAD={_head_label(actual)}"
+    )
+
+
+def validate_workspace(status, repo_response, show_response, *, expected, expected_common_dir=None):
+    """Return checked observation only; no registration or ownership is implied.
+
+    A HEAD lag is still a failure. Only owned recovery may retry that specific
+    failure, after all other checks (including its pinned common-dir) succeed.
+    """
+    observed_head = actual_head = None
+    check = "Orca observation"
     try:
         for value in vars(expected).values():
             _text(value)
@@ -108,6 +135,7 @@ def validate_workspace(status, repo_response, show_response, *, expected):
         _text(runtime.get("runtimeId"))
         repo = _object(_result(repo_response).get("repo"))
         worktree = _object(_result(show_response).get("worktree"))
+        observed_head = worktree.get("head")
         identity = _object(worktree.get("identity"))
         nested = _object(worktree.get("git"))
         fields = {
@@ -118,10 +146,10 @@ def validate_workspace(status, repo_response, show_response, *, expected):
             "projectHostSetupId": expected.setup_id,
             "hostId": "local",
             "branch": "refs/heads/" + expected.branch,
-            "head": expected.head,
         }
-        if any(worktree.get(key) != value for key, value in fields.items()):
-            raise ValueError("Workspace identity or revision mismatch")
+        mismatches = [key for key, value in fields.items() if worktree.get(key) != value]
+        if mismatches:
+            raise ValueError("Workspace mismatch: " + ", ".join(mismatches))
         if (
             identity.get("key") != expected.identity_key
             or identity.get("instanceId") != expected.instance_id
@@ -137,26 +165,44 @@ def validate_workspace(status, repo_response, show_response, *, expected):
             raise ValueError("A separate candidate checkout is required")
         for key in ("path", "head", "branch", "isBare", "isMainWorktree"):
             if key not in nested or nested[key] != worktree.get(key):
-                raise ValueError("Nested Git observation mismatch")
+                raise ValueError("Nested Git observation mismatch: " + key)
         if worktree.get("isBare") is not False or worktree.get("isMainWorktree") is not False:
             raise ValueError("Expected a non-main, non-bare worktree")
+        if _head_label(observed_head) in {"not-checked", "invalid-or-missing"}:
+            raise ValueError("Orca HEAD is not an object ID")
+        check = "Git common-dir"
         common = _path(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir"))
         candidate_common = _path(
             _git(workspace, "rev-parse", "--path-format=absolute", "--git-common-dir")
         )
         if common != candidate_common:
-            raise ValueError("Candidate belongs to another Git repository")
+            raise ValueError("Candidate belongs to another Git repository (common-dir)")
+        if expected_common_dir is not None and str(common) != expected_common_dir:
+            raise ValueError("Pinned Git common-dir mismatch")
+        check = "Git checkout root"
         if _path(_git(workspace, "rev-parse", "--show-toplevel")) != workspace:
             raise ValueError("Candidate path is not the checkout root")
+        check = "Git branch"
         if _git(workspace, "symbolic-ref", "--quiet", "HEAD") != fields["branch"]:
             raise ValueError("Actual Git branch mismatch")
-        if _git(workspace, "rev-parse", "HEAD") != expected.head:
+        check = "Git HEAD"
+        actual_head = _git(workspace, "rev-parse", "HEAD")
+        if actual_head != expected.head:
             raise ValueError("Actual Git HEAD mismatch")
+        check = "Git creation base"
         if _git(workspace, "rev-parse", expected.base + "^{commit}") != expected.base:
             raise ValueError("Creation base is not a commit")
+        check = "Git base ancestry"
         _git(workspace, "merge-base", "--is-ancestor", expected.base, expected.head)
+        if observed_head != expected.head:
+            raise WorkspaceHeadLag(
+                _diagnostic(
+                    "Orca HEAD has not converged", expected.head, observed_head, actual_head
+                )
+            )
         return {
             **fields,
+            "head": expected.head,
             "identity": dict(identity),
             "path": str(workspace),
             "repo_path": str(root),
@@ -164,5 +210,14 @@ def validate_workspace(status, repo_response, show_response, *, expected):
             "base": expected.base,
             "runtime_id": runtime["runtimeId"],
         }
+    except WorkspaceHeadLag:
+        raise
     except Exception as error:
-        raise WorkspaceCreationBlocked("Workspace observation failed validation") from error
+        reason = (
+            str(error)
+            if isinstance(error, ValueError)
+            else f"{check} failed ({type(error).__name__})"
+        )
+        raise WorkspaceCreationBlocked(
+            _diagnostic(reason, expected.head, observed_head, actual_head)
+        ) from error

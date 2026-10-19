@@ -958,7 +958,32 @@ class ManagedProposalRecoveryTests(unittest.TestCase):
         self.assertEqual(application.journal_path(self.engine, "addition").read_bytes(), receipt)
         self.assertEqual(self.s.track("addition")["head"], before)
         self.shown["result"]["worktree"]["instanceId"] = identity
-        self.assertEqual(self.engine.ensure_workspace(successor), workspace)
+        # journal-cross-task and journal-exact-state: a stale catalog may converge,
+        # but only journal recovery can adopt the interrupted commit's HEAD.
+        observations = []
+
+        def lagging(cli, args, root):
+            result = self.call(cli, args, root)
+            if args[:2] == ["worktree", "show"]:
+                worktree = result["result"]["worktree"]
+                observations.append(worktree["head"])
+                if len(observations) == 1:
+                    worktree["head"] = worktree["git"]["head"] = before
+                self.assertEqual(self.s.track("addition")["head"], before)
+                self.assertEqual(
+                    application.journal_path(self.engine, "addition").read_bytes(), receipt
+                )
+            return result
+
+        with (
+            patch("todo_flow.managed_workspace._call", side_effect=lagging),
+            patch("todo_flow.managed_workspace.monotonic", return_value=0.0),
+            patch("todo_flow.managed_workspace.sleep") as sleep,
+        ):
+            self.assertEqual(self.engine.ensure_workspace(successor), workspace)
+        self.assertEqual(len(observations), 2)
+        sleep.assert_called_once_with(1.0)
+        self.assertEqual(application.journal_path(self.engine, "addition").read_bytes(), receipt)
         self.assertEqual(self.s.track("addition")["head"], before)
         recovered = application.recover(self.engine, successor, workspace)
         self.assertEqual(recovered["phase"], "committed")
