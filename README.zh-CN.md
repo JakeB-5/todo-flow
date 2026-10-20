@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
+<!-- translation-source: README.md; source-sha256: cca3ece0cf2eaefca06e63b2ab7eb01f39933e843691e2118d4f3b3dd4a9d914; status: translated -->
 
 ## 15 秒了解 TODO Flow
 
@@ -208,6 +208,27 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 评估、实现、独立评审、分诊和观察尝试会在认领时原子地预占一次额度。失败或中断的尝试仍计入使用量，包括工作进程启动前的失败。宿主验证、合入和完成任务不消耗工作进程尝试额度。`budgets/` 中的文件保留上限和累计使用量；`status`、驱动进程输出、决策和预算事件展示使用量、候选 HEAD 和剩余任务。预算耗尽后的停止会保留结果与未完成义务，不表示目标已完成。
 
 使用 `todo-flow --state STATE answer DECISION_ID --text '批准额外尝试' --additional-worker-attempts 5` 恢复因预算停止的请求；必要时再启动 `todo-flow --state STATE run`。正整数增量会扩展现有总上限，不清除使用量，也不替换待处理工作。普通回答、`pause`/`resume` 或重复执行 `start`/`trackrun` 均不能授予额外尝试。预算批准请使用 CLI；其他决策仍可通过仪表盘正常回答。
+
+### 本仓库基于必要性判断的验证
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json` 是项目验证器，
+只执行事先判断为必要的检查。协调者根据变更和已有证据作出判断，不按文件名自动推断必要性。
+计划文件包含 `version: 1` 和以 `git rev-parse HEAD^{tree}` 的值为键的 `plans` 对象。
+每个计划都需要说明范围和证据的 `reason`，以及非空的 `checks` 数组。
+
+必要的检查记录 `name`、`decision: "necessary"`、具体的 `reason`、
+说明已有证据为何不足的 `evidence_gap`，以及要执行的 `argv` 数组。
+省略的检查记录 `name`、`decision: "unnecessary"` 或 `"undetermined"` 和 `reason`，
+不会执行。计划缺失、候选发生变化或格式无效时，不执行任何检查。
+无法判断必要性时报告 `inconclusive`，不会回退为运行全部测试。
+不必要的检查保留为省略记录，不算测试通过。
+只需直接审阅的变更可以不选择任何可执行检查，但仍须记录原因。
+独立评审应同时审查检查的选择与省略理由。
+
+请在 `--verify-identity` 中声明计划文件和运行脚本，使判断变化能够使缓存失效。
+采用此策略时不要设置 `verify_preflight` 和 `verify_related`；
+否则这些命令会在选择器之外运行。已有状态需要在没有执行活动时迁移配置，而不是重新初始化。
+CI 策略单独管理。[JSON 示例见英文 README](README.md#necessity-based-verification-for-this-repository)。
 
 ### 运行可选的验证预检
 

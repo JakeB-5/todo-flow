@@ -12,7 +12,7 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: 37b38c2a9829f38a971c91a22d50a754a12e05cf19f864bcf09227e1cb8a864d; status: translated -->
+<!-- translation-source: README.md; source-sha256: cca3ece0cf2eaefca06e63b2ab7eb01f39933e843691e2118d4f3b3dd4a9d914; status: translated -->
 
 ## 15秒で見る TODO Flow
 
@@ -208,6 +208,32 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 評価、実装、独立レビュー、triage、Watch の各試行は、claim 時に1回分を原子的に確保します。起動前の失敗も含め、失敗・中断した試行も消費回数に残ります。ホストの検証、統合、完了タスクはワーカー試行回数を消費しません。`budgets/` のファイルが上限と累積使用量を保持し、`status`、ドライバー出力、決定、予算イベントに使用量、候補 HEAD、残りのタスクが表示されます。予算による停止でも結果と未完了の義務は保持され、目標の達成を意味しません。
 
 予算による停止から再開するには `todo-flow --state STATE answer DECISION_ID --text 'Approve additional attempts' --additional-worker-attempts 5` を使い、必要に応じて `todo-flow --state STATE run` を再起動します。正の追加回数は、使用量を消去したり保留中の作業を置き換えたりせず、既存の総上限を増やします。通常の回答、`pause`/`resume`、`start`/`trackrun` の繰り返しでは追加試行を許可できません。予算の承認には CLI を使ってください。他の決定には通常のダッシュボード回答を引き続き使えます。
+
+### このリポジトリの必要性に基づく検証
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json` は、実行前に必要と
+判断したチェックだけを実行するプロジェクト検証器です。コーディネーターが変更と
+既存の証拠を評価し、ファイル名から必要性を自動的に推測することはありません。
+計画ファイルには `version: 1` と、`git rev-parse HEAD^{tree}` の値をキーにする
+`plans` オブジェクトを指定します。各計画には対象範囲と証拠を説明する `reason`、
+および空でない `checks` 配列が必要です。
+
+必要なチェックには `name`、`decision: "necessary"`、具体的な `reason`、
+既存の証拠では不十分な理由を示す `evidence_gap`、実行する `argv` 配列を記録します。
+省略するチェックには `name`、`decision: "unnecessary"` または `"undetermined"`、
+`reason` を記録し、実行しません。計画がない、候補が変わった、または形式が不正な
+場合は、どのチェックも実行しません。必要性を判断できない場合は `inconclusive`
+と報告し、全体テストへの切り替えは行いません。不要なチェックは成功ではなく省略
+として残ります。直接の文書レビューだけで十分な変更では実行するチェックを
+選ばなくても構いませんが、その理由を記録する必要があります。独立レビューでは、
+チェックの選択と省略理由も評価します。
+
+判断が変わるとキャッシュが無効になるよう、計画ファイルと実行器を
+`--verify-identity` に宣言してください。この方針を採用する場合、
+`verify_preflight` と `verify_related` は未設定にします。設定すると、それらの
+コマンドは選択器の外で実行されます。既存の状態には、再初期化ではなく実行を
+停止した状態での設定移行が必要です。CI の方針は別です。
+[JSON の例は英語版 README](README.md#necessity-based-verification-for-this-repository)を参照してください。
 
 ### 任意の検証前チェックを実行する
 
