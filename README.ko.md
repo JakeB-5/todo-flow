@@ -209,6 +209,27 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 
 한도 정지는 `todo-flow --state STATE answer DECISION_ID --text '추가 시도 승인' --additional-worker-attempts 5`로 재개하고, 필요하면 `todo-flow --state STATE run`을 다시 실행합니다. 양의 정수 증분을 기존 총한도에 더하며 사용량과 대기 작업을 유지합니다. 일반 답변, `pause`/`resume`, `start`/`trackrun` 반복은 추가 시도를 승인하지 않습니다. 예산 승인은 CLI를 사용하고 다른 결정에는 기존 대시보드 답변을 사용할 수 있습니다.
 
+### 이 저장소의 필요성 기반 검증
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json`은 실행 전에 필요하다고
+판단한 검사만 수행하는 프로젝트 검증기입니다. 코디네이터가 변경과 기존 근거를 검토하며,
+파일 이름으로 필요성을 자동 추정하지 않습니다. 계획 파일은 `version: 1`과
+`git rev-parse HEAD^{tree}` 값을 키로 하는 `plans` 객체를 가집니다.
+각 계획에는 범위와 근거를 설명하는 `reason`과 비어 있지 않은 `checks` 배열이 필요합니다.
+
+필요한 검사는 `name`, `decision: "necessary"`, 구체적인 `reason`, 기존 근거가 부족한
+이유인 `evidence_gap`, 실행할 `argv` 배열을 기록합니다. 생략할 검사는 `name`,
+`decision: "unnecessary"` 또는 `"undetermined"`, `reason`을 기록하며 실행하지 않습니다.
+계획이 없거나 후보가 달라졌거나 형식이 잘못되면 아무 검사도 실행하지 않습니다.
+판단 불명은 `inconclusive`로 보고하며 전체 검사로 대체하지 않습니다. 불필요한 검사는
+통과한 검사가 아닌 생략으로 남습니다. 직접 검토만 필요한 변경은 실행 검사를 선정하지
+않을 수 있지만 그 이유는 기록해야 합니다. 독립 리뷰가 선정과 생략 사유를 함께 검토합니다.
+
+판단 변경 시 캐시가 무효화되도록 계획 파일과 실행기를 `--verify-identity`에 선언하세요.
+이 정책에서는 `verify_preflight`와 `verify_related`를 설정하지 마세요. 설정하면 해당
+명령은 선택기 밖에서 실행됩니다. 기존 상태는 재초기화하지 않고 실행이 없는 상태에서
+설정을 마이그레이션해야 합니다. CI 정책은 별개입니다. JSON 예시는 영문 README에 있습니다.
+
 ### 선택적 검증 사전 검사 실행
 
 새 상태의 `init` 명령에 다음 인자를 추가하면 명시적으로 선택한 저비용 검사를 기존 `--verify` 명령보다 먼저 실행합니다.

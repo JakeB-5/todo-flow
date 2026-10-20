@@ -203,6 +203,35 @@ Assessment, implementation, independent review, triage and watch attempts reserv
 
 Resume a budget stop with `todo-flow --state STATE answer DECISION_ID --text 'Approve additional attempts' --additional-worker-attempts 5`, then restart `todo-flow --state STATE run` if needed. The positive increment extends the existing total limit without clearing usage or replacing pending work. A plain answer, `pause`/`resume`, or repeating `start`/`trackrun` cannot grant extra attempts. Use the CLI for budget approval; ordinary dashboard answers remain available for other decisions.
 
+### Necessity-based verification for this repository
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json` is a project verifier
+that runs only checks judged necessary before execution. The coordinator assesses
+the change and existing evidence; this script does not infer necessity from file names.
+The plan file has `version: 1` and a `plans` object keyed by `git rev-parse HEAD^{tree}`.
+Each plan has a `reason` explaining its scope/evidence and a nonempty `checks` array:
+
+```json
+{
+  "name": "focused behavior check",
+  "decision": "necessary",
+  "reason": "The changed selector must not launch omitted commands",
+  "evidence_gap": "Source inspection alone does not demonstrate the launch boundary",
+  "argv": ["uv", "run", "--frozen", "python", "-m", "unittest", "discover", "-s", "tests", "-p", "test_verify_selected.py"]
+}
+```
+
+An omitted check instead uses `decision: "unnecessary"` or `"undetermined"`, plus
+`name` and `reason`; it never executes. Missing, stale or malformed plans execute
+no checks. Undetermined necessity reports `inconclusive`, without a whole-suite
+fallback. Explicitly unnecessary checks remain omissions, not test passes. A plan
+may require no executable checks after direct review, but must record why.
+Have independent review assess these choices alongside the change. Declare the
+plan file and runner in `--verify-identity` so changed decisions invalidate cached
+evidence. Leave `verify_preflight` and `verify_related` unset when adopting this
+policy; otherwise those commands run outside this selector. Existing state needs
+a quiescent configuration migration, not reinitialization. CI policy is separate.
+
 ### Run optional verification preflight checks
 
 For new state, add this argument to your `init` command to run explicitly selected cheap checks before the existing `--verify` command:
