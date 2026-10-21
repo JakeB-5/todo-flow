@@ -12,7 +12,7 @@
 
 [![ライセンス: MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状態: 開発中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: c747f54e38e8a6a859cbe560587999c4a936c82e5c8692b53e5ee60c0b71d759; status: translated -->
+<!-- translation-source: README.md; source-sha256: 859320b3fe066e7911300c1034ac85e30a1e7114c2b8a3b2eff9ee1e750c7b62; status: translated -->
 
 ## 15秒で見る TODO Flow
 
@@ -209,6 +209,32 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 
 予算による停止から再開するには `todo-flow --state STATE answer DECISION_ID --text 'Approve additional attempts' --additional-worker-attempts 5` を使い、必要に応じて `todo-flow --state STATE run` を再起動します。正の追加回数は、使用量を消去したり保留中の作業を置き換えたりせず、既存の総上限を増やします。通常の回答、`pause`/`resume`、`start`/`trackrun` の繰り返しでは追加試行を許可できません。予算の承認には CLI を使ってください。他の決定には通常のダッシュボード回答を引き続き使えます。
 
+### このリポジトリの必要性に基づく検証
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json` は、実行前に必要と
+判断したチェックだけを実行するプロジェクト検証器です。コーディネーターが変更と
+既存の証拠を評価し、ファイル名から必要性を自動的に推測することはありません。
+計画ファイルには `version: 1` と、`git rev-parse HEAD^{tree}` の値をキーにする
+`plans` オブジェクトを指定します。各計画には対象範囲と証拠を説明する `reason`、
+および空でない `checks` 配列が必要です。
+
+必要なチェックには `name`、`decision: "necessary"`、具体的な `reason`、
+既存の証拠では不十分な理由を示す `evidence_gap`、実行する `argv` 配列を記録します。
+省略するチェックには `name`、`decision: "unnecessary"` または `"undetermined"`、
+`reason` を記録し、実行しません。計画がない、候補が変わった、または形式が不正な
+場合は、どのチェックも実行しません。必要性を判断できない場合は `inconclusive`
+と報告し、全体テストへの切り替えは行いません。不要なチェックは成功ではなく省略
+として残ります。直接の文書レビューだけで十分な変更では実行するチェックを
+選ばなくても構いませんが、その理由を記録する必要があります。独立レビューでは、
+チェックの選択と省略理由も評価します。
+
+判断が変わるとキャッシュが無効になるよう、計画ファイルと実行器を
+`--verify-identity` に宣言してください。この方針を採用する場合、
+`verify_preflight` と `verify_related` は未設定にします。設定すると、それらの
+コマンドは選択器の外で実行されます。既存の状態には、再初期化ではなく実行を
+停止した状態での設定移行が必要です。CI の方針は別です。
+[JSON の例は英語版 README](README.md#necessity-based-verification-for-this-repository)を参照してください。
+
 ### 任意の検証前チェックを実行する
 
 新しい状態を初期化するとき、既存の `--verify` より前に明示的に選んだ軽量チェックを実行するには、`init` に次の引数を追加します。
@@ -362,7 +388,7 @@ uv tool としてインストールした場合、`todo-flow upgrade --wheel /ab
 
 最新リリースは **0.1.2** です。小規模プロジェクトの全工程、復旧、2〜3件の独立した同時トラックで動作確認しています。大きな一覧は別途、合成データによる UI テストで確認しています。
 
-- プロジェクトは `repos` で複数の異なる Git ルートを設定できます。ホストはルートごとに別の worktree を作成し、コマンドワーカーは変更を `repository-name:relative/path` 形式で返します。[Codex exec アダプターの例](examples/codex_exec_adapter.py)を参照してください。Forgejo と submodule は未実装です。
+- プロジェクト状態ごとに1つのリポジトリを扱います。Forgejo、submodule、複数リポジトリにまたがる協調した統合は未実装です。
 - 開発版のワーカーは読み取り専用ツールでチェックアウトを調べ、JSON 提案を返します。ランタイムが変更を適用し、検証して公開します。ブラウザーワークフローは未実装です。
 - ソース内容と証拠全体をプロンプトに注入しません。`main` にはソース合計150,000バイトの制限はありません。ワーカーが選んで読む内容には、引き続きプロバイダーのコンテキスト上限が適用されます。ファイル削除とバイナリ編集は非対応です。
 - ワーカーに既定の時間制限はありません。`init --worker-timeout SECONDS` で有効にできます。既存プロジェクトは設定済みの上限を保持し、`worker_timeout: null` は制限を無効にします。キャンセルとドライバー喪失時のクリーンアップは引き続き有効です。ドライバーの既定のタスク割り当て上限は100で、残りのリクエストは次回の実行に残ります。

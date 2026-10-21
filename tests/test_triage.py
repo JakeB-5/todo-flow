@@ -2,6 +2,7 @@ import json
 import shutil
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import test_flow
@@ -9,6 +10,7 @@ from test_flow import DOC
 from todo_flow import documents
 from todo_flow.adapters import command
 from todo_flow.engine import Engine
+from todo_flow.cleanup import owned_path
 from todo_flow.store import Conflict, encode
 from todo_flow.triage import Triage, cleared
 
@@ -150,6 +152,57 @@ class TriageTests(unittest.TestCase):
         self.assertTrue(
             any(row["candidate"] == latest["head"] and row["cleared"] for row in receipts)
         )
+
+    def test_multirepository_repair_uses_configured_worktree_root(self):
+        task, triage, context = self.landed()
+        worktree_root = self.root / "configured-repair-worktrees"
+        triage.engine.config.update(
+            worktree_root=str(worktree_root),
+            repos=[
+                {
+                    "name": "core",
+                    "path": str(self.repo),
+                    "base": "main",
+                    "writable": ["*.py"],
+                    "verify": ["python", "-c", "pass"],
+                },
+                {
+                    "name": "service",
+                    "path": str(self.root / "service-repo"),
+                    "base": "main",
+                    "writable": ["*.py"],
+                    "verify": ["python", "-c", "pass"],
+                },
+            ],
+        )
+        context["repository_heads"] = {"core": context["head"], "service": context["head"]}
+        context["triage_context"]["bases"] = {
+            "core": context["triage_context"]["base"],
+            "service": context["triage_context"]["base"],
+        }
+        triage.apply(
+            task,
+            context,
+            {
+                "summary": "Keep repair workspaces under the configured root",
+                "triage": [
+                    disposition(
+                        "new:configured-root",
+                        "repair",
+                        "in-scope",
+                        observation="Repair original obligation in both repository workspaces",
+                    )
+                ],
+            },
+        )
+
+        track = self.s.track("addition")
+        paths = [
+            triage.engine.repository_state(track, "core")["workspace"],
+            triage.engine.repository_state(track, "service")["workspace"],
+        ]
+        self.assertTrue(all(Path(path).parent == worktree_root for path in paths))
+        self.assertTrue(all(owned_path(self.s, path, triage.engine.config) for path in paths))
 
     def test_disposition_batch_is_atomic_and_original_scope_cannot_escape(self):
         task, triage, context = self.landed()

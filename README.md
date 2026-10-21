@@ -73,6 +73,8 @@ todo-flow serve --port 8765
 
 Use `--language ko`, `--language ja` or `--language zh-CN` for the other supported languages. Omitting it prompts in an interactive terminal and defaults to English without a terminal. For Claude sessions, install to `.claude/skills`. Skills inherit the configured language. Add `--github OWNER/REPOSITORY` to `init` for GitHub issues and PRs.
 
+Codex workers use the read-only sandbox by default. To let a worker run project tests and verification commands, set the stored project option with `init --codex-sandbox workspace-write`. The worker still returns product edits as proposals for the host to apply. An inherited `TODO_FLOW_CODEX_SANDBOX` environment value cannot change the stored permission.
+
 Keep the dashboard server running and open **http://127.0.0.1:8765**. Continue with the skill examples below. [Detailed setup and recovery](AGENT_INSTALL.md).
 
 </details>
@@ -202,6 +204,35 @@ For an explicitly bounded request, use `trackrun TRACK_ID --worker-attempt-limit
 Assessment, implementation, independent review, triage and watch attempts reserve one attempt atomically at claim time. Failed or interrupted attempts remain charged, including failures before worker launch. Host verification, landing and completion tasks do not consume worker attempts. Files in `budgets/` preserve the limit and cumulative usage; `status`, driver output, decisions and budget events expose usage, candidate HEAD and remaining tasks. A budget stop preserves results and pending obligations and does not mean the goal is complete.
 
 Resume a budget stop with `todo-flow --state STATE answer DECISION_ID --text 'Approve additional attempts' --additional-worker-attempts 5`, then restart `todo-flow --state STATE run` if needed. The positive increment extends the existing total limit without clearing usage or replacing pending work. A plain answer, `pause`/`resume`, or repeating `start`/`trackrun` cannot grant extra attempts. Use the CLI for budget approval; ordinary dashboard answers remain available for other decisions.
+
+### Necessity-based verification for this repository
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json` is a project verifier
+that runs only checks judged necessary before execution. The coordinator assesses
+the change and existing evidence; this script does not infer necessity from file names.
+The plan file has `version: 1` and a `plans` object keyed by `git rev-parse HEAD^{tree}`.
+Each plan has a `reason` explaining its scope/evidence and a nonempty `checks` array:
+
+```json
+{
+  "name": "focused behavior check",
+  "decision": "necessary",
+  "reason": "The changed selector must not launch omitted commands",
+  "evidence_gap": "Source inspection alone does not demonstrate the launch boundary",
+  "argv": ["uv", "run", "--frozen", "python", "-m", "unittest", "discover", "-s", "tests", "-p", "test_verify_selected.py"]
+}
+```
+
+An omitted check instead uses `decision: "unnecessary"` or `"undetermined"`, plus
+`name` and `reason`; it never executes. Missing, stale or malformed plans execute
+no checks. Undetermined necessity reports `inconclusive`, without a whole-suite
+fallback. Explicitly unnecessary checks remain omissions, not test passes. A plan
+may require no executable checks after direct review, but must record why.
+Have independent review assess these choices alongside the change. Declare the
+plan file and runner in `--verify-identity` so changed decisions invalidate cached
+evidence. Leave `verify_preflight` and `verify_related` unset when adopting this
+policy; otherwise those commands run outside this selector. Existing state needs
+a quiescent configuration migration, not reinitialization. CI policy is separate.
 
 ### Run optional verification preflight checks
 

@@ -155,6 +155,9 @@ def run_native(
     _write_exclusive(spec_path, spec)
     with (folder / "output.json").open("w") as out, (folder / "stderr.log").open("w") as err:
         env = dict(os.environ)
+        from .worker import CODEX_SANDBOX_ENV, validate_codex_sandbox
+
+        env[CODEX_SANDBOX_ENV] = validate_codex_sandbox(sandbox)
         if tmpdir is not None:
             env["TMPDIR"] = tmpdir
         process = SupervisedProcess(

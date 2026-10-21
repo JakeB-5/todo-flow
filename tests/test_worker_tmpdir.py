@@ -104,7 +104,11 @@ class WorkerTmpdirTests(unittest.TestCase):
             patch("todo_flow.worker.SupervisedProcess", spawn),
         ):
             result = run_worker(
-                {"worker": {"type": "codex"}, "worker_launcher": "headless"},
+                {
+                    "worker": {"type": "codex"},
+                    "worker_launcher": "headless",
+                    "codex_sandbox": "workspace-write",
+                },
                 {"workspace": str(self.workspace)},
                 {"attempt": "attempt-first", "kind": "assess"},
                 self.state,
@@ -139,7 +143,11 @@ class WorkerTmpdirTests(unittest.TestCase):
             patch("todo_flow.native_worker.run_native", side_effect=run_native),
         ):
             result = run_worker(
-                {"worker": {"type": "codex"}, "worker_launcher": "orca"},
+                {
+                    "worker": {"type": "codex"},
+                    "worker_launcher": "orca",
+                    "codex_sandbox": "workspace-write",
+                },
                 {"workspace": str(self.workspace)},
                 {"attempt": "attempt-native", "kind": "assess"},
                 self.state,
@@ -170,6 +178,7 @@ class WorkerTmpdirTests(unittest.TestCase):
                     "worker_protocol": 2,
                     "worker_launcher": "headless",
                     "worker": {"type": "command", "argv": [sys.executable, str(adapter)]},
+                    "codex_sandbox": "workspace-write",
                 },
                 {"workspace": str(self.workspace)},
                 {"attempt": attempt, "kind": "work"},

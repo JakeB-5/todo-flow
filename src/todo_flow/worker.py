@@ -19,6 +19,7 @@ from .language import output_instruction
 from .launchers import LauncherUnavailable, TerminalProcess, select_launcher, spawn_terminal
 from .change_proposal import CHANGE_SCHEMA, validate_changes
 from .condition_evidence import REFERENCE_SCHEMA
+from .release import validate_codex_sandbox
 
 SCHEMA = {
     "type": "object",
@@ -133,17 +134,18 @@ SCHEMA["properties"]["triage_search"] = {
 }
 
 CODEX_SANDBOX_ENV = "TODO_FLOW_CODEX_SANDBOX"
-CODEX_SANDBOX_VALUES = ("read-only", "workspace-write")
 
 
-def validate_codex_sandbox(value):
-    if type(value) is not str or value not in CODEX_SANDBOX_VALUES:
-        raise ValueError(f"{CODEX_SANDBOX_ENV} must be read-only or workspace-write")
-    return value
+def configured_codex_sandbox(config):
+    """Read the trusted project setting; ambient environment cannot grant writes."""
+    if not isinstance(config, dict):
+        raise ValueError("Project configuration must be an object")
+    return validate_codex_sandbox(config.get("codex_sandbox", "read-only"))
 
 
-def configured_codex_sandbox():
-    return validate_codex_sandbox(os.environ.get(CODEX_SANDBOX_ENV, "read-only"))
+def codex_sandbox_from_environment():
+    """Read the value passed to the trusted protocol-2 example adapter."""
+    return validate_codex_sandbox(os.environ.get(CODEX_SANDBOX_ENV, "read-only"), CODEX_SANDBOX_ENV)
 
 
 def codex_app_server_policy(sandbox):
@@ -309,6 +311,10 @@ using an exact configured name. Never use an unprefixed or absolute path in that
 For changes use either {path,content} with complete UTF-8 content, or
 {path,format:"replace-v1",base_head,sha256,edits:[{old,new}]} for an existing UTF-8 file.
 Use the input head as base_head and the lowercase SHA-256 of the original raw file bytes as sha256.
+If permitted read-only tools cannot obtain that SHA-256, use {path,content} with complete UTF-8
+content even for an existing file. Do not guess a digest or broaden tool permissions to compute it.
+The full-content form needs no hash; the host still checks paths, the pre-execution HEAD and
+existing changes before applying it.
 Each old must be nonempty and occur exactly once in the original UTF-8 bytes. All edit ranges refer
 to that same original and must not overlap; replacements are not searched by later edits. new may
 be empty. Preserve exact line endings. Do not mix content with edit fields or invent other formats.
@@ -470,7 +476,7 @@ def codex_exec_base_args(executable="codex", sandbox=None):
     """Shared Codex CLI sandbox policy for built-in and protocol-2 workers."""
     from .native_attempt import DISABLED
 
-    sandbox = configured_codex_sandbox() if sandbox is None else validate_codex_sandbox(sandbox)
+    sandbox = "read-only" if sandbox is None else validate_codex_sandbox(sandbox)
     args = [
         executable,
         "exec",
@@ -556,6 +562,25 @@ def worker_input(context, folder):
     return data
 
 
+def select_worker_launcher(config, context):
+    """Keep multi-repository work on the host; no session can own several roots."""
+    repositories = context.get("repositories")
+    if isinstance(repositories, dict) and len(repositories) > 1:
+        requested = config.get("worker_launcher", "auto")
+        if requested not in ("auto", "headless"):
+            selection = {
+                "requested": requested,
+                "backend": None,
+                "reason": "multi_repository_interactive_launcher_unsupported",
+            }
+            raise LauncherUnavailable(
+                "Interactive launchers cannot own a multi-repository worker; select headless",
+                selection,
+            )
+        config = {**config, "worker_launcher": "headless"}
+    return select_launcher(config, context["workspace"])
+
+
 def run_worker(config, context, task, state, heartbeat):
     with WorkerObservation(task) as observation:
         return _run_worker(config, context, task, state, heartbeat, observation)
@@ -573,7 +598,9 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     config = apply(config, task.get("worker_selection"))
     validate_adapter(config["worker"])
     adapter = config["worker"]
-    sandbox = configured_codex_sandbox() if adapter["type"] == "codex" else "read-only"
+    sandbox = (
+        configured_codex_sandbox(config) if adapter["type"] in ("codex", "command") else "read-only"
+    )
     if adapter["type"] == "command" and config.get("worker_protocol", 1) != 2:
         raise ValueError(
             "Custom workers require path-based worker_protocol=2; update the adapter to read "
@@ -603,9 +630,7 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     context = worker_input(context, folder)
     tmpdir = None
     codex_workspace_write = adapter["type"] == "codex" and sandbox == "workspace-write"
-    example_workspace_write = (
-        adapter["type"] == "command" and os.environ.get(CODEX_SANDBOX_ENV) == "workspace-write"
-    )
+    example_workspace_write = adapter["type"] == "command" and sandbox == "workspace-write"
     if codex_workspace_write or example_workspace_write:
         tmpdir = str(codex_workspace_tmpdir(context["workspace"], state, task["attempt"]))
     (folder / "input.json").write_text(encode(context))
@@ -662,7 +687,7 @@ def _run_worker(config, context, task, state, heartbeat, observation):
     else:
         raise ValueError("Unknown worker adapter")
     try:
-        launcher = select_launcher(config, context["workspace"])
+        launcher = select_worker_launcher(config, context)
     except LauncherUnavailable as error:
         write_json(
             folder / "launch.json",
@@ -712,6 +737,8 @@ def _run_worker(config, context, task, state, heartbeat, observation):
             return native
     env = dict(os.environ)
     env.pop("CLAUDECODE", None)
+    if adapter["type"] in ("codex", "command"):
+        env[CODEX_SANDBOX_ENV] = sandbox
     if tmpdir is not None:
         env["TMPDIR"] = tmpdir
     started = time.monotonic()

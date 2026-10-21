@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: c747f54e38e8a6a859cbe560587999c4a936c82e5c8692b53e5ee60c0b71d759; status: translated -->
+<!-- translation-source: README.md; source-sha256: 859320b3fe066e7911300c1034ac85e30a1e7114c2b8a3b2eff9ee1e750c7b62; status: translated -->
 
 ## 15 秒了解 TODO Flow
 
@@ -209,6 +209,27 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 
 使用 `todo-flow --state STATE answer DECISION_ID --text '批准额外尝试' --additional-worker-attempts 5` 恢复因预算停止的请求；必要时再启动 `todo-flow --state STATE run`。正整数增量会扩展现有总上限，不清除使用量，也不替换待处理工作。普通回答、`pause`/`resume` 或重复执行 `start`/`trackrun` 均不能授予额外尝试。预算批准请使用 CLI；其他决策仍可通过仪表盘正常回答。
 
+### 本仓库基于必要性判断的验证
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json` 是项目验证器，
+只执行事先判断为必要的检查。协调者根据变更和已有证据作出判断，不按文件名自动推断必要性。
+计划文件包含 `version: 1` 和以 `git rev-parse HEAD^{tree}` 的值为键的 `plans` 对象。
+每个计划都需要说明范围和证据的 `reason`，以及非空的 `checks` 数组。
+
+必要的检查记录 `name`、`decision: "necessary"`、具体的 `reason`、
+说明已有证据为何不足的 `evidence_gap`，以及要执行的 `argv` 数组。
+省略的检查记录 `name`、`decision: "unnecessary"` 或 `"undetermined"` 和 `reason`，
+不会执行。计划缺失、候选发生变化或格式无效时，不执行任何检查。
+无法判断必要性时报告 `inconclusive`，不会回退为运行全部测试。
+不必要的检查保留为省略记录，不算测试通过。
+只需直接审阅的变更可以不选择任何可执行检查，但仍须记录原因。
+独立评审应同时审查检查的选择与省略理由。
+
+请在 `--verify-identity` 中声明计划文件和运行脚本，使判断变化能够使缓存失效。
+采用此策略时不要设置 `verify_preflight` 和 `verify_related`；
+否则这些命令会在选择器之外运行。已有状态需要在没有执行活动时迁移配置，而不是重新初始化。
+CI 策略单独管理。[JSON 示例见英文 README](README.md#necessity-based-verification-for-this-repository)。
+
 ### 运行可选的验证预检
 
 对于新状态，在 `init` 命令中添加以下参数，可在原有 `--verify` 命令之前运行明确选择的低成本检查：
@@ -362,7 +383,7 @@ todo-flow --state /absolute/project/todo compatibility --target /absolute/projec
 
 最新发行版：**0.1.2**。已演练小项目完整循环、恢复和两到三条独立轨道并发；大型列表有独立的合成界面测试覆盖。
 
-- 项目可通过 `repos` 配置多个不同的 Git 根目录。主机为每个根目录创建独立 worktree；命令 worker 以 `repository-name:relative/path` 返回变更。参见 [Codex exec 示例适配器](examples/codex_exec_adapter.py)。Forgejo 和 submodule 尚未实现。
+- 每份项目状态对应一个仓库。尚未实现 Forgejo、子模块或协调多个仓库的合入。
 - 开发分支的工作进程使用只读工具探索检出目录并返回 JSON 提案。运行时应用变更、验证并发布。尚未实现浏览器工作流。
 - 不会把源码内容和完整证据注入提示；`main` 没有源码合计 150,000 字节的限制。工作进程自行选择读取的内容仍受供应商上下文限制。不支持文件删除和二进制编辑。
 - 工作进程默认没有时限。`init --worker-timeout SECONDS` 可选择设置时限；已有项目保留配置的限制（`worker_timeout: null` 表示禁用时限）。取消和驱动进程丢失后的清理仍然有效。驱动进程默认任务分配上限为 100；剩余请求保留到下一次运行。

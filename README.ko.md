@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: c747f54e38e8a6a859cbe560587999c4a936c82e5c8692b53e5ee60c0b71d759; status: translated -->
+<!-- translation-source: README.md; source-sha256: 859320b3fe066e7911300c1034ac85e30a1e7114c2b8a3b2eff9ee1e750c7b62; status: translated -->
 
 ## 15초로 보는 TODO Flow
 
@@ -76,6 +76,8 @@ todo-flow serve --port 8765
 ```
 
 다른 언어에는 `--language en`, `--language ja`, `--language zh-CN`을 사용합니다. 생략하면 대화형 터미널에서는 선택을 묻고 터미널이 없으면 영어를 사용합니다. Claude 세션에는 `.claude/skills`를 사용합니다. 스킬은 프로젝트 언어를 상속합니다. GitHub 이슈·PR 연동에는 `init`에 `--github OWNER/REPOSITORY`를 추가합니다.
+
+Codex 워커는 기본적으로 읽기 전용 샌드박스에서 실행됩니다. 워커가 프로젝트 테스트와 검증 명령을 실행하게 하려면 `init --codex-sandbox workspace-write`로 저장된 프로젝트 설정을 명시합니다. 제품 변경은 계속 제안으로 반환하고 호스트가 반영합니다. 상속된 `TODO_FLOW_CODEX_SANDBOX` 환경변수는 저장된 권한을 바꾸지 못합니다.
 
 대시보드 서버를 실행해 둔 채 **http://127.0.0.1:8765**를 열고 아래 스킬 예시를 따라 진행하세요. [상세 설치·복구 안내](AGENT_INSTALL.ko.md)를 참고하세요.
 
@@ -208,6 +210,27 @@ todo-flow --state "$FLOW_STATE" update-skills --target "$FLOW_SKILLS"
 평가·구현·독립 리뷰·triage·watch 시도는 claim 시점에 원자적으로 한 번 차감합니다. 워커 시작 전 실패를 포함한 실패·중단 시도도 사용량에 남습니다. 호스트 검증·landing·완료 작업은 워커 시도를 차감하지 않습니다. `budgets/` 파일이 한도와 누적 사용량을 보존하며 `status`, 드라이버 출력, 결정과 예산 이벤트에서 사용량·후보 HEAD·남은 작업을 확인할 수 있습니다. 한도 정지는 결과와 미완료 의무를 보존하며 목표 완료 판정이 아닙니다.
 
 한도 정지는 `todo-flow --state STATE answer DECISION_ID --text '추가 시도 승인' --additional-worker-attempts 5`로 재개하고, 필요하면 `todo-flow --state STATE run`을 다시 실행합니다. 양의 정수 증분을 기존 총한도에 더하며 사용량과 대기 작업을 유지합니다. 일반 답변, `pause`/`resume`, `start`/`trackrun` 반복은 추가 시도를 승인하지 않습니다. 예산 승인은 CLI를 사용하고 다른 결정에는 기존 대시보드 답변을 사용할 수 있습니다.
+
+### 이 저장소의 필요성 기반 검증
+
+`scripts/verify_selected.py --plans /absolute/path/plans.json`은 실행 전에 필요하다고
+판단한 검사만 수행하는 프로젝트 검증기입니다. 코디네이터가 변경과 기존 근거를 검토하며,
+파일 이름으로 필요성을 자동 추정하지 않습니다. 계획 파일은 `version: 1`과
+`git rev-parse HEAD^{tree}` 값을 키로 하는 `plans` 객체를 가집니다.
+각 계획에는 범위와 근거를 설명하는 `reason`과 비어 있지 않은 `checks` 배열이 필요합니다.
+
+필요한 검사는 `name`, `decision: "necessary"`, 구체적인 `reason`, 기존 근거가 부족한
+이유인 `evidence_gap`, 실행할 `argv` 배열을 기록합니다. 생략할 검사는 `name`,
+`decision: "unnecessary"` 또는 `"undetermined"`, `reason`을 기록하며 실행하지 않습니다.
+계획이 없거나 후보가 달라졌거나 형식이 잘못되면 아무 검사도 실행하지 않습니다.
+판단 불명은 `inconclusive`로 보고하며 전체 검사로 대체하지 않습니다. 불필요한 검사는
+통과한 검사가 아닌 생략으로 남습니다. 직접 검토만 필요한 변경은 실행 검사를 선정하지
+않을 수 있지만 그 이유는 기록해야 합니다. 독립 리뷰가 선정과 생략 사유를 함께 검토합니다.
+
+판단 변경 시 캐시가 무효화되도록 계획 파일과 실행기를 `--verify-identity`에 선언하세요.
+이 정책에서는 `verify_preflight`와 `verify_related`를 설정하지 마세요. 설정하면 해당
+명령은 선택기 밖에서 실행됩니다. 기존 상태는 재초기화하지 않고 실행이 없는 상태에서
+설정을 마이그레이션해야 합니다. CI 정책은 별개입니다. JSON 예시는 영문 README에 있습니다.
 
 ### 선택적 검증 사전 검사 실행
 
@@ -362,7 +385,7 @@ uv tool로 설치했다면 `todo-flow upgrade --wheel /absolute/new-release.whl 
 
 최신 릴리스는 **0.1.2**입니다. 소규모 프로젝트의 전체 사이클·복구·독립 트랙 2~3개 동시 실행을 확인했으며, 대량 목록은 별도 합성 UI 데이터로 검증했습니다.
 
-- 프로젝트는 `repos`로 서로 다른 Git 루트를 여러 개 설정할 수 있습니다. 호스트는 루트별 worktree를 만들고, 명령형 worker는 `저장소이름:상대/경로` 형식으로 변경을 반환합니다. [Codex exec 어댑터 예제](examples/codex_exec_adapter.py)를 참고하세요. Forgejo와 submodule은 구현하지 않았습니다.
+- 상태 하나당 저장소 하나입니다. Forgejo·서브모듈·복수 저장소 결합 랜딩은 구현하지 않았습니다.
 - 개발 브랜치의 워커는 읽기 전용 도구로 체크아웃을 탐색하고 JSON 제안을 반환합니다. 런타임이 변경 적용·검증·게시를 담당하며 브라우저 워크플로는 구현하지 않았습니다.
 - 소스 내용과 전체 근거를 프롬프트에 주입하지 않으며 `main`에는 합계 150,000바이트 소스 제한이 없습니다. 워커가 선택해 읽는 내용에는 공급자의 컨텍스트 한도가 적용됩니다. 파일 삭제·바이너리 수정은 지원하지 않습니다.
 - 워커의 기본 실행 시간 제한은 없습니다. `init --worker-timeout SECONDS`로 제한을 선택할 수 있으며, 기존 프로젝트의 제한은 유지됩니다(`worker_timeout: null`이면 무제한). 취소 감시와 드라이버 종료 시 정리는 유지됩니다. 드라이버당 기본 작업 배정 상한은 100이며 남은 요청은 다음 실행에서 이어갑니다.

@@ -4,7 +4,7 @@
 
 [从这里开始](README.zh-CN.md#quick-start) · [代理安装](AGENT_INSTALL.zh-CN.md) · [更新](UPDATES.zh-CN.md) · [演示](DEMO.zh-CN.md)
 
-<!-- translation-source: OPERATIONS.md; source-sha256: d92dfeb564038ad3b628ef5165da6b8a9ef74c63e22e2087176ac00d7769e82c; status: translated -->
+<!-- translation-source: OPERATIONS.md; source-sha256: 63d74db2addf75fcb602c5009907b4aab9065a062298df6c0956de8f7a71027b; status: translated -->
 
 <a id="project-state-and-language"></a>
 

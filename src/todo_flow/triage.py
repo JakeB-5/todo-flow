@@ -592,7 +592,12 @@ class Triage:
                     },
                 )
                 branch = "todo/" + task["track"] + "-repair-" + receipt_id[-10:]
-                workspace = str(self.store.path / "worktrees" / branch.replace("/", "-"))
+                worktree_root = Path(
+                    self.engine.config.get("worktree_root") or self.store.path / "worktrees"
+                )
+                if worktree_root.is_symlink():
+                    raise Conflict("Configured repair worktree root cannot be a symlink")
+                workspace = str(worktree_root / branch.replace("/", "-"))
                 if repositories.multi(self.engine.config):
                     secondary = {}
                     for spec in repositories.specs(self.engine.config)[1:]:
@@ -600,9 +605,7 @@ class Triage:
                         repo_branch = branch + "-" + name
                         secondary[name] = {
                             "branch": repo_branch,
-                            "workspace": str(
-                                self.store.path / "worktrees" / (repo_branch.replace("/", "-"))
-                            ),
+                            "workspace": str(worktree_root / repo_branch.replace("/", "-")),
                             "head": None,
                             "issue": None,
                             "pr": None,

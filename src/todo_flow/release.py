@@ -12,6 +12,13 @@ except PackageNotFoundError:
     VERSION = "0.1.2"
 CONTRACTS = json.loads(Path(__file__).with_name("release.json").read_text())
 VERIFICATION_IDENTITY_VERSION = 1
+CODEX_SANDBOX_VALUES = ("read-only", "workspace-write")
+
+
+def validate_codex_sandbox(value, setting="codex_sandbox"):
+    if type(value) is not str or value not in CODEX_SANDBOX_VALUES:
+        raise ValueError(f"{setting} must be one of: {', '.join(CODEX_SANDBOX_VALUES)}")
+    return value
 
 
 def validate_verify_preflight(config):
@@ -210,6 +217,8 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
     validate_verify_identity(config)
     validate_verify_preflight(config)
     validate_verify_related(config)
+    if "codex_sandbox" in config:
+        validate_codex_sandbox(config["codex_sandbox"])
     repos = validate_repositories(config)
     validate_github(config)
     worker = config.get("worker")

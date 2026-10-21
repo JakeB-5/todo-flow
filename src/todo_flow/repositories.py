@@ -91,9 +91,14 @@ def identity_components(track):
 def github_repo(config, name=None):
     configured = config.get("github")
     if multi(config):
-        if not isinstance(configured, dict) or name is None:
+        if isinstance(configured, dict):
+            if name is None:
+                return None
+            configured = configured.get(name)
+        elif isinstance(configured, str) and name != specs(config)[0]["name"]:
+            # A legacy string names the primary repository only. Never fan it
+            # out to secondary repositories or silently drop the primary PR.
             return None
-        configured = configured.get(name)
     return configured if isinstance(configured, str) and configured else None
 
 

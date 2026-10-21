@@ -92,18 +92,45 @@ class Engine:
             )
 
     def ensure_workspace(self, task):
-        proposal_application.read(self, task["track"])
+        records = proposal_application.read(self, task["track"])
         # Git worktree registration writes shared .git/config even for different tracks.
         with file_lock(self.store.path / "locks" / "git-metadata.lock", blocking=True):
             with self.store.transaction() as c:
                 self.store.assert_claim(c, task)
             if repositories.multi(self.config):
+                active = {
+                    name: record
+                    for name, record in records.items()
+                    if record and record["phase"] in proposal_application.ACTIVE
+                }
+                if active:
+                    self.process_barrier(task["track"]).require_clear()
+                    for record in active.values():
+                        proposal_application.require_scope(self, task, record)
                 workspaces = self._ensure_repository_workspaces(task)
                 primary = repositories.specs(self.config)[0]["name"]
                 codex_workspace_tmpdir(
                     workspaces[primary], self.store.path, task["attempt"], create=False
                 )
                 return workspaces
+            if records and records["phase"] in proposal_application.ACTIVE:
+                self.process_barrier(task["track"]).require_clear()
+                proposal_application.require_scope(self, task, records)
+                track = self.store.track(task["track"])
+                workspace = Path(track["workspace"] or "").resolve()
+                if (
+                    not track["workspace"]
+                    or not workspace.is_dir()
+                    or str(workspace) != records["intent"]["workspace"]
+                    or command(["git", "branch", "--show-current"], workspace) != track["branch"]
+                ):
+                    raise Conflict(
+                        "Unfinished proposal checkout ownership changed; preserve evidence"
+                    )
+                managed = managed_workspace.ensure(self, task, proposal_recovery=True)
+                if managed is not None and managed != workspace:
+                    raise Conflict("Proposal checkout differs from managed ownership evidence")
+                return workspace
             managed = managed_workspace.ensure(self, task)
             workspace = managed if managed is not None else self._ensure_workspace(task)
             codex_workspace_tmpdir(workspace, self.store.path, task["attempt"], create=False)
@@ -172,6 +199,7 @@ class Engine:
                     or intent.get("before_head") != state["head"]
                 ):
                     raise Conflict("Repository workspace HEAD changed; preserve it for inspection")
+                proposal_application.require_scope(self, task, journal)
             else:
                 self.update_repository_state(task, name, head=actual_head)
             workspaces[name] = workspace
@@ -918,6 +946,9 @@ class Engine:
             "head": track["head"],
             "heads": candidate_heads,
             "repositories": dict(previous.get("repositories", {})),
+            # Receipt bytes remain immutable. Later remote observations live
+            # beside them so cleanup can still match the original effect.
+            "remoteObservations": dict(previous.get("remoteObservations", {})),
             "status": "in_progress",
         }
         for spec in declarations:
@@ -929,7 +960,8 @@ class Engine:
             base = repositories.fetch_base(root, base_name)
             if old and old.get("head") == candidate and old.get("merged"):
                 command(["git", "merge-base", "--is-ancestor", old["merged"], base], root)
-                landing["repositories"][name] = {**old, "remoteHead": base}
+                landing["remoteObservations"][name] = base
+                self.update(task, landing=encode(landing))
                 continue
             if (
                 subprocess.run(
@@ -945,6 +977,7 @@ class Engine:
                     "recovered": True,
                 }
                 landing["repositories"][name] = receipt
+                landing["remoteObservations"][name] = base
                 self.update(task, landing=encode(landing))
                 continue
             checkout = self.store.path / "integrations" / (task["attempt"] + "-" + name)
@@ -1044,6 +1077,7 @@ class Engine:
                         (encode(receipt), time.time(), effect),
                     )
                 landing["repositories"][name] = receipt
+                landing["remoteObservations"][name] = remote_sha
                 self.update(task, landing=encode(landing))
             finally:
                 # Keep integration worktrees as cleanup-owned evidence; never remove on failure.
@@ -1161,19 +1195,25 @@ class Engine:
                 self.process_barrier(task["track"]).require_clear()
                 workspace = self.ensure_workspace(task)
                 recovered = None
-                if task["kind"] == "work":
+                if task["kind"] in ("work", "assess"):
                     recovered = proposal_application.recover(self, task, workspace)
                     if isinstance(recovered, list):
                         recovered = next(
                             (
                                 row
                                 for row in recovered
-                                if row["intent"]["task"] == task["id"]
+                                if (
+                                    row["intent"]["task"] == task["id"]
+                                    or (row.get("recovered_by") or {}).get("task") == task["id"]
+                                )
                                 and row["intent"]["result"] is not None
                             ),
                             None,
                         )
-                    if recovered and recovered["intent"]["task"] != task["id"]:
+                    if recovered and not (
+                        recovered["intent"]["task"] == task["id"]
+                        or (recovered.get("recovered_by") or {}).get("task") == task["id"]
+                    ):
                         recovered = None
                 else:
                     proposal_application.require_clear(self, task["track"], task)

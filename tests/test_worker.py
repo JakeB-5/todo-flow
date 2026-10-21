@@ -7,20 +7,66 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from todo_flow.supervised_process import SupervisedProcess
+from todo_flow.launchers import LauncherUnavailable
 from unittest.mock import patch
 
 from todo_flow.worker import (
+    configured_codex_sandbox,
     SCHEMA,
     codex_schema,
     codex_workspace_tmpdir,
     run_worker,
+    select_worker_launcher,
     validate_codex_sandbox,
     worker_error,
 )
+from todo_flow.release import check_config
 
 
 class WorkerAdapterTests(unittest.TestCase):
-    def run_codex(self, root, environment):
+    def test_codex_sandbox_uses_project_config_not_ambient_environment(self):
+        with patch.dict(os.environ, {"TODO_FLOW_CODEX_SANDBOX": "workspace-write"}):
+            self.assertEqual(configured_codex_sandbox({}), "read-only")
+            self.assertEqual(
+                configured_codex_sandbox({"codex_sandbox": "workspace-write"}),
+                "workspace-write",
+            )
+
+    def test_project_codex_sandbox_config_fails_closed(self):
+        for value in (None, True, "workspace-write-now", " read-only"):
+            with (
+                self.subTest(value=repr(value)),
+                self.assertRaisesRegex(ValueError, "codex_sandbox"),
+            ):
+                check_config({"codex_sandbox": value})
+        check_config({"codex_sandbox": "read-only"})
+        check_config({"codex_sandbox": "workspace-write"})
+
+    def test_multirepository_auto_launcher_stays_headless(self):
+        context = {
+            "workspace": "/tmp/core",
+            "repositories": {"core": {}, "service": {}},
+        }
+        with patch(
+            "todo_flow.worker.select_launcher", return_value={"backend": "headless"}
+        ) as select:
+            self.assertEqual(
+                select_worker_launcher({"worker_launcher": "auto"}, context),
+                {"backend": "headless"},
+            )
+        select.assert_called_once_with({"worker_launcher": "headless"}, "/tmp/core")
+
+    def test_multirepository_explicit_orca_launcher_fails_before_routing(self):
+        context = {
+            "workspace": "/tmp/core",
+            "repositories": {"core": {}, "service": {}},
+        }
+        with patch("todo_flow.worker.select_launcher") as select:
+            with self.assertRaisesRegex(LauncherUnavailable, "multi-repository worker"):
+                select_worker_launcher({"worker_launcher": "orca"}, context)
+        select.assert_not_called()
+
+    def run_codex(self, root, environment, *, codex_sandbox=None):
         root = Path(root)
         workspace = root / "worktree"
         workspace.mkdir()
@@ -41,7 +87,11 @@ class WorkerAdapterTests(unittest.TestCase):
             patch("todo_flow.worker.SupervisedProcess", spawn),
         ):
             result = run_worker(
-                {"worker": {"type": "codex"}, "worker_launcher": "headless"},
+                {
+                    "worker": {"type": "codex"},
+                    "worker_launcher": "headless",
+                    **({"codex_sandbox": codex_sandbox} if codex_sandbox is not None else {}),
+                },
                 {"workspace": str(workspace)},
                 {"attempt": "sandbox-test", "kind": "assess"},
                 state,
@@ -67,7 +117,9 @@ class WorkerAdapterTests(unittest.TestCase):
             environment = os.environ.copy()
             environment["TODO_FLOW_CODEX_SANDBOX"] = "workspace-write"
             environment["TMPDIR"] = "/host/temp"
-            result, workspace, observed = self.run_codex(tmp, environment)
+            result, workspace, observed = self.run_codex(
+                tmp, environment, codex_sandbox="workspace-write"
+            )
 
             self.assertEqual(result["summary"], "Inspected and verified")
             args = observed["args"]
@@ -193,9 +245,13 @@ class WorkerAdapterTests(unittest.TestCase):
                             side_effect=AssertionError("invalid sandbox reached launcher"),
                         ) as select,
                     ):
-                        with self.assertRaisesRegex(ValueError, "TODO_FLOW_CODEX_SANDBOX"):
+                        with self.assertRaisesRegex(ValueError, "codex_sandbox"):
                             run_worker(
-                                {"worker": {"type": "codex"}, "worker_launcher": "headless"},
+                                {
+                                    "worker": {"type": "codex"},
+                                    "worker_launcher": "headless",
+                                    "codex_sandbox": value,
+                                },
                                 {"workspace": str(workspace)},
                                 {"attempt": "invalid-sandbox", "kind": "assess"},
                                 Path(tmp) / "state",
@@ -222,20 +278,26 @@ class WorkerAdapterTests(unittest.TestCase):
 
     def test_codex_proposal_decoding_and_tool_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            state = Path(tmp) / "state"
+            workspace.mkdir()
 
             def spawn(args, **kwargs):
                 self.assertEqual(args[0], "codex")
                 self.assertIn("identity", kwargs)
                 self.assertIn("--output-schema", args)
                 self.assertIn("--ignore-user-config", args)
-                self.assertIn("read-only", args)
+                self.assertEqual(args[args.index("--sandbox") + 1], "read-only")
+                self.assertNotIn("workspace-write", args)
+                self.assertEqual(kwargs["env"]["TODO_FLOW_CODEX_SANDBOX"], "read-only")
+                self.assertIn('approval_policy="never"', args)
                 disabled = [args[i + 1] for i, arg in enumerate(args) if arg == "--disable"]
                 self.assertTrue({"apps", "plugins", "multi_agent"} <= set(disabled))
                 self.assertNotIn("shell_tool", disabled)
                 self.assertNotIn("code_mode_host", disabled)
                 enabled = [args[i + 1] for i, arg in enumerate(args) if arg == "--enable"]
                 self.assertTrue({"shell_tool", "code_mode_host"} <= set(enabled))
-                self.assertEqual(Path(kwargs["cwd"]), Path(tmp).resolve())
+                self.assertEqual(Path(kwargs["cwd"]), workspace.resolve())
                 self.assertIn("TASK CONTEXT", kwargs["stdin"].read())
                 Path(args[args.index("--output-last-message") + 1]).write_text(
                     json.dumps(
@@ -251,12 +313,16 @@ class WorkerAdapterTests(unittest.TestCase):
 
             # Replace only the adapter's module reference so cleanup still uses
             # real subprocesses for process inspection and a real child to reap.
-            with patch("todo_flow.worker.SupervisedProcess", spawn):
+            # readonly-codex-sandbox: an inherited override must not grant writes.
+            with (
+                patch.dict(os.environ, {"TODO_FLOW_CODEX_SANDBOX": "workspace-write"}),
+                patch("todo_flow.worker.SupervisedProcess", spawn),
+            ):
                 result = run_worker(
                     {"worker": {"type": "codex"}, "worker_launcher": "headless"},
-                    {"goal": "Example", "workspace": tmp},
+                    {"goal": "Example", "workspace": str(workspace)},
                     {"attempt": "test", "kind": "assess"},
-                    tmp,
+                    state,
                     lambda _: None,
                 )
             self.assertNotIn("changes", result)

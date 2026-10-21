@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 
@@ -203,12 +204,110 @@ class MultiRepositoryTests(unittest.TestCase):
         )
         self.assertEqual(
             [cwd for argv, cwd in calls if argv[0] == "git"],
-            [str(self.repo.resolve())] * 2 + [str(self.second_repo.resolve())] * 2,
+            [str(self.repo)] * 2 + [str(self.second_repo)] * 2,
         )
         self.assertEqual(
             [argv[3] for argv, _ in calls if argv[:3] == ["gh", "repo", "view"]],
             ["example/core", "example/service"],
         )
+
+    def test_legacy_github_string_keeps_primary_pull_request_in_triage(self):
+        self.configure_repositories(github="example/core")
+        task, _ = self.start_work()
+        self.engine.update(task, pr=42)
+        self.engine.update_repository_state(task, "service", pr=43)
+        self.assertEqual(repositories.github_repo(self.engine.config, "core"), "example/core")
+        self.assertIsNone(repositories.github_repo(self.engine.config, "service"))
+
+        class Remote:
+            @staticmethod
+            def for_repository(_name):
+                return object()
+
+        self.engine.remote = Remote()
+        with patch("todo_flow.triage.command", return_value=encode([[]])) as request:
+            self.assertEqual(Triage(self.engine).remote_sources(self.s.track("addition")), [])
+
+        paths = [call.args[0][-1] for call in request.call_args_list]
+        self.assertEqual(
+            paths,
+            [
+                "repos/example/core/pulls/42/reviews?per_page=100",
+                "repos/example/core/pulls/42/comments?per_page=100",
+                "repos/example/core/issues/42/comments?per_page=100",
+            ],
+        )
+
+    def test_landing_retry_keeps_effect_receipt_and_separates_latest_remote_head(self):
+        self.configure_repositories(endpoint="land")
+        task, _ = self.start_work()
+        track = self.s.track("addition")
+        heads = repositories.head_map(track, self.engine.config)
+        candidate = heads["core"]
+        effect_id = "landing-original-receipt"
+        receipt = {
+            "head": candidate,
+            "baseBefore": candidate,
+            "merged": candidate,
+            "remoteHead": candidate,
+            "verification": {"ok": True},
+            "effectId": effect_id,
+        }
+        initial = {
+            "head": track["head"],
+            "heads": heads,
+            "repositories": {"core": receipt},
+            "status": "in_progress",
+        }
+        self.engine.update(task, landing=encode(initial))
+        with self.s.transaction() as connection:
+            connection.execute(
+                "INSERT INTO effects VALUES(?,?,?,?,?,?)",
+                (
+                    effect_id,
+                    "addition",
+                    "landing",
+                    encode({"repository": "core", "candidate": candidate}),
+                    encode(receipt),
+                    time.time(),
+                ),
+            )
+
+        def fail_after_core(core_head):
+            def fetch(root, _base):
+                if Path(root).resolve() == self.repo.resolve():
+                    return core_head
+                raise RuntimeError("simulated second repository landing failure")
+
+            return fetch
+
+        with patch(
+            "todo_flow.engine.repositories.fetch_base", side_effect=fail_after_core(candidate)
+        ):
+            with self.assertRaisesRegex(RuntimeError, "second repository"):
+                self.engine._land_repositories(task, self.s.track("addition"))
+        after_failure = json.loads(self.s.track("addition")["landing"])
+        self.assertEqual(after_failure["repositories"]["core"], receipt)
+        self.assertEqual(after_failure["remoteObservations"]["core"], candidate)
+
+        command(["git", "commit", "--allow-empty", "-m", "Advance core base"], self.repo)
+        command(["git", "push", "origin", "main"], self.repo)
+        advanced = command(["git", "rev-parse", "HEAD"], self.repo)
+
+        with patch(
+            "todo_flow.engine.repositories.fetch_base", side_effect=fail_after_core(advanced)
+        ):
+            with self.assertRaisesRegex(RuntimeError, "second repository"):
+                self.engine._land_repositories(task, self.s.track("addition"))
+
+        after_retry = json.loads(self.s.track("addition")["landing"])
+        self.assertEqual(after_retry["repositories"]["core"], receipt)
+        self.assertEqual(after_retry["remoteObservations"]["core"], advanced)
+        with self.s.connect() as connection:
+            effect = connection.execute(
+                "SELECT receipt FROM effects WHERE id=?", (effect_id,)
+            ).fetchone()
+        self.assertEqual(json.loads(effect["receipt"]), receipt)
 
     def test_engine_creates_one_owned_worktree_per_repository(self):
         self.configure_repositories()
@@ -1009,7 +1108,7 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
                 self.assertEqual(argv[argv.index("--model") + 1], "gpt-6-luna")
                 self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
                 self.assertIn('model_reasoning_effort="max"', argv)
-                self.assertIn(str(self.workspaces[EXAMPLE_REPORTING_REPO]), argv)
+                self.assertIn(str(Path(self.workspaces[EXAMPLE_REPORTING_REPO]).resolve()), argv)
                 self.assertIn(EXAMPLE_CORE_REPO, call["prompt"])
                 self.assertIn("Never inspect secret material", call["prompt"])
                 self.assertIn("shell history", call["prompt"])
@@ -1025,7 +1124,7 @@ sys.exit(int(os.environ.get("FAKE_CODEX_EXIT", "0")))
         call = json.loads(capture.read_text(encoding="utf-8"))
         self.assertEqual(call["argv"][call["argv"].index("--sandbox") + 1], "workspace-write")
         expected_tmpdir = (self.root / "attempts/a1/tmp").resolve()
-        self.assertEqual(Path(call["tmpdir"]), expected_tmpdir)
+        self.assertEqual(Path(call["tmpdir"]).resolve(), expected_tmpdir)
         self.assertTrue(expected_tmpdir.is_dir())
         self.assertFalse((self.workspaces[EXAMPLE_CORE_REPO] / ".tmp").exists())
         self.assertIn("Workspace-write permits project tests", call["prompt"])

@@ -22,7 +22,7 @@ from todo_flow import repositories  # noqa: E402
 from todo_flow.worker import (  # noqa: E402
     codex_exec_base_args,
     codex_schema,
-    configured_codex_sandbox,
+    codex_sandbox_from_environment,
     validate,
     worker_instructions,
 )
@@ -317,7 +317,7 @@ def main(argv=None):
     try:
         context = json.load(sys.stdin, object_pairs_hook=_object, parse_constant=_constant)
         workspace, declarations = validate_context(context)
-        sandbox = configured_codex_sandbox()
+        sandbox = codex_sandbox_from_environment()
         tmpdir = os.environ.get("TMPDIR") if sandbox == "workspace-write" else None
         if sandbox == "workspace-write" and (not tmpdir or not Path(tmpdir).is_absolute()):
             raise ValueError("workspace-write requires TODO Flow to provide an attempt TMPDIR")

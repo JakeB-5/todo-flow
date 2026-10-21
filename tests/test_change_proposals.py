@@ -110,6 +110,60 @@ class ProposalApplicationTests(unittest.TestCase):
         engine = Engine(self.s)
         return engine, task, engine.ensure_workspace(task)
 
+    def test_hashless_existing_file_proposal_roundtrips_through_host(self):
+        # readonly-hash-fallback: a read-only worker needs no hashing capability
+        # to propose the complete replacement; only the host applies and commits it.
+        # test_flow.DOC requires 2 + 3 = 5; keep this check in the base fixture
+        # so the worker's only proposed change remains calc.py.
+        (self.repo / "test_calc.py").write_text(
+            "import unittest\n"
+            "from calc import add\n\n"
+            "class AdditionTests(unittest.TestCase):\n"
+            "    def test_add(self):\n"
+            "        self.assertEqual(add(2, 3), 5)\n"
+        )
+        command(["git", "add", "test_calc.py"], self.repo)
+        command(["git", "commit", "-m", "Add addition verification fixture"], self.repo)
+        command(["git", "push", "origin", "main"], self.repo)
+        engine, task, workspace = self.workspace()
+        before = command(["git", "rev-parse", "HEAD"], workspace)
+        original = (workspace / "calc.py").read_bytes()
+        baseline = subprocess.run(
+            engine.config["verify"], cwd=workspace, capture_output=True, text=True
+        )
+        self.assertEqual(baseline.returncode, 1, baseline.stdout + baseline.stderr)
+        self.assertIn("NotImplementedError", baseline.stderr)
+        engine.config["worker"] = {
+            "type": "command",
+            "argv": [
+                sys.executable,
+                "-c",
+                "import json,sys;from pathlib import Path;"
+                "ctx=json.load(sys.stdin);"
+                "assert Path.cwd()==Path(ctx['workspace']);"
+                "source=Path('calc.py').read_text();"
+                "content=source.replace('raise NotImplementedError','return a + b');"
+                "print(json.dumps({'summary':'Full content without a hash',"
+                "'changes':[{'path':'calc.py','content':content}],'verify':True}))",
+            ],
+        }
+        engine.execute(task)
+        output = self.s.path / "attempts" / task["attempt"] / "output.json"
+        proposal = json.loads(output.read_text())
+        expected = "def add(a, b):\n    return a + b\n"
+        self.assertEqual(proposal["changes"], [{"path": "calc.py", "content": expected}])
+        self.assertEqual((workspace / "calc.py").read_bytes(), expected.encode())
+        self.assertEqual(
+            subprocess.check_output(["git", "show", "HEAD:calc.py"], cwd=workspace),
+            expected.encode(),
+        )
+        self.assertEqual(
+            command(["git", "diff", "--name-only", before, "HEAD"], workspace), "calc.py"
+        )
+        self.assertEqual((self.repo / "calc.py").read_bytes(), original)
+        self.assertEqual(command(["git", "status", "--porcelain"], workspace), "")
+        self.assertTrue(json.loads(self.s.track("addition")["verification"])["ok"])
+
     def test_mixed_batch_preserves_original_coordinates_and_exact_bytes(self):
         engine, task, workspace = self.workspace()
         source = "alpha beta\r\n안녕 🌿\r\n"

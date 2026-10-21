@@ -7,7 +7,14 @@ from .adapters import command
 from . import repositories
 from .engine import Engine
 from .language import LANGUAGES, select_language
-from .release import VERSION, CONTRACTS, check_config, project_compatibility, validate_repositories
+from .release import (
+    CODEX_SANDBOX_VALUES,
+    VERSION,
+    CONTRACTS,
+    check_config,
+    project_compatibility,
+    validate_repositories,
+)
 from .maintenance import runtime_guard
 from .store import Conflict, Store, encode, fingerprint
 
@@ -72,6 +79,8 @@ def initialize(args):
     }
     if args.worktree_root is not None:
         config["worktree_root"] = args.worktree_root
+    if args.codex_sandbox is not None:
+        config["codex_sandbox"] = args.codex_sandbox
     if repos is not None:
         config["repos"] = repos
     if args.verify_identity is not None:
@@ -174,6 +183,11 @@ def parser():
         help="Prefer visible workers when available (default: auto)",
     )
     i.add_argument("--worker", choices=["claude", "codex"], default="claude")
+    i.add_argument(
+        "--codex-sandbox",
+        choices=CODEX_SANDBOX_VALUES,
+        help="Codex worker permissions (default: read-only; workspace-write permits verification)",
+    )
     i.add_argument(
         "--worker-command",
         help=(
