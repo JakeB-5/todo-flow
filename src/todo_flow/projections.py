@@ -283,7 +283,7 @@ class Dashboard:
         }
         # Recheck explicit references before displaying a current integrity assertion.
         try:
-            review = condition_evidence.review_view(self.store.path, t)
+            review = condition_evidence.review_view(self.store.path, t, self.store.config())
         except (ValueError, TypeError, AttributeError):
             review = None
         # Heavy evidence is fetched only on demand, never shipped with a list or the initial detail.
@@ -317,12 +317,14 @@ class Dashboard:
                     value = {
                         **(value or {}),
                         "logs": logs,
-                        "evidenceArtifacts": condition_evidence.available(self.store.path, t),
+                        "evidenceArtifacts": condition_evidence.available(
+                            self.store.path, t, self.store.config()
+                        ),
                     }
         elif params:
             raise ValueError("Log ranges require verification evidence")
         elif kind == "review":
-            value = condition_evidence.review_view(self.store.path, t)
+            value = condition_evidence.review_view(self.store.path, t, self.store.config())
         return {"track": id_, "kind": kind, "value": value}
 
     def activity(self, limit=25, offset=0):

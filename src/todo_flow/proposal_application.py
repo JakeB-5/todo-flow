@@ -14,7 +14,7 @@ import stat
 import tempfile
 from pathlib import Path
 
-from . import integration
+from . import integration, repositories
 from .adapters import command
 from .change_proposal import prepare_changes, validate_changes
 from .checkout import snapshot
@@ -25,12 +25,105 @@ from .store import Conflict, encode, fingerprint
 ACTIVE = {"applying", "ready"}
 
 
-def journal_path(engine, track):
-    return engine.store.path / ("proposal-" + track + ".json")
+class _RepositoryEngine:
+    """Bind single-checkout proposal recovery to one configured repository."""
+
+    def __init__(self, engine, name):
+        self.parent = engine
+        self.repository_name = name
+        spec = next(row for row in repositories.specs(engine.config) if row["name"] == name)
+        self.config = {
+            **engine.config,
+            "repo": spec["path"],
+            "base": spec["base"],
+            "verify": spec["verify"],
+            "writable_patterns": spec["writable"],
+        }
+        self.config.pop("repos", None)
+        self.root = Path(spec["path"])
+
+    def __getattr__(self, name):
+        return getattr(self.parent, name)
 
 
-def read(engine, track):
-    path = journal_path(engine, track)
+def journal_path(engine, track, repo_name=None):
+    suffix = repo_name or getattr(engine, "repository_name", None)
+    return engine.store.path / ("proposal-" + track + ("-" + suffix if suffix else "") + ".json")
+
+
+def batch_path(engine, track):
+    return engine.store.path / ("proposal-batch-" + track + ".json")
+
+
+def read_batch(engine, track):
+    path = batch_path(engine, track)
+    if not os.path.lexists(path):
+        return None
+    try:
+        if path.is_symlink():
+            raise ValueError("symlink")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        intent = record["intent"]
+        if (
+            type(record["version"]) is not int
+            or record["version"] != 1
+            or record["phase"] not in ACTIVE | {"committed"}
+            or intent["track"] != track
+            or record["id"] != fingerprint(intent)
+            or not isinstance(intent["repositories"], list)
+            or not isinstance(intent["base_heads"], dict)
+            or not isinstance(intent["changes"], list)
+        ):
+            raise ValueError("invalid binding")
+        validate_changes(intent["changes"])
+        return record
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise Conflict(f"Invalid multi-repository proposal journal: {path}; preserve it") from error
+
+
+def begin_batch(engine, task, base_heads, grouped, changes, result):
+    intent = {
+        "track": task["track"],
+        "task": task["id"],
+        "attempt": task["attempt"],
+        "generation": task["generation"],
+        "scope": require_scope(engine, task),
+        "base_heads": dict(base_heads),
+        "aggregate_head": repositories.fingerprint(base_heads),
+        "repositories": sorted(grouped),
+        "changes": changes,
+        "result": result,
+    }
+    record = {"version": 1, "id": fingerprint(intent), "intent": intent, "phase": "applying"}
+    with engine.store.transaction() as connection:
+        require_scope(engine, task, record, connection)
+        previous = read_batch(engine, task["track"])
+        if previous and previous["phase"] in ACTIVE:
+            raise Conflict("An unfinished multi-repository proposal batch already exists")
+        write_json(batch_path(engine, task["track"]), record)
+    return record
+
+
+def finish_batch(engine, task, record):
+    require_scope(engine, task, record)
+    heads = repositories.head_map(engine.store.track(task["track"]), engine.config)
+    completed = {**record, "phase": "committed", "result_heads": heads}
+    with engine.store.transaction() as connection:
+        require_scope(engine, task, record, connection)
+        if read_batch(engine, task["track"]) != record:
+            raise Conflict("Multi-repository proposal batch changed before completion")
+        write_json(batch_path(engine, task["track"]), completed)
+    return completed
+
+
+def read(engine, track, repo_name=None):
+    if repositories.multi(engine.config) and repo_name is None:
+        return {
+            row["name"]: read(engine, track, row["name"])
+            for row in repositories.specs(engine.config)
+        }
+    repo_name = repo_name or getattr(engine, "repository_name", None)
+    path = journal_path(engine, track, repo_name)
     if not os.path.lexists(path):
         return None
     try:
@@ -43,6 +136,7 @@ def read(engine, track):
         if (
             record["phase"] not in ACTIVE | {"committed", "restored"}
             or intent["track"] != track
+            or intent.get("repository", repo_name) != repo_name
             or record["id"] != fingerprint(intent)
             or not isinstance(intent["files"], list)
         ):
@@ -53,7 +147,52 @@ def read(engine, track):
         raise Conflict(f"Invalid or unsupported proposal journal: {path}; preserve it") from error
 
 
-def require_clear(engine, track):
+def require_clear(engine, track, task=None):
+    if repositories.multi(engine.config):
+        records = read(engine, track)
+        if task is not None:
+            for name, record in records.items():
+                if not record or record["phase"] not in ACTIVE:
+                    continue
+                require_scope(engine, task, record)
+                registered = engine.repository_state(engine.store.track(track), name)["workspace"]
+                if (
+                    not registered
+                    or str(Path(registered).resolve()) != record["intent"]["workspace"]
+                ):
+                    raise Conflict("Unfinished proposal belongs to another checkout")
+                recover(engine, task, Path(registered), name)
+            records = read(engine, track)
+            batch = read_batch(engine, track)
+            if batch and batch["phase"] in ACTIVE:
+                require_scope(engine, task, batch)
+                workspaces = {
+                    spec["name"]: engine.repository_state(engine.store.track(track), spec["name"])[
+                        "workspace"
+                    ]
+                    for spec in repositories.specs(engine.config)
+                }
+                if any(not value for value in workspaces.values()):
+                    raise Conflict("Multi-repository proposal workspace registration is incomplete")
+                recover(engine, task, workspaces)
+                records = read(engine, track)
+                batch = read_batch(engine, track)
+                if batch and batch["phase"] in ACTIVE:
+                    raise Conflict(
+                        f"Unfinished multi-repository proposal application: {batch_path(engine, track)}"
+                    )
+        else:
+            batch = read_batch(engine, track)
+            if batch and batch["phase"] in ACTIVE:
+                raise Conflict(
+                    f"Unfinished multi-repository proposal application: {batch_path(engine, track)}"
+                )
+        for name, record in records.items():
+            if record and record["phase"] in ACTIVE:
+                raise Conflict(
+                    f"Unfinished proposal application: {journal_path(engine, track, name)}"
+                )
+        return
     record = read(engine, track)
     if record and record["phase"] in ACTIVE:
         raise Conflict(f"Unfinished proposal application: {journal_path(engine, track)}")
@@ -250,7 +389,10 @@ def changed_paths(workspace, before, after):
 def prove_commit(workspace, record):
     """No write here: require the exact recorded commit and every target result."""
     intent = record["intent"]
-    head = command(["git", "rev-parse", "HEAD"], workspace)
+    try:
+        head = command(["git", "rev-parse", "HEAD"], workspace)
+    except Exception as error:
+        raise Conflict("Committed proposal checkout HEAD could not be read") from error
     if integration.merge_head(workspace) or integration.unmerged(workspace):
         raise Conflict("Proposal still has unresolved merge state")
     if record["commit"]:
@@ -294,7 +436,7 @@ def prove_commit(workspace, record):
 def save(engine, task, record):
     with engine.store.transaction() as connection:
         require_scope(engine, task, record, connection)
-        write_json(journal_path(engine, task["track"]), record)
+        write_json(journal_path(engine, task["track"], record["intent"].get("repository")), record)
 
 
 def adopt(engine, task, workspace, record):
@@ -311,10 +453,17 @@ def adopt(engine, task, workspace, record):
             or pending.get("resolved_tree") != record["resolved_tree"]
         ):
             raise Conflict("Integration repair resolution receipt changed")
-    if not record["intent"]["repair"] and (
-        head != record["intent"]["before_head"] or engine.store.track(task["track"])["head"] != head
-    ):
-        engine.update(task, head=head, review=None, verification=None, landing=None)
+    if not record["intent"]["repair"]:
+        repo_name = record["intent"].get("repository")
+        if repo_name:
+            current = engine.repository_state(engine.store.track(task["track"]), repo_name)["head"]
+            if head != record["intent"]["before_head"] or current != head:
+                engine.update_repository_state(task, repo_name, invalidate=True, head=head)
+        elif (
+            head != record["intent"]["before_head"]
+            or engine.store.track(task["track"])["head"] != head
+        ):
+            engine.update(task, head=head, review=None, verification=None, landing=None)
     record = {
         **record,
         "phase": "committed",
@@ -325,10 +474,51 @@ def adopt(engine, task, workspace, record):
     return record
 
 
-def recover(engine, task, workspace):
+def recover(engine, task, workspace, repo_name=None):
+    if repositories.multi(engine.config):
+        if repo_name is not None:
+            return recover(_RepositoryEngine(engine, repo_name), task, workspace)
+        if not isinstance(workspace, dict):
+            raise ValueError("Multi-repository recovery requires named workspaces")
+        recovered = []
+        for spec in repositories.specs(engine.config):
+            row = recover(_RepositoryEngine(engine, spec["name"]), task, workspace[spec["name"]])
+            if row is not None:
+                recovered.append(row)
+        batch = read_batch(engine, task["track"])
+        if not batch:
+            return recovered or None
+        require_scope(engine, task, batch)
+        intent = batch["intent"]
+        names = {row["name"] for row in repositories.specs(engine.config)}
+        if (
+            set(intent["base_heads"]) != names
+            or not set(intent["repositories"]) <= names
+            or len(intent["repositories"]) != len(set(intent["repositories"]))
+        ):
+            raise Conflict("Multi-repository proposal no longer matches configured repositories")
+        if batch["phase"] == "committed":
+            if intent["task"] != task["id"]:
+                return recovered or None
+            if repositories.head_map(engine.store.track(task["track"]), engine.config) != batch.get(
+                "result_heads"
+            ):
+                raise Conflict("Committed multi-repository proposal HEAD map changed")
+            repositories.require_clean(engine.store.track(task["track"]), engine.config, workspace)
+            return {"intent": {"task": task["id"], "result": intent["result"]}, "head": None}
+        engine.apply_changes(
+            task,
+            workspace,
+            intent["changes"],
+            expected_head=intent["aggregate_head"],
+            result=intent["result"],
+            _batch=batch,
+        )
+        return {"intent": {"task": task["id"], "result": intent["result"]}, "head": None}
     engine.process_barrier(task["track"]).require_clear()
     engine.check_claim(task)
-    record = read(engine, task["track"])
+    repo_name = getattr(engine, "repository_name", None)
+    record = read(engine, task["track"], repo_name)
     if not record:
         return None
     if record["phase"] not in ACTIVE:
@@ -350,9 +540,18 @@ def recover(engine, task, workspace):
     require_scope(engine, task, record)
     workspace = Path(workspace).resolve()
     intent = record["intent"]
+    if repo_name:
+        registered = engine.repository_state(engine.store.track(task["track"]), repo_name)[
+            "workspace"
+        ]
+        if not registered or str(Path(registered).resolve()) != str(workspace):
+            raise Conflict("Unfinished proposal belongs to another registered checkout")
     if str(workspace) != intent["workspace"]:
         raise Conflict("Unfinished proposal belongs to another checkout")
-    head = command(["git", "rev-parse", "HEAD"], workspace)
+    try:
+        head = command(["git", "rev-parse", "HEAD"], workspace)
+    except Exception as error:
+        raise Conflict("Interrupted proposal preserved: checkout HEAD could not be read") from error
     # Normal apply also adopts a commit. Only actual recovery may skip a worker
     # without a stored result; persist this receipt with the recovered adoption.
     recovery_record = {
@@ -361,12 +560,23 @@ def recover(engine, task, workspace):
     }
     if record["phase"] == "ready" and (head != intent["before_head"] or not record["commit"]):
         return adopt(engine, task, workspace, recovery_record)
-    if (
-        head == intent["before_head"]
-        and integration.merge_head(workspace) == intent["merge_head"]
-        and snapshot(workspace) == intent["snapshot"]
-        and all(file_state(workspace / row["path"]) == row["before"] for row in intent["files"])
-    ):
+    try:
+        before_state = (
+            head == intent["before_head"]
+            and integration.merge_head(workspace) == intent["merge_head"]
+            and snapshot(workspace) == intent["snapshot"]
+            and all(file_state(workspace / row["path"]) == row["before"] for row in intent["files"])
+        )
+        after_state = (
+            head == intent["before_head"]
+            and integration.merge_head(workspace) == intent["merge_head"]
+            and all(file_state(workspace / row["path"]) == row["after"] for row in intent["files"])
+        )
+    except Exception as error:
+        raise Conflict(
+            "Interrupted proposal preserved: checkout or index state could not be verified"
+        ) from error
+    if before_state:
         if intent["repair"]:
             pending = integration.pending(engine.store.track(task["track"]))
             if not pending or any(
@@ -376,11 +586,7 @@ def recover(engine, task, workspace):
             engine.update(task, landing=encode(intent["repair"]), review=None, verification=None)
         save(engine, task, {**record, "phase": "restored"})
         return None
-    if (
-        head == intent["before_head"]
-        and integration.merge_head(workspace) == intent["merge_head"]
-        and all(file_state(workspace / row["path"]) == row["after"] for row in intent["files"])
-    ):
+    if after_state:
         require_after(workspace, record)
         if intent["repair"]:
             pending = integration.pending(engine.store.track(task["track"]))
@@ -390,27 +596,47 @@ def recover(engine, task, workspace):
                 raise Conflict("Integration repair intent changed during recovery")
         return finish(engine, task, workspace, recovery_record)
     raise Conflict(
-        f"Interrupted proposal preserved at {journal_path(engine, task['track'])}; "
+        f"Interrupted proposal preserved at {journal_path(engine, task['track'], repo_name)}; "
         "restore original target bytes/modes and index from intent, then retry. "
         "Recovery requires the original HEAD, merge and checkout snapshot; do not delete evidence."
     )
 
 
-def apply(engine, task, workspace, changes, repair=None, expected_head=None, result=None):
+def apply(
+    engine,
+    task,
+    workspace,
+    changes,
+    repair=None,
+    expected_head=None,
+    result=None,
+    repo_name=None,
+    patterns=None,
+    batch_id=None,
+):
+    if repositories.multi(engine.config):
+        if not repo_name:
+            raise ValueError("Multi-repository proposal needs its configured repository name")
+        engine = _RepositoryEngine(engine, repo_name)
+    repo_name = repo_name or getattr(engine, "repository_name", None)
     engine.process_barrier(task["track"]).require_clear()
     engine.check_claim(task)
     workspace = Path(workspace).resolve()
-    prior = read(engine, task["track"])
+    prior = read(engine, task["track"], repo_name)
     validate_changes(changes)
     if prior and prior["phase"] in ACTIVE:
         recover(engine, task, workspace)
-        prior = read(engine, task["track"])
+        prior = read(engine, task["track"], repo_name)
     if (
         prior
         and prior["phase"] == "committed"
         and prior["intent"]["proposal"] == changes
         and prior["intent"]["workspace"] == str(workspace)
-        and expected_head in (None, prior["intent"]["before_head"])
+        and (
+            expected_head in (None, prior["intent"]["before_head"])
+            or (repo_name is not None and expected_head == prior["head"])
+        )
+        and (batch_id is None or prior["intent"].get("batch_id") == batch_id)
         and command(["git", "rev-parse", "HEAD"], workspace) == prior["head"]
         # A live merge is a new adoption; committed retries have cleared MERGE_HEAD.
         and not integration.merge_head(workspace)
@@ -419,13 +645,18 @@ def apply(engine, task, workspace, changes, repair=None, expected_head=None, res
         prove_commit(workspace, prior)
         return
     if expected_head is None:
-        expected_head = (
-            repair["workspace_head"] if repair else engine.store.track(task["track"])["head"]
-        )
+        if repair:
+            expected_head = repair["workspace_head"]
+        elif repo_name:
+            expected_head = engine.repository_state(engine.store.track(task["track"]), repo_name)[
+                "head"
+            ]
+        else:
+            expected_head = engine.store.track(task["track"])["head"]
     if not expected_head or command(["git", "rev-parse", "HEAD"], workspace) != expected_head:
         raise Conflict("Proposal HEAD changed during worker execution")
     prepared = prepare_changes(
-        workspace, changes, engine.config["writable_patterns"], expected_head
+        workspace, changes, patterns or engine.config["writable_patterns"], expected_head
     )
     if repair:
         integration.validate_resolution(workspace, prepared, repair)
@@ -462,6 +693,8 @@ def apply(engine, task, workspace, changes, repair=None, expected_head=None, res
         "attempt": task["attempt"],
         "generation": task["generation"],
         "scope": require_scope(engine, task),
+        "repository": repo_name,
+        "batch_id": batch_id,
         "workspace": str(workspace),
         "before_head": expected_head,
         "merge_head": merging,
@@ -484,7 +717,7 @@ def apply(engine, task, workspace, changes, repair=None, expected_head=None, res
             snapshot(workspace) != intent["snapshot"]
             or any(file_state(workspace / row["path"]) != row["before"] for row in files)
             or prepare_changes(
-                workspace, changes, engine.config["writable_patterns"], expected_head
+                workspace, changes, patterns or engine.config["writable_patterns"], expected_head
             )
             != prepared
         ):
@@ -496,7 +729,7 @@ def apply(engine, task, workspace, changes, repair=None, expected_head=None, res
             workspace,
         ):
             raise Conflict("Proposal overlaps existing changes; preserve them before applying it")
-        write_json(journal_path(engine, task["track"]), record)
+        write_json(journal_path(engine, task["track"], repo_name), record)
         for row in files:
             atomic_file(
                 workspace / row["path"],

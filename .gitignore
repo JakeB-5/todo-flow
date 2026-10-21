@@ -12,6 +12,7 @@ dist/
 /.omc/
 
 .venv/
+/.tmp/
 __pycache__/
 *.pyc
 .ruff_cache/

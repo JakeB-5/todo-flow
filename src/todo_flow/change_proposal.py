@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 from .adapters import permitted
@@ -114,17 +115,27 @@ def prepare_changes(workspace, changes, patterns, expected_head):
     validate_changes(changes)
     workspace = Path(workspace).resolve(strict=True)
     names = set()
+    folded_names = set()
     for change in changes:
         name = change["path"]
         path = PurePosixPath(name)
-        if "\x00" in name or name != path.as_posix() or not permitted(name, patterns):
+        if (
+            "\x00" in name
+            or "\\" in name
+            or ":" in name
+            or unicodedata.normalize("NFC", name) != name
+            or name != path.as_posix()
+            or not permitted(name, patterns)
+        ):
             raise Conflict("File is outside the normalized authorized write surface: " + name)
-        if name in names:
-            raise Conflict("Duplicate file paths in result")
+        folded = name.casefold()
+        if name in names or folded in folded_names:
+            raise Conflict("Duplicate or case-aliased file paths in result")
         names.add(name)
+        folded_names.add(folded)
     for name in names:
         path = PurePosixPath(name)
-        if any(parent.as_posix() in names for parent in path.parents):
+        if any(parent.as_posix().casefold() in folded_names for parent in path.parents):
             raise Conflict("Proposal contains ancestor and descendant file paths")
         target = workspace / name
         if target.is_symlink() or not target.resolve().is_relative_to(workspace):

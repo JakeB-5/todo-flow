@@ -105,6 +105,8 @@ def main(spec_path):
         try:
             env = dict(os.environ)
             env.pop("CLAUDECODE", None)
+            if spec.get("tmpdir") is not None:
+                env["TMPDIR"] = spec["tmpdir"]
             print(f"TODO Flow worker: {spec['title']}\nWorkspace: {spec['cwd']}", flush=True)
             if lease_closed(lease):
                 gate.cancel_pending()

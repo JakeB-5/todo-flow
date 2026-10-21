@@ -101,7 +101,19 @@ def preflight(config, context, task, state, launcher):
     }, "native_supported"
 
 
-def run_native(config, context, task, state, folder, launcher, on_pid, observation):
+def run_native(
+    config,
+    context,
+    task,
+    state,
+    folder,
+    launcher,
+    on_pid,
+    observation,
+    *,
+    sandbox="read-only",
+    tmpdir=None,
+):
     supported, reason = preflight(config, context, task, state, launcher)
     selection = {**launcher.get("selection", {}), "reason": reason, "native_ready": bool(supported)}
     launcher["selection"] = selection
@@ -134,12 +146,20 @@ def run_native(config, context, task, state, folder, launcher, on_pid, observati
         "process_identity": identity,
         "model": config["worker"].get("model"),
         "effort": config["worker"].get("effort"),
+        "sandbox": sandbox,
+        "tmpdir": tmpdir,
         "timeout": config.get("worker_timeout"),
         "title": f"TODO {task['track']} · {task['kind']} · {task['attempt'][-8:]}",
     }
     spec_path = folder / "native-spec.json"
     _write_exclusive(spec_path, spec)
     with (folder / "output.json").open("w") as out, (folder / "stderr.log").open("w") as err:
+        env = dict(os.environ)
+        from .worker import CODEX_SANDBOX_ENV, validate_codex_sandbox
+
+        env[CODEX_SANDBOX_ENV] = validate_codex_sandbox(sandbox)
+        if tmpdir is not None:
+            env["TMPDIR"] = tmpdir
         process = SupervisedProcess(
             [sys.executable, "-m", "todo_flow.native_attempt", str(spec_path)],
             identity=identity,
@@ -148,7 +168,7 @@ def run_native(config, context, task, state, folder, launcher, on_pid, observati
             stdout=out,
             stderr=err,
             timeout=None if spec["timeout"] is None else spec["timeout"] + 10,
-            env=dict(os.environ),
+            env=env,
         )
         try:
             if on_pid:

@@ -4,7 +4,7 @@
 
 [README](README.zh-CN.md) · [代理安装](AGENT_INSTALL.zh-CN.md) · [运行指南](OPERATIONS.zh-CN.md) · [演示](DEMO.zh-CN.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: e0039bd400632ee32c96480283835c0299cdb8669c58e31925ead1e79af4c06c; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: 7c6f36523a8cef50e1255a82eec83fb206b9ce2118d4da28c5babeab6b29f13e; status: translated -->
 
 先更新一次共享引擎，再更新每个项目中安装的技能。项目文档和执行记录保留在原有状态目录中。更新不会重新初始化项目，也不会启动待办工作。
 
@@ -46,6 +46,12 @@
 `0.1.0` 新增四语言指南与 UI、主题选择、工作进程模型/推理强度证据、按角色路由、按验证结果分配后续工作、独立评审来源区分、技能共存和离线质量案例。前一次执行仍持有轨道锁时，将阻止后续工作取得该轨道。状态/配置格式及工作进程/技能协议保持不变，无需数据迁移。请在空闲时升级引擎并更新项目技能。现有项目绑定、本地修改和配置仍受保护。
 
 `0.1.1` 修复在新合并中复用已完成的无修改提案的问题，在保留提交引用的前提下安全回收被替代的干净集成检出，并将测试运行时注册与实际安装隔离。状态/配置格式及工作进程/技能协议保持不变，无需数据迁移。请在空闲时升级引擎。现有项目状态、用户修改及未经确认的资源仍受保护。
+
+`0.1.2` 新增可选的多仓库轨道。使用 `repos: [{name, path, base, writable, verify}]` 配置至少两个不同的 Git 根目录后，每条轨道会为每个仓库使用独立的工作树、候选 HEAD、验证器以及评审/合并回执。工作器返回的更改路径采用 `repository-name:relative/path` 格式；此路由要求初始化时配置命令适配器。`--github` 可接受一个 `owner/repository`，也可接受按仓库名称映射的值。合并、集成冲突修复、验证证据和清理均覆盖所有仓库。未配置 `repos` 的项目继续使用原有单仓库流程，无需迁移状态。初始化契约见 `todo-flow init --help`。
+
+### 当前分支新增内容（尚未发布）
+
+源码仓库包含用于 Codex `exec` 的 protocol-2 命令适配器 [`examples/codex_exec_adapter.py`](examples/codex_exec_adapter.py)。它从 stdin 读取 worker context，通过参数选择模型与推理强度，在只读 sandbox 中运行，并返回经过 schema 校验的提案。多仓库 `init --worktree-root /absolute/path` 会将临时 worktree 放在指定的绝对路径下。现有 state 格式不变。
 
 <a id="1-inspect-and-stop-relevant-processes"></a>
 

@@ -2,8 +2,9 @@
 
 import json
 import subprocess
+from pathlib import Path
 
-from . import obsolete_integration
+from . import obsolete_integration, repositories
 from .adapters import command
 from .store import Conflict, encode
 from .checkout import snapshot, require_snapshot
@@ -36,22 +37,32 @@ def pending(track):
     return record if record.get("status") == "integration-repair" else None
 
 
-def request_repair(engine, task, integration, base, reason):
+def request_repair(engine, task, integration, base, reason, repo_name=None):
     track = engine.store.track(task["track"])
+    multi = repo_name is not None and repositories.multi(engine.config)
+    candidate = engine.repository_state(track, repo_name)["head"] if multi else track["head"]
     conflicted = bool(unmerged(integration))
     record = {
         "obsolete_evidence": conflicted,
         "status": "integration-repair",
         "phase": "capturing" if conflicted else "pending",
-        "candidate": track["head"],
+        "candidate": candidate,
         "base": base,
         "integration": str(integration),
         "reason": reason,
+        **(
+            {
+                "repository": repo_name,
+                "candidate_heads": repositories.head_map(track, engine.config),
+            }
+            if multi
+            else {}
+        ),
     }
     if conflicted:
         # Persist the original observation before attempting the separate archive write.
         record["original_evidence"] = obsolete_integration.capture_record(
-            track, integration, base, track["head"]
+            track, integration, base, candidate
         )
     engine.update(task, landing=encode(record), review=None, verification=None)
     record = save_original_evidence(engine, task, record)
@@ -96,6 +107,26 @@ def prepare(engine, task, workspace):
     record = pending(engine.store.track(task["track"]))
     if not record:
         return None
+    repo_name = record.get("repository")
+    if repo_name is not None:
+        if not repositories.multi(engine.config) or not isinstance(workspace, dict):
+            raise Conflict("Multi-repository integration repair lost its named workspaces")
+        spec = next(
+            (row for row in repositories.specs(engine.config) if row["name"] == repo_name), None
+        )
+        if spec is None:
+            raise Conflict("Integration repair repository is no longer configured")
+        track = engine.store.track(task["track"])
+        if repositories.head_map(track, engine.config) != record.get("candidate_heads"):
+            raise Conflict("Multi-repository integration repair candidate set changed")
+        if engine.repository_state(track, repo_name)["head"] != record["candidate"]:
+            raise Conflict("Integration repair candidate changed")
+        workspace = workspace[repo_name]
+        repository_root = Path(spec["path"])
+        base_name = spec["base"]
+    else:
+        repository_root = engine.root
+        base_name = engine.config["base"]
     # Resume archive persistence before fetching a new base or touching the candidate.
     record = save_original_evidence(engine, task, record)
     current = command(["git", "rev-parse", "HEAD"], workspace)
@@ -122,10 +153,8 @@ def prepare(engine, task, workspace):
     if record["phase"] == "pending":
         if merging or command(["git", "status", "--porcelain"], workspace):
             raise Conflict("Integration repair requires a clean owned checkout; changes preserved")
-        command(["git", "fetch", "origin", engine.config["base"]], engine.root)
-        record["base"] = command(
-            ["git", "rev-parse", "origin/" + engine.config["base"]], engine.root
-        )
+        command(["git", "fetch", "origin", base_name], repository_root)
+        record["base"] = command(["git", "rev-parse", "origin/" + base_name], repository_root)
         record["phase"] = "merging"
         # Persist the exact merge parents before touching the index. Retries use this same base.
         engine.update(task, landing=encode(record), review=None, verification=None)
@@ -158,6 +187,8 @@ def prepare(engine, task, workspace):
         record["checkout"] = snapshot(workspace)
         engine.update(task, landing=encode(record))
     folder = engine.store.path / "attempts" / task["attempt"] / "conflicts"
+    if repo_name:
+        folder = folder / repo_name
     folder.mkdir(parents=True, exist_ok=True)
     base_diff = folder / "base.patch"
     base_diff.write_text(
@@ -184,13 +215,14 @@ def prepare(engine, task, workspace):
     }
 
 
-def validate_resolution(workspace, changes, record):
+def validate_resolution(workspace, changes, record, *, check_snapshot=True):
     if command(["git", "rev-parse", "HEAD"], workspace) != record["workspace_head"]:
         raise Conflict("Integration repair HEAD changed during worker execution")
     if merge_head(workspace) != record["merge_head"]:
         raise Conflict("Integration repair merge changed during worker execution")
     if record["workspace_head"] == record["candidate"]:
-        require_snapshot(workspace, record["checkout"])
+        if check_snapshot:
+            require_snapshot(workspace, record["checkout"])
     elif command(["git", "status", "--porcelain", "--untracked-files=all"], workspace):
         raise Conflict("Recovered repair checkout changed; preserve it for inspection")
     conflicts = unmerged(workspace)
@@ -207,7 +239,12 @@ def validate_resolution(workspace, changes, record):
 
 def record_resolution(engine, task, workspace, record):
     latest = pending(engine.store.track(task["track"]))
-    if not latest or latest["candidate"] != record["candidate"] or latest["base"] != record["base"]:
+    if (
+        not latest
+        or latest["candidate"] != record["candidate"]
+        or latest["base"] != record["base"]
+        or latest.get("repository") != record.get("repository")
+    ):
         raise Conflict("Integration repair intent changed")
     latest["resolved_tree"] = command(["git", "write-tree"], workspace)
     latest["checkout"] = snapshot(workspace)
@@ -215,6 +252,11 @@ def record_resolution(engine, task, workspace, record):
 
 
 def finish_repair(engine, task, workspace, record):
+    repo_name = record.get("repository")
+    if repo_name is not None:
+        if not isinstance(workspace, dict) or repo_name not in workspace:
+            raise Conflict("Integration repair named workspace is missing")
+        workspace = workspace[repo_name]
     if merge_head(workspace) or unmerged(workspace):
         raise Conflict("Integration repair has unresolved merge state")
     head = command(["git", "rev-parse", "HEAD"], workspace)
@@ -223,4 +265,7 @@ def finish_repair(engine, task, workspace, record):
     obsolete_integration.resolved(
         engine.store, engine.store.track(task["track"]), workspace, record, head
     )
-    engine.update(task, head=head, landing=None, verification=None, review=None)
+    if repo_name is not None:
+        engine.update_repository_state(task, repo_name, head=head, invalidate=True)
+    else:
+        engine.update(task, head=head, landing=None, verification=None, review=None)

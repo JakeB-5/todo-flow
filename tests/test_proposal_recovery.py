@@ -1,6 +1,7 @@
 import base64
 import copy
 import json
+import os
 from pathlib import Path
 import signal
 import subprocess
@@ -115,6 +116,34 @@ def restore_original(workspace, record):
     if not index.is_absolute():
         index = workspace / index
     index.write_bytes(base64.b64decode(record["intent"]["index"]))
+
+
+def workspace_evidence(workspace):
+    files = {}
+    for path in sorted(workspace.rglob("*")):
+        relative = path.relative_to(workspace)
+        if relative.parts[0] == ".git":
+            continue
+        metadata = path.lstat()
+        if path.is_symlink():
+            content = ("symlink", os.readlink(path))
+        elif path.is_file():
+            content = ("file", path.read_bytes())
+        else:
+            content = ("directory", None)
+        files[str(relative)] = (metadata.st_mode & 0o777, content)
+    index = Path(command(["git", "rev-parse", "--git-path", "index"], workspace))
+    if not index.is_absolute():
+        index = workspace / index
+    merge_head = Path(command(["git", "rev-parse", "--git-path", "MERGE_HEAD"], workspace))
+    if not merge_head.is_absolute():
+        merge_head = workspace / merge_head
+    return {
+        "files": files,
+        "head": command(["git", "rev-parse", "HEAD"], workspace),
+        "index": index.read_bytes() if index.exists() else None,
+        "merge_head": merge_head.read_bytes() if merge_head.exists() else None,
+    }
 
 
 def assert_retry_reuses_receipt(case, engine, task, workspace, changes, before, repair=None):
@@ -666,6 +695,182 @@ class SuccessorRecoveryTests(unittest.TestCase):
                         case.assertEqual(case.preserved(engine, task, workspace), before)
                     finally:
                         case.tearDown()
+
+    def test_recovery_rejects_29_adversarial_states_without_mutating_evidence(self):
+        variants = [
+            "target-bytes",
+            "target-mode",
+            "target-missing",
+            "target-directory",
+            "new-file-missing",
+            "untracked-simple",
+            "untracked-nested",
+            "untracked-case",
+            "untracked-unicode-nfc",
+            "untracked-unicode-nfd",
+            "untracked-newline",
+            "untracked-tab",
+            "untracked-leading-space",
+            "untracked-trailing-space",
+            "untracked-emoji",
+            "untracked-hidden",
+            "untracked-long-name",
+            "untracked-symlink",
+            "unrelated-worktree-edit",
+            "partial-worktree-index-after",
+            "index-empty",
+            "index-target-unexpected",
+            "head-generation-change",
+            "merge-marker-change",
+            "journal-fingerprint-change",
+            "journal-shape-change",
+            "journal-scope-mismatch",
+            "journal-generation-type",
+            "file-read-exception",
+        ]
+        self.assertGreaterEqual(len(variants), 20)
+        for variant in variants:
+            with self.subTest(counterexample=variant):
+                case = SuccessorRecoveryTests()
+                case.setUp()
+                try:
+                    engine, old_task, workspace = case.workspace()
+                    record = interrupt(
+                        case, engine, old_task, workspace, case.changes(workspace), "after-stage"
+                    )
+                    journal_path = application.journal_path(engine, old_task["track"])
+                    if variant == "target-bytes":
+                        (workspace / "calc.py").write_text("changed\n")
+                    elif variant == "target-mode":
+                        (workspace / "calc.py").chmod(0o755)
+                    elif variant == "target-missing":
+                        (workspace / "calc.py").unlink()
+                    elif variant == "target-directory":
+                        target = workspace / "calc.py"
+                        target.unlink()
+                        target.mkdir()
+                        (target / "nested.txt").write_text("preserve nested data\n")
+                    elif variant == "new-file-missing":
+                        (workspace / "new.py").unlink()
+                    elif variant.startswith("untracked-"):
+                        names = {
+                            "untracked-simple": "extra.txt",
+                            "untracked-nested": "extra/nested/file.txt",
+                            "untracked-case": "ExtraCase.TXT",
+                            "untracked-unicode-nfc": "café.txt",
+                            "untracked-unicode-nfd": "cafe\u0301.txt",
+                            "untracked-newline": "line\nbreak.txt",
+                            "untracked-tab": "tab\tname.txt",
+                            "untracked-leading-space": " leading.txt",
+                            "untracked-trailing-space": "trailing .txt",
+                            "untracked-emoji": "🌱.txt",
+                            "untracked-hidden": ".extra",
+                            "untracked-long-name": "x" * 100 + ".txt",
+                            "untracked-symlink": "extra-link",
+                        }
+                        extra = workspace / names[variant]
+                        extra.parent.mkdir(parents=True, exist_ok=True)
+                        if variant == "untracked-symlink":
+                            extra.symlink_to("missing-target")
+                        else:
+                            extra.write_text("later work\n")
+                    elif variant == "unrelated-worktree-edit":
+                        (workspace / "calc.py.copy").write_text("unrelated later file\n")
+                    elif variant == "partial-worktree-index-after":
+                        row = record["intent"]["files"][-1]
+                        target = workspace / row["path"]
+                        if row["before"] is None:
+                            target.unlink()
+                        else:
+                            target.write_bytes(base64.b64decode(row["before"]["bytes"]))
+                            target.chmod(row["before"]["mode"])
+                    elif variant == "index-empty":
+                        index = Path(
+                            command(["git", "rev-parse", "--git-path", "index"], workspace)
+                        )
+                        if not index.is_absolute():
+                            index = workspace / index
+                        index.write_bytes(b"invalid index")
+                    elif variant == "index-target-unexpected":
+                        row = record["intent"]["files"][0]
+                        target = workspace / row["path"]
+                        target.write_text("unexpected staged content\n")
+                        command(["git", "add", "--", ":(literal)" + row["path"]], workspace)
+                        target.write_bytes(base64.b64decode(row["after"]["bytes"]))
+                        target.chmod(row["after"]["mode"])
+                    elif variant == "head-generation-change":
+                        command(
+                            ["git", "commit", "--allow-empty", "-m", "later generation"], workspace
+                        )
+                    elif variant == "merge-marker-change":
+                        git_dir = Path(
+                            command(["git", "rev-parse", "--absolute-git-dir"], workspace)
+                        )
+                        head = command(["git", "rev-parse", "HEAD"], workspace)
+                        (git_dir / "MERGE_HEAD").write_text(head + "\n")
+                    elif variant in (
+                        "journal-fingerprint-change",
+                        "journal-shape-change",
+                        "journal-scope-mismatch",
+                        "journal-generation-type",
+                    ):
+                        payload = json.loads(journal_path.read_text())
+                        if variant == "journal-fingerprint-change":
+                            payload["id"] = "0" * 64
+                        elif variant == "journal-shape-change":
+                            payload["intent"]["files"] = {"path": "not-a-list"}
+                        elif variant == "journal-scope-mismatch":
+                            payload["intent"]["scope"]["request"] = "stale-request"
+                            payload["id"] = fingerprint(payload["intent"])
+                        else:
+                            payload["intent"]["generation"] = "1"
+                            payload["id"] = fingerprint(payload["intent"])
+                        journal_path.write_text(json.dumps(payload))
+
+                    successor = case.successor(old_task)
+                    before_workspace = workspace_evidence(workspace)
+                    before_journal = journal_path.read_bytes()
+                    if variant == "file-read-exception":
+                        with patch.object(
+                            application, "file_state", side_effect=OSError("injected read failure")
+                        ):
+                            with self.assertRaises(Conflict):
+                                application.recover(engine, successor, workspace)
+                    else:
+                        with self.assertRaises(Conflict):
+                            application.recover(engine, successor, workspace)
+                    self.assertEqual(workspace_evidence(workspace), before_workspace)
+                    self.assertEqual(journal_path.read_bytes(), before_journal)
+                    self.assertEqual(record["phase"], "applying")
+                finally:
+                    case.tearDown()
+
+    def test_concurrent_checkout_write_during_recovery_stays_preserved_and_held(self):
+        case = SuccessorRecoveryTests()
+        case.setUp()
+        try:
+            engine, task, workspace = case.workspace()
+            interrupt(case, engine, task, workspace, case.changes(workspace), "after-stage")
+            successor = case.successor(task)
+            journal = application.journal_path(engine, task["track"]).read_bytes()
+            before_head = command(["git", "rev-parse", "HEAD"], workspace)
+            extra = workspace / "operator" / "concurrent-note.txt"
+            original = application.require_after
+
+            def concurrent_write(root, record):
+                extra.parent.mkdir(parents=True)
+                extra.write_text("concurrent user change\n")
+                return original(root, record)
+
+            with patch.object(application, "require_after", side_effect=concurrent_write):
+                with self.assertRaisesRegex(Conflict, "unrelated checkout/index changed"):
+                    application.recover(engine, successor, workspace)
+
+            self.assertEqual(extra.read_text(), "concurrent user change\n")
+            self.assertEqual(application.journal_path(engine, task["track"]).read_bytes(), journal)
+            self.assertEqual(command(["git", "rev-parse", "HEAD"], workspace), before_head)
+        finally:
+            case.tearDown()
 
     def test_successor_preserves_partial_and_tampered_states(self):
         # journal-exact-state: scope validity never licenses overwriting user state.

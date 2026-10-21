@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .app_server_proposal import decode_app_server_proposal
 from .native_proposal import check_binding
-from .worker import codex_schema
+from .worker import codex_app_server_policy, codex_schema
 
 
 def _text(value, label):
@@ -32,28 +32,30 @@ def _workspace(value):
     return value
 
 
-def thread_start_params(workspace):
+def thread_start_params(workspace, sandbox="read-only"):
     """Build thread/start params; transport owns request IDs and persistence."""
+    sandbox, _ = codex_app_server_policy(sandbox)
     return {
         "cwd": _workspace(workspace),
         "approvalPolicy": "never",
-        "sandbox": "read-only",
+        "sandbox": sandbox,
         "ephemeral": False,
     }
 
 
-def turn_start_params(workspace, thread_id, prompt):
+def turn_start_params(workspace, thread_id, prompt, sandbox="read-only"):
     """Build turn/start params for a fresh, host-owned thread with no active turn.
 
     clientUserMessageId is intentionally not treated as an idempotency key.
     The public schema does not promise deduplication of lost start responses.
     """
+    _, sandbox_policy = codex_app_server_policy(sandbox)
     return {
         "cwd": _workspace(workspace),
         "threadId": _text(thread_id, "thread ID"),
         "input": [{"type": "text", "text": _text(prompt, "prompt")}],
         "approvalPolicy": "never",
-        "sandboxPolicy": {"type": "readOnly", "networkAccess": False},
+        "sandboxPolicy": sandbox_policy,
         "outputSchema": codex_schema(),
     }
 

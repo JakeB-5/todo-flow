@@ -4,7 +4,7 @@
 
 [README](README.ko.md) · [에이전트 설치](AGENT_INSTALL.ko.md) · [운영](OPERATIONS.ko.md) · [데모](DEMO.ko.md)
 
-<!-- translation-source: UPDATES.md; source-sha256: e0039bd400632ee32c96480283835c0299cdb8669c58e31925ead1e79af4c06c; status: translated -->
+<!-- translation-source: UPDATES.md; source-sha256: 7c6f36523a8cef50e1255a82eec83fb206b9ce2118d4da28c5babeab6b29f13e; status: translated -->
 
 공유 엔진을 한 번 업데이트한 뒤 각 프로젝트에 설치된 스킬을 업데이트합니다. 프로젝트 문서와 실행 기록은 기존 상태 디렉터리에 남습니다. 업데이트는 프로젝트를 다시 초기화하거나 대기 중인 작업을 시작하지 않습니다.
 
@@ -46,6 +46,12 @@
 `0.1.0`은 4개 언어의 안내서·UI, 테마 선택, 워커 모델·에포트 근거, 역할별 라우팅, 검증 결과별 후속 처리, 독립 리뷰 출처 구분, 스킬 공존과 오프라인 품질 사례를 추가합니다. 이전 실행이 트랙 잠금을 보유한 동안 후속 작업이 점유하지 못하게 합니다. 상태·설정 형식과 워커·스킬 프로토콜은 그대로이며 데이터 마이그레이션은 필요 없습니다. 유휴 상태에서 엔진과 프로젝트 스킬을 업데이트하세요. 기존 프로젝트 바인딩·로컬 수정·설정은 보호됩니다.
 
 `0.1.1`은 새 병합에서 완료된 무변경 제안을 재사용하는 오류를 수정하고, 커밋 참조를 보존하면서 이전의 깨끗한 통합 체크아웃을 안전하게 정리하며, 테스트 런타임 등록을 실제 설치와 격리합니다. 상태·설정 형식과 워커·스킬 프로토콜은 그대로이며 데이터 마이그레이션은 필요 없습니다. 유휴 상태에서 엔진을 업데이트하세요. 기존 프로젝트 상태·사용자 변경·확인되지 않은 자원은 계속 보호됩니다.
+
+`0.1.2`는 선택형 다중 저장소 트랙을 추가합니다. `repos: [{name, path, base, writable, verify}]`에 서로 다른 Git 루트를 두 개 이상 선언하면 트랙마다 저장소별 작업 트리, 후보 HEAD, 검증기, 리뷰·반영 영수증을 사용합니다. 워커 변경 경로는 `저장소이름:상대경로` 형식이며, 이 경로를 전달하려면 초기화할 때 명령 어댑터가 필요합니다. `--github`에는 `owner/repository` 하나 또는 저장소 이름별 매핑을 지정할 수 있습니다. 반영, 통합 충돌 복구, 검증 증거와 정리는 모든 저장소를 대상으로 합니다. `repos`가 없는 프로젝트는 기존 단일 저장소 경로를 유지하며 상태 마이그레이션이 필요하지 않습니다. 초기화 계약은 `todo-flow init --help`에 있습니다.
+
+### 현재 브랜치 추가 사항 (미출시)
+
+소스 저장소에 Codex `exec`용 protocol-2 명령 어댑터 [`examples/codex_exec_adapter.py`](examples/codex_exec_adapter.py)를 포함합니다. stdin에서 worker context를 읽고, 인자로 모델·추론 강도를 선택하며, 읽기 전용 sandbox에서 실행한 뒤 schema 검증된 제안을 반환합니다. 다중 저장소 `init --worktree-root /absolute/path`는 지정한 절대 경로 아래에 임시 worktree를 만듭니다. 기존 state 형식은 바뀌지 않습니다.
 
 <a id="1-inspect-and-stop-relevant-processes"></a>
 

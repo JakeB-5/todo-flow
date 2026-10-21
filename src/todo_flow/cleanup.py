@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import time
 
-from . import clean_integration, obsolete_integration
+from . import clean_integration, obsolete_integration, repositories
 from .adapters import command, file_lock
 from .cleanup_native import native_terminal_cleanup
 from .cleanup_orca import OrcaCleanup, owner as orca_owner
@@ -20,7 +20,15 @@ from .verification_artifacts import checkout_identity, reclaim
 
 
 def receipt_path(store, track):
-    key = fingerprint([track["request"], track["revision"], track["head"]])
+    key = fingerprint(
+        [
+            track["request"],
+            track["revision"],
+            track["head"],
+            *repositories.identity_components(track),
+            track.get("landing"),
+        ]
+    )
     return store.path / "cleanup" / track["id"] / (key + ".json")
 
 
@@ -28,14 +36,23 @@ def read_json(path):
     return json.loads(path.read_text()) if path.exists() else {}
 
 
-def resources(store, track, snapshot):
+def resources(store, track, snapshot, config=None):
     task_ids = {row["id"] for row in snapshot["tasks"] if row["track"] == track["id"]}
     attempts = [row for row in snapshot["attempts"] if row["task"] in task_ids]
     paths = {track["workspace"]} if track["workspace"] else set()
+    if config and repositories.multi(config):
+        for state in repositories.all_states(track, config).values():
+            if state["workspace"]:
+                paths.add(state["workspace"])
     for attempt in attempts:
         folder = store.path / "attempts" / attempt["id"]
         for group in ("integrations", "triage-checkouts"):
             paths.add(str(store.path / group / attempt["id"]))
+            if config and repositories.multi(config):
+                paths.update(
+                    str(store.path / group / (attempt["id"] + "-" + row["name"]))
+                    for row in repositories.specs(config)
+                )
         source = folder / "input.json"
         if source.exists():
             raw = source.read_text()
@@ -47,6 +64,9 @@ def resources(store, track, snapshot):
                 context = {}
             if context.get("workspace"):
                 paths.add(context["workspace"])
+            for repository in (context.get("repositories") or {}).values():
+                if isinstance(repository, dict) and repository.get("workspace"):
+                    paths.add(repository["workspace"])
         for path in (folder / "terminal-spec.json",):
             spec = read_json(path)
             if spec.get("cwd"):
@@ -63,9 +83,18 @@ def registered_worktrees(repo):
     }
 
 
-def owned_path(store, value):
+def common_dir(repo):
+    value = Path(command(["git", "rev-parse", "--git-common-dir"], repo))
+    return (value if value.is_absolute() else Path(repo) / value).resolve()
+
+
+def owned_path(store, value, config):
     path = Path(value)
-    roots = [store.path / name for name in ("worktrees", "integrations", "triage-checkouts")]
+    roots = [
+        Path(config.get("worktree_root") or store.path / "worktrees"),
+        store.path / "integrations",
+        store.path / "triage-checkouts",
+    ]
     return any(
         path.parent == root
         and not root.is_symlink()
@@ -79,7 +108,16 @@ def check_finished(store, original, connection):
     current = store.track(original["id"], connection)
     if current["control"] != "finished" or any(
         current[key] != original[key]
-        for key in ("request", "revision", "head", "workspace", "branch", "review", "landing")
+        for key in (
+            "request",
+            "revision",
+            "head",
+            "workspace",
+            "branch",
+            "repo_state",
+            "review",
+            "landing",
+        )
     ):
         raise Conflict("Execution changed during cleanup")
     if connection.execute(
@@ -89,11 +127,63 @@ def check_finished(store, original, connection):
         raise Conflict("Unfinished work remains; cleanup deferred")
 
 
-def confirmed_landing(store, track, connection):
+def confirmed_landing(store, track, connection, config):
     """Consume the existing landing contract, independently of today's endpoint."""
     check_finished(store, track, connection)
     review = json.loads(track["review"]) if track["review"] else {}
     landing = json.loads(track["landing"]) if track["landing"] else {}
+    if repositories.multi(config):
+        heads = repositories.head_map(track, config)
+        declarations = repositories.specs(config)
+        records = landing.get("repositories")
+        if (
+            review.get("verdict") != "met"
+            or review.get("head") != track["head"]
+            or review.get("documentRevision") != track["revision"]
+            or review.get("heads") != heads
+            or landing.get("head") != track["head"]
+            or landing.get("heads") != heads
+            or landing.get("status") != "complete"
+            or not isinstance(records, dict)
+            or set(records) != set(heads)
+        ):
+            raise Conflict("Every repository needs current independent review and landing")
+        for spec in declarations:
+            name = spec["name"]
+            row = records[name]
+            if row.get("head") != heads[name] or not row.get("merged"):
+                raise Conflict("Repository landing receipt does not match candidate: " + name)
+            if row.get("recovered") is True:
+                if row.get("baseBefore") != row.get("merged"):
+                    raise Conflict("Recovered repository landing anchors do not match: " + name)
+                continue
+            verification = row.get("verification", {})
+            effect = connection.execute(
+                "SELECT track,kind,intent,receipt FROM effects WHERE id=?",
+                (row.get("effectId"),),
+            ).fetchone()
+            if (
+                verification.get("ok") is not True
+                or verification.get("head") != row["merged"]
+                or effect is None
+                or effect["track"] != track["id"]
+                or effect["kind"] != "landing"
+                or not effect["receipt"]
+                or json.loads(effect["receipt"]) != row
+            ):
+                raise Conflict("Repository landing effect or verification does not match: " + name)
+            intent = json.loads(effect["intent"])
+            if (
+                intent.get("repository") != name
+                or intent.get("candidate") != heads[name]
+                or intent.get("merged") != row["merged"]
+                or intent.get("base") != row.get("baseBefore")
+                or intent.get("verification") != verification
+            ):
+                raise Conflict("Repository landing intent does not match receipt: " + name)
+        if not cleared(store, connection, track["id"]):
+            raise Conflict("Current cleared post-landing triage is missing")
+        return landing
     if (
         review.get("verdict") != "met"
         or review.get("head") != track["head"]
@@ -252,9 +342,11 @@ def cleanup_track(store, track_id, dry_run=False):
                 )
         destination = receipt_path(store, track)
         previous = read_json(destination)
-        paths, attempts = resources(store, track, store.snapshot())
+        paths, attempts = resources(store, track, store.snapshot(), config)
         delivery_key = fingerprint(
-            [track[key] for key in ("request", "revision", "head", "review", "landing")]
+            [track[key] for key in ("request", "revision", "head")]
+            + repositories.identity_components(track)
+            + [track[key] for key in ("review", "landing")]
         )
         report = {
             "track": track_id,
@@ -312,31 +404,59 @@ def cleanup_track(store, track_id, dry_run=False):
             file_lock(store.path / "locks/landing.lock", blocking=True),
             file_lock(store.path / "locks/git-metadata.lock", blocking=True),
         ):
-            known = registered_worktrees(config["repo"])
-            common = (
-                Path(config["repo"])
-                / command(["git", "rev-parse", "--git-common-dir"], config["repo"])
-            ).resolve()
+            declarations = repositories.specs(config)
+            roots = {row["name"]: Path(row["path"]).resolve() for row in declarations}
+            commons = {name: common_dir(root) for name, root in roots.items()}
+            common_to_repo = {str(value): name for name, value in commons.items()}
+            known_by_path = {}
+            for name, root in roots.items():
+                known_by_path.update({path: name for path in registered_worktrees(root)})
+            known = set(known_by_path)
+            workspace_state = {}
+            repository_states = repositories.all_states(track, config)
+            for name, state in repository_states.items():
+                if state["workspace"]:
+                    workspace_state[str(Path(state["workspace"]).resolve())] = (name, state)
+            for value, item in old_paths.items():
+                checkout = (item.get("target") or {}).get("checkout", {})
+                name = common_to_repo.get(str(Path(checkout.get("common", "")).resolve()))
+                if name:
+                    known_by_path[str(Path(value).resolve())] = name
             delivery_error = None
             remote_head = None
+            remote_heads = {}
             try:
                 if previous.get("delivery", delivery_key) != delivery_key:
                     raise Conflict("Delivery evidence changed since cleanup began")
                 with store.connect() as connection:
-                    landing = confirmed_landing(store, track, connection)
-                command(["git", "fetch", "origin", config["base"]], config["repo"])
-                remote_head = command(["git", "rev-parse", "FETCH_HEAD^{commit}"], config["repo"])
-                command(
-                    ["git", "merge-base", "--is-ancestor", track["head"], landing["merged"]],
-                    config["repo"],
-                )
-                command(
-                    ["git", "merge-base", "--is-ancestor", landing["merged"], remote_head],
-                    config["repo"],
-                )
-                report["landing"].update(
-                    status="confirmed", merged=landing["merged"], remoteHead=remote_head
-                )
+                    landing = confirmed_landing(store, track, connection, config)
+                if repositories.multi(config):
+                    confirmed = {}
+                    for spec in declarations:
+                        name, root = spec["name"], roots[spec["name"]]
+                        row = landing["repositories"][name]
+                        head = repositories.fetch_base(root, spec["base"], runner=command)
+                        command(
+                            ["git", "merge-base", "--is-ancestor", row["head"], row["merged"]], root
+                        )
+                        command(["git", "merge-base", "--is-ancestor", row["merged"], head], root)
+                        confirmed[name] = {**row, "remoteHead": head}
+                        remote_heads[name] = head
+                    report["landing"].update(status="confirmed", repositories=confirmed)
+                else:
+                    root = roots[declarations[0]["name"]]
+                    remote_head = repositories.fetch_base(root, config["base"], runner=command)
+                    command(
+                        ["git", "merge-base", "--is-ancestor", track["head"], landing["merged"]],
+                        root,
+                    )
+                    command(
+                        ["git", "merge-base", "--is-ancestor", landing["merged"], remote_head],
+                        root,
+                    )
+                    report["landing"].update(
+                        status="confirmed", merged=landing["merged"], remoteHead=remote_head
+                    )
             except (
                 OSError,
                 ValueError,
@@ -349,6 +469,15 @@ def cleanup_track(store, track_id, dry_run=False):
                 report["landing"]["reason"] = delivery_error
             for value in paths:
                 path = Path(value)
+                name = known_by_path.get(str(path.resolve()))
+                if name is None:
+                    state = workspace_state.get(str(path.resolve()))
+                    name = state[0] if state else declarations[0]["name"]
+                repo_root = roots[name]
+                repo_common = commons[name]
+                repo_name = name if repositories.multi(config) else None
+                candidate_head = repository_states[name]["head"]
+                repo_remote_head = remote_heads.get(name, remote_head)
                 exists = os.path.lexists(path)
                 registered = str(path.resolve()) in known
                 prior = old_paths.get(value)
@@ -365,13 +494,13 @@ def cleanup_track(store, track_id, dry_run=False):
                         ProcessBarrier(store.path, track_id).require_clear()
                         if delivery_error:
                             raise Conflict(delivery_error)
-                        confirmed_landing(store, track, connection)
+                        confirmed_landing(store, track, connection, config)
                         evidence = orca_owner(
-                            store, track, value, config["repo"], connection=connection
+                            store, track, value, str(repo_root), connection=connection
                         )
                         if evidence is None and item.get("orca"):
                             raise Conflict("Orca cleanup ownership is missing or changed")
-                        if evidence is None and not owned_path(store, value):
+                        if evidence is None and not owned_path(store, value, config):
                             raise Conflict("Path is not an owned runtime worktree")
                         if terminal_wait:
                             raise Conflict(
@@ -381,7 +510,7 @@ def cleanup_track(store, track_id, dry_run=False):
                             OrcaCleanup(
                                 store,
                                 track,
-                                config["repo"],
+                                str(repo_root),
                                 value,
                                 item,
                                 evidence,
@@ -397,8 +526,10 @@ def cleanup_track(store, track_id, dry_run=False):
                                 path,
                                 item["target"],
                                 item["retirement"],
-                                remote_head,
+                                repo_remote_head,
                                 connection,
+                                candidate_head=candidate_head,
+                                repo_name=repo_name,
                             )
                         if orca is not None:
                             if not orca.inspect():
@@ -425,16 +556,19 @@ def cleanup_track(store, track_id, dry_run=False):
                         if target is None and previous_status in ("removed", "absent"):
                             raise Conflict("Previously absent checkout reappeared without identity")
                         current = local_target(path)
-                        if Path(current["checkout"]["common"]).resolve() != common:
+                        if Path(current["checkout"]["common"]).resolve() != repo_common:
                             raise Conflict("Worktree repository identity changed")
                         if target is not None and target != current:
                             raise Conflict("Cleanup target identity, branch or HEAD changed")
-                        if value == track["workspace"] and (
-                            current["head"] != track["head"]
-                            or current["branch"] != "refs/heads/" + track["branch"]
+                        expected_state = workspace_state.get(str(path.resolve()))
+                        if expected_state and (
+                            current["head"] != expected_state[1]["head"]
+                            or current["branch"] != "refs/heads/" + expected_state[1]["branch"]
                         ):
                             raise Conflict("Candidate branch or HEAD changed after delivery")
-                        obsolete = obsolete_integration.removable(store, track, path)
+                        obsolete = obsolete_integration.removable(
+                            store, track, path, candidate_head=repository_states[name]["head"]
+                        )
                         if item.get("obsolete") and item["obsolete"] != obsolete:
                             raise Conflict("Original integration evidence changed during cleanup")
                         if obsolete:
@@ -445,7 +579,7 @@ def cleanup_track(store, track_id, dry_run=False):
                             raise Conflict("Tracked user changes remain")
                         retirement = None
                         if item.get("retirement") or not clean_integration.is_ancestor(
-                            config["repo"], current["head"], remote_head
+                            str(repo_root), current["head"], repo_remote_head
                         ):
                             if obsolete:
                                 raise Conflict("Conflicted integration HEAD is not included")
@@ -454,9 +588,11 @@ def cleanup_track(store, track_id, dry_run=False):
                                 track,
                                 path,
                                 current,
-                                remote_head,
+                                repo_remote_head,
                                 connection,
                                 previous=item.get("retirement"),
+                                candidate_head=candidate_head,
+                                repo_name=repo_name,
                             )
                         # Inspect all residue before deleting any file. Even bytecode needs proof.
                         artifacts = reclaim(store.path, track_id, path, dry_run=True)
@@ -476,7 +612,13 @@ def cleanup_track(store, track_id, dry_run=False):
                                 raise Conflict("Cleanup target changed before Git removal")
                             reclaim(store.path, track_id, path, dry_run=True)
                             if obsolete and (
-                                obsolete_integration.removable(store, track, path) != obsolete
+                                obsolete_integration.removable(
+                                    store,
+                                    track,
+                                    path,
+                                    candidate_head=repository_states[name]["head"],
+                                )
+                                != obsolete
                             ):
                                 raise Conflict(
                                     "Original integration evidence changed before removal"
@@ -487,9 +629,11 @@ def cleanup_track(store, track_id, dry_run=False):
                                     track,
                                     path,
                                     current,
-                                    remote_head,
+                                    repo_remote_head,
                                     connection,
                                     previous=retirement,
+                                    candidate_head=candidate_head,
+                                    repo_name=repo_name,
                                 )
                                 clean_integration.check(
                                     store,
@@ -497,20 +641,22 @@ def cleanup_track(store, track_id, dry_run=False):
                                     path,
                                     current,
                                     retirement,
-                                    remote_head,
+                                    repo_remote_head,
                                     connection,
+                                    candidate_head=candidate_head,
+                                    repo_name=repo_name,
                                 )
                             if orca is None:
                                 argv = ["git", "worktree", "remove"]
                                 if obsolete:
                                     # Only the unchanged, archived and superseded merge may be dirty.
                                     argv.append("--force")
-                                command([*argv, value], config["repo"])
+                                command([*argv, value], repo_root)
                             else:
                                 orca.remove(lambda: write_json(destination, report))
                             if (
                                 os.path.lexists(path)
-                                or str(path.resolve()) in registered_worktrees(config["repo"])
+                                or str(path.resolve()) in registered_worktrees(repo_root)
                                 or os.path.lexists(current["checkout"]["gitdir"])
                             ):
                                 raise Conflict("Git worktree removal is not confirmed")

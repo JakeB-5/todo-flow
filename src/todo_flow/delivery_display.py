@@ -4,7 +4,8 @@ import json
 import math
 
 from .cleanup import receipt_path
-from .store import fingerprint
+from . import repositories
+from .store import Conflict, fingerprint
 from .triage import state_key
 
 
@@ -25,9 +26,67 @@ def summary(phase, reason=None, detail=None):
     }
 
 
-def landing_matches(c, track, review, landing):
+def landing_matches(c, track, review, landing, config):
     # Same local proof as cleanup.confirmed_landing, without its finished/triage
     # preconditions: landing must also be visible before completion adoption.
+    repository_heads = review.get("heads")
+    if isinstance(repository_heads, dict):
+        if not isinstance(config, dict) or not repositories.multi(config):
+            return False
+        try:
+            names = [row["name"] for row in repositories.specs(config)]
+            states = repositories.all_states(track, config)
+        except (Conflict, ValueError, TypeError, KeyError):
+            return False
+        if (
+            len(names) < 2
+            or set(repository_heads) != set(names)
+            or review.get("verdict") != "met"
+            or review.get("head") != track["head"]
+            or review.get("documentRevision") != track["revision"]
+            or repository_heads.get(names[0]) != track["head"]
+            or landing.get("head") != track["head"]
+            or landing.get("heads") != repository_heads
+            or landing.get("status") != "complete"
+            or not isinstance(landing.get("repositories"), dict)
+            or set(landing["repositories"]) != set(names)
+        ):
+            return False
+        current_heads = {name: states[name]["head"] for name in names}
+        if repository_heads != current_heads:
+            return False
+        for name, candidate in current_heads.items():
+            row = landing["repositories"][name]
+            if row.get("head") != candidate or not row.get("merged"):
+                return False
+            if row.get("recovered") is True:
+                if row.get("baseBefore") != row["merged"]:
+                    return False
+                continue
+            verification = object_value(row.get("verification"))
+            effect = c.execute(
+                "SELECT track,kind,intent,receipt FROM effects WHERE id=?",
+                (row.get("effectId"),),
+            ).fetchone()
+            if (
+                verification.get("ok") is not True
+                or verification.get("head") != row["merged"]
+                or effect is None
+                or effect["track"] != track["id"]
+                or effect["kind"] != "landing"
+                or object_value(effect["receipt"]) != row
+            ):
+                return False
+            intent = object_value(effect["intent"])
+            if (
+                intent.get("repository") != name
+                or intent.get("candidate") != candidate
+                or intent.get("merged") != row["merged"]
+                or intent.get("base") != row.get("baseBefore")
+                or intent.get("verification") != verification
+            ):
+                return False
+        return True
     if (
         not track["head"]
         or review.get("verdict") != "met"
@@ -66,14 +125,15 @@ def delivery_summary(store, c, track_id):
     """Read only this page's track and its current local evidence."""
     try:
         return _delivery_summary(store, c, track_id)
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, Conflict):
         return summary("check-needed", "evidence-invalid")
 
 
 def _delivery_summary(store, c, track_id):
     track = dict(
         c.execute(
-            "SELECT id,request,revision,head,review,landing,status,control FROM tracks WHERE id=?",
+            "SELECT id,request,revision,head,repo_state,review,landing,status,control"
+            " FROM tracks WHERE id=?",
             (track_id,),
         ).fetchone()
     )
@@ -104,7 +164,9 @@ def _delivery_summary(store, c, track_id):
         return summary("cleanup-deferred", "cleanup-deferred", event["reason"])
     if report is not None:
         delivery = fingerprint(
-            [track[key] for key in ("request", "revision", "head", "review", "landing")]
+            [track[key] for key in ("request", "revision", "head")]
+            + repositories.identity_components(track)
+            + [track[key] for key in ("review", "landing")]
         )
         if (
             report.get("track") != track_id
@@ -128,7 +190,7 @@ def _delivery_summary(store, c, track_id):
         return (
             summary("check-needed", "landing-missing") if finished or report else summary("pending")
         )
-    if not landing_matches(c, track, review, landing):
+    if not landing_matches(c, track, review, landing, store.config(c)):
         return summary("check-needed", "landing-unconfirmed")
     key = state_key(store, c, track_id)
     cleared = c.execute(
@@ -163,13 +225,31 @@ def _delivery_summary(store, c, track_id):
     if report.get("status") == "pending":
         return summary("cleanup", "cleanup-pending")
     proof = object_value(report.get("landing"))
-    if (
-        report.get("status") != "complete"
-        or not timestamp
-        or proof.get("status") != "confirmed"
-        or proof.get("head") != track["head"]
-        or proof.get("merged") != landing["merged"]
-    ):
+    repository_heads = review.get("heads")
+    if isinstance(repository_heads, dict):
+        receipt_rows = proof.get("repositories")
+        landing_rows = landing.get("repositories")
+        landing_confirmed = (
+            proof.get("status") == "confirmed"
+            and proof.get("head") == track["head"]
+            and isinstance(receipt_rows, dict)
+            and isinstance(landing_rows, dict)
+            and set(receipt_rows) == set(repository_heads)
+            and set(landing_rows) == set(repository_heads)
+            and all(
+                receipt_rows[name].get("head") == repository_heads[name]
+                and receipt_rows[name].get("merged") == landing_rows[name].get("merged")
+                and isinstance(receipt_rows[name].get("remoteHead"), str)
+                for name in repository_heads
+            )
+        )
+    else:
+        landing_confirmed = (
+            proof.get("status") == "confirmed"
+            and proof.get("head") == track["head"]
+            and proof.get("merged") == landing.get("merged")
+        )
+    if report.get("status") != "complete" or not timestamp or not landing_confirmed:
         return summary("check-needed", "cleanup-unconfirmed")
     for group, allowed in (
         ("worktrees", ("removed", "absent")),

@@ -5,8 +5,10 @@ import re
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 from .adapters import command, file_lock
+from . import repositories
 from .store import Conflict, encode, fingerprint
 from .worker import run_worker
 
@@ -22,7 +24,17 @@ def state_key(store, c, track):
         rows[table] = [
             dict(r) for r in c.execute(f"SELECT * FROM {table} WHERE track=? ORDER BY id", (track,))
         ]
-    return fingerprint([t["request"], t["revision"], t["head"], t["review"], t["landing"], rows])
+    return fingerprint(
+        [
+            t["request"],
+            t["revision"],
+            t["head"],
+            *repositories.identity_components(t),
+            t["review"],
+            t["landing"],
+            rows,
+        ]
+    )
 
 
 def cleared(store, c, track):
@@ -133,44 +145,124 @@ class Triage:
         }
 
     def remote_sources(self, track):
-        if not self.engine.remote or not track["pr"]:
+        if not self.engine.remote:
             return []
         result = []
-        review = json.loads(track["review"])
-        own_review = review.get("receipt", {}).get("id")
-        repo = self.engine.config["github"]
-        for category, path in [
-            ("review", f"pulls/{track['pr']}/reviews"),
-            ("inline", f"pulls/{track['pr']}/comments"),
-            ("discussion", f"issues/{track['pr']}/comments"),
-        ]:
-            pages = json.loads(
-                command(["gh", "api", "--paginate", "--slurp", f"repos/{repo}/{path}?per_page=100"])
-            )
-            for row in (r for page in pages for r in page):
-                if not row.get("body") or (category == "review" and row["id"] == own_review):
-                    continue
-                id_ = "remote-" + fingerprint([category, row["id"], row["body"]])[:20]
-                with self.store.connect() as c:
-                    old = c.execute("SELECT status FROM findings WHERE id=?", (id_,)).fetchone()
-                if old and old[0] != "open":
-                    continue
-                result.append(
-                    {
-                        "id": id_,
-                        "origin": "github-" + category,
-                        "observation": row["body"],
-                        "evidence": row.get("html_url", ""),
-                        "path": row.get("path"),
-                        "commit": row.get("commit_id"),
-                    }
+        review = json.loads(track["review"]) if track["review"] else {}
+        targets = []
+        if repositories.multi(self.engine.config):
+            for spec in repositories.specs(self.engine.config):
+                name = spec["name"]
+                state = self.engine.repository_state(track, name)
+                remote = self.engine.remote.for_repository(name)
+                repo = repositories.github_repo(self.engine.config, name)
+                if remote and repo and state["pr"]:
+                    targets.append(
+                        (
+                            repo,
+                            state["pr"],
+                            review.get("receipts", {}).get(name, {}).get("id"),
+                        )
+                    )
+        elif track["pr"]:
+            repo = repositories.github_repo(self.engine.config)
+            if repo:
+                targets.append((repo, track["pr"], review.get("receipt", {}).get("id")))
+        for repo, pr, own_review in targets:
+            for category, path in [
+                ("review", f"pulls/{pr}/reviews"),
+                ("inline", f"pulls/{pr}/comments"),
+                ("discussion", f"issues/{pr}/comments"),
+            ]:
+                pages = json.loads(
+                    command(
+                        [
+                            "gh",
+                            "api",
+                            "--paginate",
+                            "--slurp",
+                            f"repos/{repo}/{path}?per_page=100",
+                        ]
+                    )
                 )
+                for row in (r for page in pages for r in page):
+                    if not row.get("body") or (category == "review" and row["id"] == own_review):
+                        continue
+                    id_ = "remote-" + fingerprint([repo, category, row["id"], row["body"]])[:20]
+                    with self.store.connect() as c:
+                        old = c.execute("SELECT status FROM findings WHERE id=?", (id_,)).fetchone()
+                    if old and old[0] != "open":
+                        continue
+                    result.append(
+                        {
+                            "id": id_,
+                            "origin": "github-" + category,
+                            "observation": row["body"],
+                            "evidence": row.get("html_url", ""),
+                            "path": row.get("path"),
+                            "commit": row.get("commit_id"),
+                        }
+                    )
         return result
 
     def prepare(self, task):
         t = self.engine.gate(task)
         if not t["landing"]:
             raise Conflict("Triage requires confirmed landing")
+        if repositories.multi(self.engine.config):
+            checkouts, bases = {}, {}
+            declarations = repositories.specs(self.engine.config)
+            landing = json.loads(t["landing"])
+            with file_lock(self.store.path / "locks/git-metadata.lock", blocking=True):
+                for spec in declarations:
+                    name, root = spec["name"], Path(spec["path"])
+                    command(["git", "fetch", "origin", spec["base"]], root)
+                    base = command(["git", "rev-parse", "origin/" + spec["base"]], root)
+                    command(
+                        [
+                            "git",
+                            "merge-base",
+                            "--is-ancestor",
+                            landing["repositories"][name]["merged"],
+                            base,
+                        ],
+                        root,
+                    )
+                    checkout = self.store.path / "triage-checkouts" / (task["attempt"] + "-" + name)
+                    if not checkout.exists():
+                        command(["git", "worktree", "add", "--detach", str(checkout), base], root)
+                    checkouts[name], bases[name] = checkout, base
+            with self.store.connect() as c:
+                sources = self.sources(c, t["id"])
+                key = state_key(self.store, c, t["id"])
+            sources.extend(self.remote_sources(t))
+            terms = None
+            if task["purpose"].startswith("Search related tracks: "):
+                terms = json.loads(task["purpose"].split(": ", 1)[1])
+            context = self.engine.context(task, checkouts)
+            context["workspace_head"] = bases[declarations[0]["name"]]
+            context["diff"] = "\n".join(
+                f"## {spec['name']}\n"
+                + command(
+                    [
+                        "git",
+                        "diff",
+                        landing["repositories"][spec["name"]]["baseBefore"]
+                        + ".."
+                        + bases[spec["name"]],
+                    ],
+                    spec["path"],
+                )
+                for spec in declarations
+            )
+            context["triage_context"] = {
+                "base": bases[declarations[0]["name"]],
+                "bases": bases,
+                "input_key": key,
+                "sources": sources,
+                "duplicate_search": self.candidates(context["document"], sources, terms),
+            }
+            return context
         with file_lock(self.store.path / "locks/git-metadata.lock", blocking=True):
             command(["git", "fetch", "origin", self.engine.config["base"]], self.engine.root)
             base = command(
@@ -240,11 +332,22 @@ class Triage:
             self.store.finish(task, result)
             return
         # Don't apply judgments against a base that moved while the agent read it.
-        base = command(
-            ["git", "ls-remote", "origin", "refs/heads/" + self.engine.config["base"]],
-            self.engine.root,
-        ).split()[0]
-        if base != context["triage_context"]["base"]:
+        if repositories.multi(self.engine.config):
+            moved = any(
+                command(
+                    ["git", "ls-remote", "origin", "refs/heads/" + spec["base"]],
+                    spec["path"],
+                ).split()[0]
+                != context["triage_context"]["bases"][spec["name"]]
+                for spec in repositories.specs(self.engine.config)
+            )
+        else:
+            base = command(
+                ["git", "ls-remote", "origin", "refs/heads/" + self.engine.config["base"]],
+                self.engine.root,
+            ).split()[0]
+            moved = base != context["triage_context"]["base"]
+        if moved:
             self.store.finish(
                 task,
                 {
@@ -472,16 +575,50 @@ class Triage:
                     task["track"],
                     {
                         "previousPR": t["pr"],
+                        **(
+                            {
+                                "previousPRs": {
+                                    name: state["pr"]
+                                    for name, state in repositories.all_states(
+                                        t, self.engine.config
+                                    ).items()
+                                }
+                            }
+                            if repositories.multi(self.engine.config)
+                            else {}
+                        ),
                         "previousLanding": json.loads(t["landing"]),
                         "triage": receipt_id,
                     },
                 )
                 branch = "todo/" + task["track"] + "-repair-" + receipt_id[-10:]
-                workspace = str(self.store.path / "worktrees" / branch.replace("/", "-"))
-                c.execute(
-                    "UPDATE tracks SET branch=?,workspace=?,pr=NULL,head=NULL,verification=NULL,review=NULL,landing=NULL,updated=? WHERE id=?",
-                    (branch, workspace, time.time(), task["track"]),
+                worktree_root = Path(
+                    self.engine.config.get("worktree_root") or self.store.path / "worktrees"
                 )
+                if worktree_root.is_symlink():
+                    raise Conflict("Configured repair worktree root cannot be a symlink")
+                workspace = str(worktree_root / branch.replace("/", "-"))
+                if repositories.multi(self.engine.config):
+                    secondary = {}
+                    for spec in repositories.specs(self.engine.config)[1:]:
+                        name = spec["name"]
+                        repo_branch = branch + "-" + name
+                        secondary[name] = {
+                            "branch": repo_branch,
+                            "workspace": str(worktree_root / repo_branch.replace("/", "-")),
+                            "head": None,
+                            "issue": None,
+                            "pr": None,
+                        }
+                    c.execute(
+                        "UPDATE tracks SET branch=?,workspace=?,pr=NULL,head=NULL,verification=NULL,review=NULL,landing=NULL,repo_state=?,updated=? WHERE id=?",
+                        (branch, workspace, encode(secondary), time.time(), task["track"]),
+                    )
+                else:
+                    c.execute(
+                        "UPDATE tracks SET branch=?,workspace=?,pr=NULL,head=NULL,verification=NULL,review=NULL,landing=NULL,updated=? WHERE id=?",
+                        (branch, workspace, time.time(), task["track"]),
+                    )
             follow = (
                 {
                     "kind": "work",
@@ -496,9 +633,19 @@ class Triage:
                 "items": items,
                 "base": context["triage_context"]["base"],
                 "candidate": context["head"],
+                **(
+                    {"candidates": context["repository_heads"]}
+                    if repositories.multi(self.engine.config)
+                    else {}
+                ),
                 "documentRevision": task["input_revision"],
                 "cleared": not repairs,
                 "attempt": task["attempt"],
+                **(
+                    {"bases": context["triage_context"]["bases"]}
+                    if repositories.multi(self.engine.config)
+                    else {}
+                ),
             }
             c.execute(
                 "INSERT INTO triages VALUES(?,?,?,?,?)",

@@ -1,32 +1,64 @@
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
 from .adapters import command
+from . import repositories
 from .engine import Engine
 from .language import LANGUAGES, select_language
-from .release import VERSION, CONTRACTS, check_config, project_compatibility
+from .release import (
+    CODEX_SANDBOX_VALUES,
+    VERSION,
+    CONTRACTS,
+    check_config,
+    project_compatibility,
+    validate_repositories,
+)
 from .maintenance import runtime_guard
 from .store import Conflict, Store, encode, fingerprint
 
 
 def initialize(args):
-    repo = Path(args.repo).resolve()
-    command(["git", "rev-parse", "--verify", "HEAD"], repo)
-    if args.github and not re.fullmatch(r"[\w.-]+/[\w.-]+", args.github):
-        raise ValueError("github must be owner/repository")
-    verify = json.loads(args.verify)
+    repos = None
+    if args.repos is not None:
+        repos = json.loads(args.repos)
+        validate_repositories({"repos": repos})
+        repos = validate_repository_roots(repos)
+        primary = repos[0]
+        repo = Path(primary["path"])
+        if args.repo and Path(args.repo).resolve() != repo:
+            raise ValueError("--repo must match the first --repos path")
+        if args.base and args.base != primary["base"]:
+            raise ValueError("--base must match the first --repos base")
+        verify = json.loads(args.verify) if args.verify is not None else primary["verify"]
+        if verify != primary["verify"]:
+            raise ValueError("--verify must match the first --repos verify")
+        writable = args.write or primary["writable"]
+        if writable != primary["writable"]:
+            raise ValueError("--write must match the first --repos writable patterns")
+        base = primary["base"]
+    else:
+        if not args.repo:
+            raise ValueError("--repo is required unless --repos is provided")
+        if args.verify is None:
+            raise ValueError("--verify is required unless --repos is provided")
+        repo = Path(args.repo).resolve()
+        command(["git", "rev-parse", "--verify", "HEAD"], repo)
+        verify = json.loads(args.verify)
+        base = args.base or "main"
+        writable = args.write or ["*.py", "tests/*.py"]
+    github = args.github
+    if github and github.lstrip().startswith("{"):
+        github = json.loads(github)
     if not isinstance(verify, list) or not verify or not all(isinstance(x, str) for x in verify):
         raise ValueError("--verify must be a nonempty JSON argv array")
     if args.endpoint == "land" and not args.allow_land:
         raise ValueError("land endpoint requires --allow-land")
-    writable = args.write or ["*.py", "tests/*.py"]
     config = {
         "repo": str(repo),
-        "github": args.github,
-        "base": args.base,
+        "github": github,
+        "base": base,
         "verify": verify,
         "worker": {"type": "command", "argv": json.loads(args.worker_command)}
         if args.worker_command
@@ -45,6 +77,12 @@ def initialize(args):
         "created_by": VERSION,
         "min_engine_version": "0.0.2",
     }
+    if args.worktree_root is not None:
+        config["worktree_root"] = args.worktree_root
+    if args.codex_sandbox is not None:
+        config["codex_sandbox"] = args.codex_sandbox
+    if repos is not None:
+        config["repos"] = repos
     if args.verify_identity is not None:
         config["verify_identity"] = json.loads(args.verify_identity)
     if args.verify_preflight is not None:
@@ -53,10 +91,42 @@ def initialize(args):
         config["verify_related"] = json.loads(args.verify_related)
     if args.verify_concurrency is not None:
         config["verify_concurrency"] = args.verify_concurrency
+    if repos is not None and config["worker"]["type"] != "command":
+        raise ValueError(
+            "Multi-repository projects require --worker-command to route name:path proposals"
+        )
     check_config(config)
     store = Store(args.state or repo / "todo")
     store.configure(config)
     print(encode({"state": str(store.path), "config": config}))
+
+
+def validate_repository_roots(repos):
+    """Bind each declaration to one distinct local Git repository and origin."""
+    normalized = []
+    roots = []
+    common_dirs = set()
+    for spec in repos:
+        root = Path(spec["path"]).resolve(strict=True)
+        actual = Path(command(["git", "rev-parse", "--show-toplevel"], root)).resolve()
+        if actual != root:
+            raise ValueError(f"Repository path is not its Git root: {spec['name']}")
+        command(["git", "rev-parse", "--verify", "HEAD"], root)
+        command(["git", "check-ref-format", "--branch", spec["base"]], root)
+        command(["git", "remote", "get-url", "origin"], root)
+        common = Path(command(["git", "rev-parse", "--git-common-dir"], root))
+        if not common.is_absolute():
+            common = root / common
+        common = common.resolve()
+        if common in common_dirs:
+            raise ValueError("Each repos entry must name a distinct Git repository")
+        common_dirs.add(common)
+        for other in roots:
+            if root == other or root.is_relative_to(other) or other.is_relative_to(root):
+                raise ValueError("Repository roots must not be equal or nested")
+        roots.append(root)
+        normalized.append({**spec, "path": str(root)})
+    return normalized
 
 
 def parser():
@@ -68,10 +138,19 @@ def parser():
     stop.add_argument("track")
     stop.add_argument("attempt")
     i = sub.add_parser("init")
-    i.add_argument("--repo", required=True)
-    i.add_argument("--github")
-    i.add_argument("--base", default="main")
-    i.add_argument("--verify", required=True, help="JSON command argv, never a shell string")
+    i.add_argument("--repo", help="Single repository root, or primary path matching --repos")
+    i.add_argument(
+        "--repos",
+        help="JSON array of {name,path,base,writable,verify} repository objects (at least two)",
+    )
+    i.add_argument(
+        "--github",
+        help="owner/repository, or JSON map of repository names to owner/repository",
+    )
+    i.add_argument(
+        "--base", help="Primary base branch (default: main for single-repository projects)"
+    )
+    i.add_argument("--verify", help="JSON command argv, never a shell string")
     i.add_argument(
         "--verify-preflight",
         help="Optional JSON array of argv arrays, run in order before the full verifier",
@@ -92,6 +171,10 @@ def parser():
     i.add_argument(
         "--no-auto-cleanup", action="store_true", help="Keep completed run resources for inspection"
     )
+    i.add_argument(
+        "--worktree-root",
+        help="Optional root for multi-repository worktrees (default: STATE/worktrees)",
+    )
     launcher_modes = ["auto", "headless", "orca", "tmux", "terminal"]
     i.add_argument(
         "--launcher",
@@ -101,7 +184,16 @@ def parser():
     )
     i.add_argument("--worker", choices=["claude", "codex"], default="claude")
     i.add_argument(
-        "--worker-command", help="Trusted adapter argv JSON; stdin context, stdout result JSON"
+        "--codex-sandbox",
+        choices=CODEX_SANDBOX_VALUES,
+        help="Codex worker permissions (default: read-only; workspace-write permits verification)",
+    )
+    i.add_argument(
+        "--worker-command",
+        help=(
+            "Trusted adapter argv JSON; stdin context, stdout result JSON; with --repos, "
+            "return each change path as repository-name:relative/path"
+        ),
     )
     i.add_argument("--endpoint", choices=["review", "land"], default="review")
     i.add_argument("--allow-land", action="store_true")
@@ -396,14 +488,30 @@ def dispatch(args):
             result = {"reconciled": True}
         elif args.command == "doctor":
             config = store.config()
-            checks = {
-                "git": command(["git", "status", "--porcelain"], config["repo"]),
-                "origin": command(["git", "remote", "get-url", "origin"], config["repo"]),
-            }
-            if config["github"]:
-                checks["github"] = command(
-                    ["gh", "repo", "view", config["github"], "--json", "nameWithOwner"]
-                )
+            if repositories.multi(config):
+                checks = {"repositories": {}}
+                for spec in repositories.specs(config):
+                    name = spec["name"]
+                    root = spec["path"]
+                    row = {
+                        "git": command(["git", "status", "--porcelain"], root),
+                        "origin": command(["git", "remote", "get-url", "origin"], root),
+                    }
+                    github = repositories.github_repo(config, name)
+                    if github:
+                        row["github"] = command(
+                            ["gh", "repo", "view", github, "--json", "nameWithOwner"]
+                        )
+                    checks["repositories"][name] = row
+            else:
+                checks = {
+                    "git": command(["git", "status", "--porcelain"], config["repo"]),
+                    "origin": command(["git", "remote", "get-url", "origin"], config["repo"]),
+                }
+                if config["github"]:
+                    checks["github"] = command(
+                        ["gh", "repo", "view", config["github"], "--json", "nameWithOwner"]
+                    )
             result = checks
         elif args.command == "serve":
             from .web import serve

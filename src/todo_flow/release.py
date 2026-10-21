@@ -12,6 +12,13 @@ except PackageNotFoundError:
     VERSION = "0.1.2"
 CONTRACTS = json.loads(Path(__file__).with_name("release.json").read_text())
 VERIFICATION_IDENTITY_VERSION = 1
+CODEX_SANDBOX_VALUES = ("read-only", "workspace-write")
+
+
+def validate_codex_sandbox(value, setting="codex_sandbox"):
+    if type(value) is not str or value not in CODEX_SANDBOX_VALUES:
+        raise ValueError(f"{setting} must be one of: {', '.join(CODEX_SANDBOX_VALUES)}")
+    return value
 
 
 def validate_verify_preflight(config):
@@ -82,6 +89,99 @@ def validate_verify_identity(config):
     return result
 
 
+def validate_repositories(config):
+    """Validate the optional multi-repository contract without opening repositories."""
+    if "repos" not in config:
+        return None
+    repos = config["repos"]
+    if not isinstance(repos, list) or len(repos) < 2:
+        raise ValueError("repos must contain at least two repository objects")
+    required = {"name", "path", "base", "writable", "verify"}
+    names = set()
+    paths = set()
+    for index, repo in enumerate(repos):
+        if not isinstance(repo, dict) or set(repo) != required:
+            raise ValueError(
+                f"repos[{index}] must contain exactly name, path, base, writable, verify"
+            )
+        name = repo["name"]
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name)
+            or name.casefold() in names
+        ):
+            raise ValueError(f"repos[{index}].name must be unique and filesystem-safe")
+        names.add(name.casefold())
+        path = repo["path"]
+        if not isinstance(path, str) or not path or "\0" in path or not Path(path).is_absolute():
+            raise ValueError(f"repos[{index}].path must be an absolute path")
+        normalized = str(Path(path))
+        if normalized in paths:
+            raise ValueError("repos paths must be unique")
+        paths.add(normalized)
+        base = repo["base"]
+        if (
+            not isinstance(base, str)
+            or not base
+            or base.startswith("-")
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", base)
+            or ".." in base
+            or "//" in base
+            or any(part in ("", ".") or part.endswith(".lock") for part in base.split("/"))
+        ):
+            raise ValueError(f"repos[{index}].base must be a valid branch name")
+        writable = repo["writable"]
+        if (
+            not isinstance(writable, list)
+            or not writable
+            or any(
+                not isinstance(pattern, str) or not pattern or "\0" in pattern
+                for pattern in writable
+            )
+            or len(set(writable)) != len(writable)
+        ):
+            raise ValueError(f"repos[{index}].writable must contain unique nonempty patterns")
+        verify = repo["verify"]
+        if (
+            not isinstance(verify, list)
+            or not verify
+            or any(not isinstance(arg, str) or "\0" in arg for arg in verify)
+            or not verify[0]
+        ):
+            raise ValueError(f"repos[{index}].verify must be a nonempty argv array")
+    primary = repos[0]
+    if "repo" in config and Path(config["repo"]).resolve() != Path(primary["path"]).resolve():
+        raise ValueError("repo must match repos[0].path")
+    for field, repo_field in (
+        ("base", "base"),
+        ("verify", "verify"),
+        ("writable_patterns", "writable"),
+    ):
+        if field in config and config[field] != primary[repo_field]:
+            raise ValueError(f"{field} must match repos[0].{repo_field}")
+    return repos
+
+
+def validate_github(config):
+    github = config.get("github")
+    if github is None:
+        return
+    if isinstance(github, str):
+        values = [github]
+    elif isinstance(github, dict) and config.get("repos"):
+        names = {row["name"] for row in config["repos"]}
+        if not github or not set(github) <= names:
+            raise ValueError("github object keys must name configured repositories")
+        values = list(github.values())
+    else:
+        raise ValueError("github must be owner/repository or a repository-name map")
+    if any(
+        not isinstance(value, str) or not re.fullmatch(r"[\w.-]+/[\w.-]+", value)
+        for value in values
+    ):
+        raise ValueError("github must contain owner/repository names")
+
+
 def release_number(value):
     if not isinstance(value, str) or not re.fullmatch(r"\d+\.\d+\.\d+", value):
         raise ValueError("Updates currently require a stable major.minor.patch version")
@@ -117,6 +217,26 @@ def check_config(config, contracts=CONTRACTS, engine_version=VERSION):
     validate_verify_identity(config)
     validate_verify_preflight(config)
     validate_verify_related(config)
+    if "codex_sandbox" in config:
+        validate_codex_sandbox(config["codex_sandbox"])
+    repos = validate_repositories(config)
+    validate_github(config)
+    worker = config.get("worker")
+    if (
+        repos
+        and worker is not None
+        and (not isinstance(worker, dict) or worker.get("type") != "command")
+    ):
+        raise ValueError("Multi-repository projects require a command worker adapter")
+    worktree_root = config.get("worktree_root")
+    if worktree_root is not None and (
+        not repos
+        or not isinstance(worktree_root, str)
+        or not worktree_root
+        or "\0" in worktree_root
+        or not Path(worktree_root).is_absolute()
+    ):
+        raise ValueError("worktree_root requires multi-repository projects and an absolute path")
     if "verify_concurrency" in config:
         limit = config["verify_concurrency"]
         if type(limit) is not int or limit < 1:

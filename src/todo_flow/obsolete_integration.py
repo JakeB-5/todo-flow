@@ -133,7 +133,7 @@ def resolved(store, track, workspace, repair, head):
         raise Conflict("Integration resolution persistence is unconfirmed")
 
 
-def removable(store, track, workspace):
+def removable(store, track, workspace, candidate_head=None):
     """Caller must first enforce ownership, quiescence, landing and cleared triage."""
     workspace = Path(workspace)
     if workspace.parent != store.path / "integrations":
@@ -162,7 +162,8 @@ def removable(store, track, workspace):
         raise Conflict("Integration parent evidence does not match its resolution")
     for parent in (record["base"], record["candidate"]):
         command(["git", "merge-base", "--is-ancestor", parent, resolution["head"]], workspace)
-    command(["git", "merge-base", "--is-ancestor", resolution["head"], track["head"]], workspace)
+    candidate_head = candidate_head or track["head"]
+    command(["git", "merge-base", "--is-ancestor", resolution["head"], candidate_head], workspace)
     if observe(workspace) != observed:
         raise Conflict("Original integration identity, parents, index or files changed")
     return {"path": str(evidence_path(store.path, workspace)), "digest": fingerprint(record)}

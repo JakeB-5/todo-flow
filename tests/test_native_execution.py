@@ -24,10 +24,15 @@ root=Path(ROOT)
 if sys.argv[1:] == ['--version']:
  (root/'version-probed').touch();print('codex-cli 9.9.9');sys.exit()
 assert sys.argv[1]=='app-server'
+sandbox=os.environ.get('TODO_FLOW_CODEX_SANDBOX','read-only')
+sandbox_type='readOnly' if sandbox=='read-only' else 'workspaceWrite'
+if sandbox=='workspace-write':
+ tmp=Path(os.environ['TMPDIR']).resolve();cwd=Path.cwd().resolve()
+ assert tmp.name=='tmp' and tmp!=cwd and cwd not in tmp.parents
 home=Path(os.environ['CODEX_HOME'])
 assert home == root/'auth'
 settings=[sys.argv[i+1] for i,arg in enumerate(sys.argv) if arg=='-c']
-assert 'sandbox_mode="read-only"' in settings and 'project_doc_max_bytes=0' in settings
+assert f'sandbox_mode="{sandbox}"' in settings and 'project_doc_max_bytes=0' in settings
 assert 'features.plugins=false' in settings and 'features.hooks=false' in settings
 projects=next(tomllib.loads(setting)['projects'] for setting in settings if setting.startswith('projects='))
 assert projects[os.getcwd()]['trust_level']=='untrusted'
@@ -80,9 +85,9 @@ while True:
  elif method=='config/read':
   send({'id':msg['id'],'result':{'config':{'mcp_servers':{'fixture-tool':{'command':'must-not-run','env':{'TOKEN':'synthetic-secret'}}}}}})
  elif method=='thread/start':
-  assert msg['params']['sandbox']=='read-only' and msg['params']['approvalPolicy']=='never'
+  assert msg['params']['sandbox']==sandbox and msg['params']['approvalPolicy']=='never'
   assert msg['params']['config']['mcp_servers']=={'fixture-tool':{'enabled':False}}
-  send({'id':msg['id'],'result':{'thread':{'id':thread},'approvalPolicy':'never','sandbox':{'type':'readOnly','networkAccess':False},'cwd':msg['params']['cwd'],'instructionSources':[]}})
+  send({'id':msg['id'],'result':{'thread':{'id':thread},'approvalPolicy':'never','sandbox':{'type':sandbox_type,'networkAccess':False},'cwd':msg['params']['cwd'],'instructionSources':[]}})
  elif method=='thread/read':
   assert msg['params']['threadId']==thread
   send({'id':msg['id'],'result':{'thread':{'id':thread}}})
@@ -91,7 +96,7 @@ while True:
   send({'id':msg['id'],'result':{'data':[{'id':turn,'status':'completed','error':None,'itemsView':'full','items':[item]}],'nextCursor':None}})
  elif method=='turn/start':
   assert msg['params']['threadId']==thread and msg['params']['outputSchema']['type']=='object'
-  assert msg['params']['sandboxPolicy']=={'type':'readOnly','networkAccess':False}
+  assert msg['params']['sandboxPolicy']=={'type':sandbox_type,'networkAccess':False}
   if (root/'lose-response').exists():conn.close();sys.exit()
   proposal=json.loads((root/'proposal.json').read_text())
   item={'id':'message-one','type':'agentMessage','phase':'final_answer','text':json.dumps(proposal,ensure_ascii=False)}
@@ -206,7 +211,11 @@ class NativeExecutionTests(unittest.TestCase):
         self.config = {**self.engine.config, "worker": {"type": "codex"}, "worker_timeout": 15}
         self.env = patch.dict(
             os.environ,
-            {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"], "CODEX_HOME": str(self.auth)},
+            {
+                "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+                "CODEX_HOME": str(self.auth),
+                "TODO_FLOW_CODEX_SANDBOX": "read-only",
+            },
         )
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -264,6 +273,23 @@ class NativeExecutionTests(unittest.TestCase):
             json.loads(line) for line in (self.fixture / "requests.jsonl").read_text().splitlines()
         ]
         self.assertEqual(sum(request["method"] == "turn/start" for request in requests), 1)
+
+    def test_workspace_write_native_roundtrip_sets_thread_turn_and_tmpdir(self):
+        self.prepare()
+        self.config["codex_sandbox"] = "workspace-write"
+        result = self.execute()
+
+        self.assertEqual(result["summary"], "합성 native worker")
+        attempt_tmpdir = self.s.path / "attempts" / self.task["attempt"] / "tmp"
+        self.assertTrue(attempt_tmpdir.is_dir())
+        self.assertFalse((self.workspace / ".tmp").exists())
+        requests = [
+            json.loads(line) for line in (self.fixture / "requests.jsonl").read_text().splitlines()
+        ]
+        thread = next(row["params"] for row in requests if row["method"] == "thread/start")
+        turn = next(row["params"] for row in requests if row["method"] == "turn/start")
+        self.assertEqual(thread["sandbox"], "workspace-write")
+        self.assertEqual(turn["sandboxPolicy"], {"type": "workspaceWrite", "networkAccess": False})
 
     def test_role_selection_reaches_native_thread_and_turn_without_false_confirmation(self):
         from todo_flow.worker_routing import request, resolve

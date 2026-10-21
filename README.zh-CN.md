@@ -12,7 +12,7 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![状态：开发中](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: cca3ece0cf2eaefca06e63b2ab7eb01f39933e843691e2118d4f3b3dd4a9d914; status: translated -->
+<!-- translation-source: README.md; source-sha256: 859320b3fe066e7911300c1034ac85e30a1e7114c2b8a3b2eff9ee1e750c7b62; status: translated -->
 
 ## 15 秒了解 TODO Flow
 

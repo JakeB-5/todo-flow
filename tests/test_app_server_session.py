@@ -79,6 +79,17 @@ class AppServerSessionTests(unittest.TestCase):
             codex_schema(),
         )
 
+    def test_workspace_write_policy_reaches_thread_and_turn_without_network_access(self):
+        thread = thread_start_params("/workspace", "workspace-write")
+        turn = turn_start_params("/workspace", "thread-one", "prompt", "workspace-write")
+        self.assertEqual(thread["sandbox"], "workspace-write")
+        self.assertEqual(turn["sandboxPolicy"], {"type": "workspaceWrite", "networkAccess": False})
+
+    def test_app_server_rejects_unlisted_sandbox_values(self):
+        for sandbox in ("full-access", "workspace", "Workspace-Write", ""):
+            with self.subTest(sandbox=sandbox), self.assertRaises(ValueError):
+                thread_start_params("/workspace", sandbox)
+
     def test_invalid_request_inputs_fail_before_transport(self):
         for workspace in ("relative", "", None, "/bad\x00path"):
             with self.subTest(workspace=workspace), self.assertRaises(ValueError):

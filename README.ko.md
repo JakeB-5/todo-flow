@@ -12,7 +12,7 @@
 
 [![MIT 라이선스](https://img.shields.io/badge/license-MIT-257854)](LICENSE) [![개발 버전](https://img.shields.io/badge/status-development-d4a34b)](#current-scope) [![Python: 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab)](pyproject.toml)
 
-<!-- translation-source: README.md; source-sha256: cca3ece0cf2eaefca06e63b2ab7eb01f39933e843691e2118d4f3b3dd4a9d914; status: translated -->
+<!-- translation-source: README.md; source-sha256: 859320b3fe066e7911300c1034ac85e30a1e7114c2b8a3b2eff9ee1e750c7b62; status: translated -->
 
 ## 15초로 보는 TODO Flow
 
@@ -76,6 +76,8 @@ todo-flow serve --port 8765
 ```
 
 다른 언어에는 `--language en`, `--language ja`, `--language zh-CN`을 사용합니다. 생략하면 대화형 터미널에서는 선택을 묻고 터미널이 없으면 영어를 사용합니다. Claude 세션에는 `.claude/skills`를 사용합니다. 스킬은 프로젝트 언어를 상속합니다. GitHub 이슈·PR 연동에는 `init`에 `--github OWNER/REPOSITORY`를 추가합니다.
+
+Codex 워커는 기본적으로 읽기 전용 샌드박스에서 실행됩니다. 워커가 프로젝트 테스트와 검증 명령을 실행하게 하려면 `init --codex-sandbox workspace-write`로 저장된 프로젝트 설정을 명시합니다. 제품 변경은 계속 제안으로 반환하고 호스트가 반영합니다. 상속된 `TODO_FLOW_CODEX_SANDBOX` 환경변수는 저장된 권한을 바꾸지 못합니다.
 
 대시보드 서버를 실행해 둔 채 **http://127.0.0.1:8765**를 열고 아래 스킬 예시를 따라 진행하세요. [상세 설치·복구 안내](AGENT_INSTALL.ko.md)를 참고하세요.
 
